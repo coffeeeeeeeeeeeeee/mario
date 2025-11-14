@@ -34,44 +34,47 @@ const Black_Screen_Type = {
 };
 
 const BlockType = [
-	'Block_Empty',					// 	0,
-	'Block_Ground',					// 	1,
-	'Block_Brick',					// 	2,
-	'Object_Question',				// 	3,
-	'Object_Question_Used',			// 	4,
-	'Block_Pipe_Top_Left',			// 	5,
-	'Block_Pipe_Top_Right',			// 	6,
-	'Block_Pipe_Body_Left',			// 	7,
-	'Block_Pipe_Body_Right',		// 	8,
-	'Object_Coin',					// 	9,
-	'Enemy_Goomba',					// 10,
-	'Enemy_Koopa',					// 11,
-	'Enemy_Pakkun',					// 12,
-	'Block_Flagpole',				// 13,
-	'Block_Cloud_Left',				// 14,
-	'Block_Cloud_Middle',			// 15,
-	'Block_Cloud_Right',			// 16,
-	'Block_Bush_Left',				// 17,
-	'Block_Bush_Middle',			// 18,
-	'Block_Bush_Right',				// 19,
-	'Block_Hill_Top',				// 20,
-	'Block_Hill_Left',				// 21,
-	'Block_Hill_Right',				// 22,
-	'Block_Hill_Dots',				// 23,
-	'Block_Stairs',					// 24,
-	'Block_Invisible',				// 25,
-	'Block_Flagpole_Top',			// 26,
-	'Block_Brick_Middle',			// 27,
-	'Block_Brick_Zigzag',			// 28,
-	'Block_Brick_Zigzag_Filled',	// 29,
-	'Block_Brick_Break',			// 30,
-	'Block_Brick_Cut',				// 31,
-	'Block_Brick_Arch',				// 32,
-	'Block_Black',					// 33,
-	'Object_Question_Multiple',		// 34,
-	'Block_Used',					// 35,
-	'Block_Life_Used',				// 36,
-	'Enemy_Koopa_Winged_Red',		// 37,
+	'Block_Empty',					// 	0
+	'Block_Ground',					// 	1
+	'Block_Brick',					// 	2
+	'Object_Question',				// 	3
+	'Object_Question_Used',			// 	4
+	'Block_Pipe_Top_Left',			// 	5
+	'Block_Pipe_Top_Right',			// 	6
+	'Block_Pipe_Body_Left',			// 	7
+	'Block_Pipe_Body_Right',		// 	8
+	'Object_Coin',					// 	9
+	'Enemy_Goomba',					// 10
+	'Enemy_Koopa',					// 11
+	'Enemy_Pakkun',					// 12
+	'Block_Flagpole',				// 13
+	'Block_Cloud_Left',				// 14
+	'Block_Cloud_Middle',			// 15
+	'Block_Cloud_Right',			// 16
+	'Block_Bush_Left',				// 17
+	'Block_Bush_Middle',			// 18
+	'Block_Bush_Right',				// 19
+	'Block_Hill_Top',				// 20
+	'Block_Hill_Left',				// 21
+	'Block_Hill_Right',				// 22
+	'Block_Hill_Dots',				// 23
+	'Block_Stairs',					// 24
+	'Block_Invisible',				// 25
+	'Block_Flagpole_Top',			// 26
+	'Block_Brick_Middle',			// 27
+	'Block_Brick_Zigzag',			// 28
+	'Block_Brick_Zigzag_Filled',	// 29
+	'Block_Brick_Break',			// 30
+	'Block_Brick_Cut',				// 31
+	'Block_Brick_Arch',				// 32
+	'Block_Black',					// 33
+	'Object_Question_Multiple',		// 34
+	'Block_Used',					// 35
+	'Block_Life_Used',				// 36
+	'Enemy_Koopa_Winged_Red',		// 37
+	'Block_Ground_Underground',		// 38
+	'Block_Brick_Underground',		// 39
+	'Object_Coin_Underground',		// 40
 ];
 
 class Game {
@@ -294,7 +297,7 @@ class Game {
 		this.velocityY = 0;
 		this.time = 400;
 		this.specialBlocks = {};
-		this.loadMap("1-1");
+		this.loadMap("1-1b");
 	}
 
 	resetLevel() {
@@ -303,7 +306,7 @@ class Game {
 		this.mapOffset.x = 0; this.velocityY = 0; this.coins = 0; this.score = 0;
 		this.specialBlocks = {};
 		this.state = Game_State.Playing;
-		this.loadMap(map.world);
+		this.loadMap(this.currentMap.world);
 	}
 
 	rectsOverlap(r1, r2) {
