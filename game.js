@@ -1,0 +1,1093 @@
+const Game_State = {
+	Title_Menu: 0,
+	Pause:      1,
+	Playing:    2,
+	Player_Dying: 3,
+	Black_Screen: 4,
+};
+
+const Player = {
+	Mario: 0,
+	Luigi: 1
+};
+
+const PlayerName = [
+	"Mario",
+	"Luigi"
+];
+
+const Player_State = {
+	Idle:    0,
+	Running: 1,
+	Jumping: 2,
+	Falling: 3,
+};
+
+const Black_Screen_Type = {
+	Start_Level: 0,
+	Game_Over: 1,
+	Time_Up: 2,
+};
+
+const BlockType = [
+	'Block_Empty', // 0
+	'Block_Ground',
+	'Block_Brick',
+	'Object_Question',
+	'Object_Question_Used',
+	'Block_Pipe_Top_Left',
+	'Block_Pipe_Top_Right',
+	'Block_Pipe_Body_Left',
+	'Block_Pipe_Body_Right',
+	'Object_Coin',
+	'Enemy_Goomba', // 10
+	'Enemy_Koopa',
+	'Enemy_Pakkun',
+	'Block_Flagpole',
+	'Block_Cloud_Left',
+	'Block_Cloud_Middle',
+	'Block_Cloud_Right',
+	'Block_Bush_Left',
+	'Block_Bush_Middle',
+	'Block_Bush_Right',
+	'Block_Hill_Top', // 20
+	'Block_Hill_Left',
+	'Block_Hill_Right',
+	'Block_Hill_Dots',
+	'Block_Stairs',
+	'Block_Invisible',
+	'Block_Flagpole_Top',
+	'Block_Brick_Middle',
+	'Block_Brick_Zigzag',
+	'Block_Brick_Zigzag_Filled',
+	'Block_Brick_Break', // 30
+	'Block_Brick_Cut',
+	'Block_Brick_Arch',
+	'Block_Black',
+	'Object_Question_Multiple',
+	'Block_Used',
+	'Block_Life_Used', // 36
+	'Enemy_Koopa_Winged',
+];
+
+// https://downloads.khinsider.com/game-soundtracks/album/super-mario-bros
+const audio = {
+	"Main_Theme": js2d.loadAudio("assets/audios/main_theme.mp3"),
+	"Sub_Theme": js2d.loadAudio("assets/audios/sub_theme.mp3"),
+	"Castle_Theme": js2d.loadAudio("assets/audios/castle_theme.mp3"),
+	"Win_Theme": js2d.loadAudio("assets/audios/win_theme.mp3"),
+	"Game_Over_Theme": js2d.loadAudio("assets/audios/game_over.mp3"),
+	"Player_Bump": js2d.loadAudio("assets/audios/bump.mp3"),
+	"Player_Skid": js2d.loadAudio("assets/audios/skid.mp3"),
+	"Player_Stomp": js2d.loadAudio("assets/audios/stomp.mp3"),
+	"Player_Jump": js2d.loadAudio("assets/audios/jump_small.mp3"),
+	"Player_Jump_Turbo": js2d.loadAudio("assets/audios/jump_super.mp3"),
+	"Player_Die": js2d.loadAudio("assets/audios/die.mp3"),
+	"Player_Pipe": js2d.loadAudio("assets/audios/pipe.mp3"),
+	"Coin": js2d.loadAudio("assets/audios/coin.mp3"),
+	"Life": js2d.loadAudio("assets/audios/1_up.mp3"),
+	"Pause": js2d.loadAudio("assets/audios/pause.mp3"),
+	"Powerup_Appears": js2d.loadAudio("assets/audios/powerup_appears.mp3"),
+};
+
+function update(dt) {
+	if (!smb) return;
+
+	switch(smb.state) {
+		case Game_State.Title_Menu:
+			smb.drawMenu();
+			break;
+
+		case Game_State.Black_Screen:
+			smb.drawBlackScreen();
+			smb.screenTimer += dt;
+			if (smb.screenTimer > smb.screenDuration) {
+				smb.handleBlackScreenEnd();
+			}
+			break;
+
+		case Game_State.Player_Dying:
+			smb.drawBackground();
+			smb.drawBlocks();
+			smb.updateAndDrawCoins();
+			smb.updateAndDrawPowerups();
+			smb.drawBumpingBlocksOverlay();
+			smb.drawEnemies(dt);
+			smb.drawPlayer(PlayerName[smb.player], dt);
+			smb.drawForegroundBlocks();
+			smb.drawUI();
+			break;
+
+		case Game_State.Playing:
+			smb.time -= dt / 1000;
+			if (audio["Main_Theme"].paused && !audio["Main_Theme"].ended) {
+				js2d.playAudio(audio["Main_Theme"], true);
+			}
+			smb.updateEnemies(dt);
+			smb.drawBackground();
+			smb.drawBlocks();
+			smb.updateAndDrawCoins();
+			smb.updateAndDrawPowerups();
+			smb.drawBumpingBlocksOverlay();
+			smb.drawEnemies(dt);
+			smb.drawPlayer(PlayerName[smb.player], dt);
+			smb.drawForegroundBlocks();
+			smb.drawUI();
+			break;
+	}
+}
+
+function animate(timestamp) {
+	if (!js2d.last_timestamp) { js2d.last_timestamp = timestamp; }
+	let dt = timestamp - js2d.last_timestamp;
+	js2d.last_timestamp = timestamp;
+	
+	update(dt);
+	requestAnimationFrame(animate);
+}
+
+async function init() {
+	const fontSize = 20;
+	font = await js2d.loadFont("SMB2_Font", "assets/fonts/Super-Mario-Bros-NES.ttf");
+	
+	const tileSize = 16;
+	const tileScale = 4;
+	const playerPos = {x: 300, y: 300};
+	const defaultLives = 1;
+	const coinSpinVelocity = 15;
+
+	const spriteList = [
+		["Player_Mario", "assets/images/mario.png", tileScale, 16, 16],
+		["Player_Luigi", "assets/images/luigi.png", tileScale, 16, 16],
+		["Enemy_Goomba", "assets/images/goomba.png", tileScale, 16, 16],
+		["Enemy_Koopa", "assets/images/koopa.png", tileScale, 16, 24],
+		["Enemy_Koopa_Winged", "assets/images/koopa_winged.png", tileScale, 16, 24],
+		["Enemy_Koopa_Shell", "assets/images/koopa_shell.png", tileScale, 16],
+		["Enemy_Pakkun", "assets/images/pakkun.png", tileScale, 16, 24],
+		["Object_Mushroom_Grow", "assets/images/mushroom_grow.png", tileScale],
+		["Object_Mushroom_1UP", "assets/images/mushroom_life.png", tileScale],
+		["UI_Title_Image", "assets/images/title.png", tileScale, 176, 88],
+		["Block_Empty", "assets/images/empty.png", tileScale],
+		["Block_Ground", "assets/images/ground.png", tileScale],
+		["Block_Brick", "assets/images/brick.png", tileScale],
+		["Object_Question", "assets/images/question_block.png", tileScale],
+		["Object_Question_Used", "assets/images/block_used.png", tileScale],
+		["Object_Coin", "assets/images/coin.png", tileScale, 16, 16],
+		["UI_Coin", "assets/images/coin_score.png", fontSize / tileSize, 8, 8],
+		["Cursor", "assets/images/cursor.png", fontSize / tileScale / 2, 8, 8],
+		["Block_Stairs", "assets/images/stair_block.png", tileScale],
+		["Block_Pipe_Top_Left", "assets/images/pipe_top_left.png", tileScale],
+		["Block_Pipe_Top_Right", "assets/images/pipe_top_right.png", tileScale],
+		["Block_Pipe_Body_Left", "assets/images/pipe_body_left.png", tileScale],
+		["Block_Pipe_Body_Right", "assets/images/pipe_body_right.png", tileScale],
+		["Block_Invisible", "assets/images/empty.png", tileScale],
+		["Block_Flagpole", "assets/images/post.png", tileScale],
+		["Block_Flagpole_Top", "assets/images/post_top.png", tileScale],
+		["Block_Brick_Middle", "assets/images/brick_middle.png", tileScale],
+		["Block_Brick_Zigzag", "assets/images/brick_zigzag.png", tileScale],
+		["Block_Brick_Zigzag_Filled", "assets/images/brick_zigzag_filled.png", tileScale],
+		["Block_Brick_Break", "assets/images/brick_break.png", tileScale],
+		["Block_Brick_Cut", "assets/images/brick_cut.png", tileScale],
+		["Block_Brick_Arch", "assets/images/brick_arch.png", tileScale],
+		["Block_Black", "assets/images/black.png", tileScale],
+		["Block_Cloud_Left", "assets/images/cloud_left_top.png", tileScale],
+		["Block_Cloud_Middle", "assets/images/cloud_top.png", tileScale],
+		["Block_Cloud_Right", "assets/images/cloud_right_top.png", tileScale],
+		["Block_Cloud_Bottom_Left", "assets/images/cloud_left_bottom.png", tileScale],
+		["Block_Cloud_Bottom", "assets/images/cloud_bottom.png", tileScale],
+		["Block_Cloud_Bottom_Right", "assets/images/cloud_right_bottom.png", tileScale],
+		["Block_Multi_Coin", "assets/images/brick.png", tileScale],
+		["Block_Used", "assets/images/block_used.png", tileScale],
+		["Block_Life_Used", "assets/images/block_life_used.png", tileScale],
+	];
+	await js2d.loadSprites(spriteList);
+
+	js2d.createAnimatedSprite("Mario", "Player_Mario", playerPos, tileScale);
+	js2d.createAnimatedSprite("Luigi", "Player_Luigi", playerPos, tileScale);
+	js2d.createAnimatedSprite("Goomba", "Enemy_Goomba", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Koopa", "Enemy_Koopa", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Koopa_Winged", "Enemy_Koopa_Winged", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Koopa_Shell", "Enemy_Koopa_Shell", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Pakkun", "Enemy_Pakkun", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Mushroom_Grow", "Object_Mushroom_Grow", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, fontSize / tileSize);
+	js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, fontSize / tileSize);
+
+	js2d.addAnimationToSprite("Mario", "Mario_Idle", [0], true, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Run", [1, 2, 3], true, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Stop", [4], true, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Jump", [5], false, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Fail", [6], true, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Fall", [7, 8], true, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Swim", [9, 10, 11, 12, 13], true, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Idle", [0], true, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Run", [1, 2, 3], true, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Stop", [4], true, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Jump", [5], false, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Fail", [6], true, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Fall", [7, 8], true, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Swim", [9, 10, 11, 12, 13], true, 16);
+	js2d.addAnimationToSprite("Goomba", "Goomba_Walk", [0, 1], true, 16);
+	js2d.addAnimationToSprite("Goomba", "Goomba_Stomped", [2], false, 16);
+	js2d.addAnimationToSprite("Koopa", "Koopa_Walk", [0, 1], true, 16);
+	js2d.addAnimationToSprite("Koopa", "Koopa_Stomped", [2], false, 16);
+	js2d.addAnimationToSprite("Koopa_Winged", "Koopa_Winged_Walk", [0, 1], true, 16);
+	js2d.addAnimationToSprite("Koopa", "Koopa_Shell", [0, 1], false, 16);
+	js2d.addAnimationToSprite("Pakkun", "Pakkun_Bite", [0, 1], true, 16);
+	js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
+	js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
+
+	js2d.setAnimationForSprite("Mario", "Mario_Idle");
+	js2d.setAnimationForSprite("Luigi", "Luigi_Idle");
+	js2d.setAnimationForSprite("Goomba", "Goomba_Walk");
+	js2d.setAnimationForSprite("Koopa", "Koopa_Walk");
+	js2d.setAnimationForSprite("Koopa_Winged", "Koopa_Winged_Walk");
+	js2d.setAnimationForSprite("Pakkun", "Pakkun_Bite");
+	js2d.setAnimationForSprite("Coin", "Coin_Shine");
+	js2d.setAnimationForSprite("UICoin", "Coin_Score");
+
+	js2d.addAnimationToSprite("Koopa_Shell", "Shell_Idle", [0], true, 16);
+	js2d.addAnimationToSprite("Koopa_Shell", "Shell_Sliding", [0, 1], true, 16);
+	js2d.setAnimationForSprite("Koopa_Shell", "Shell_Idle");
+
+	class Game {
+		state = Game_State.Title_Menu;
+		currentSelection = 0;
+		player = Player.Mario;
+		highscore = 0;
+		currentMap = null;
+		mapOffset = {x: 0, y: 0};
+		spriteSize = 16;
+		spriteScale = 4;
+		tileSize = this.spriteSize * this.spriteScale;
+		velocityY = 0;
+		jumpPower = -22;
+		gravity = 0.8;
+		isOnGround = true;
+		isSwimming = true;
+		textSize = 16;
+		score = 0;
+		time = 0;
+		lives = defaultLives;
+		coins = 0;
+
+		enemies = [];
+		activeCoins = [];
+		bumpingBlocks = [];
+		activePowerups = [];
+
+		skidTimer = 0;
+		wasMovingTurbo = false;
+
+		screenTimer = 0;
+		screenDuration = 0
+		screenType = Black_Screen_Type.Start_Level;
+
+		BG_1 = "#5C94FC";
+
+		velocityXGround = (this.spriteSize * 9.10 / 16) * 60;
+		velocityXTurbo  = (this.spriteSize * 14.4 / 16) * 60;
+		velocityXSwim   = (this.spriteSize * 17.6 / 16) * 60;
+
+		constructor(textSize) {
+			this.textSize = textSize;
+			this.specialBlocks = {};
+			this.foregroundBlocks = [5, 6, 7, 8];
+		}
+
+		screenToTile(x, y) {
+			const mapWidth = this.currentMap.dimensions.width;
+			const mapHeight = this.currentMap.dimensions.height;
+			const offsetY = mapHeight * this.tileSize - js2d.canvas.height;
+			const worldX = x - this.mapOffset.x;
+			const worldY = y - this.mapOffset.y + offsetY;
+			const tx = Math.floor(worldX / this.tileSize);
+			const ty = Math.floor(worldY / this.tileSize);
+			return { x: tx, y: ty };
+		}
+
+		tileToScreen(tx, ty) {
+			const mapHeight = this.currentMap.dimensions.height;
+			const offsetY = mapHeight * this.tileSize - js2d.canvas.height;
+			const x = tx * this.tileSize + this.mapOffset.x;
+			const y = ty * this.tileSize + this.mapOffset.y - offsetY;
+			return { x, y };
+		}
+
+		loadMap(name) {
+			if(map.world == name){
+				this.currentMap = map;
+				console.info(`[SMB] Mapa cargado: ${name}`);
+
+				this.enemies = [];
+
+				const map_w = this.currentMap.dimensions.width;
+
+				for(var i = 0; i < this.currentMap.map.length; i++){
+					const blockId = this.currentMap.map[i];
+					let enemyType = null;
+
+					if (blockId === 10) enemyType = "Goomba";
+					else if (blockId === 11) enemyType = "Koopa";
+					else if (blockId === 12) enemyType = "Pakkun";
+					else if (blockId === 37) enemyType = "Koopa_Winged";
+
+					if (enemyType) {
+						let coords = js2d.indexToCoords(i, map_w);
+						let screenPos = this.tileToScreen(coords.x, coords.y);
+
+						if (enemyType === "Pakkun") {
+							this.enemies.push({
+								type: 'Pakkun', x: (screenPos.x - this.mapOffset.x) + (this.tileSize / 2), y: screenPos.y + this.tileSize,
+								initialY: screenPos.y + this.tileSize, maxHeight: this.tileSize * 1.5, state: 'hiding', timer: 120
+							});
+						} else {
+							this.enemies.push({
+								id: this.enemies.length,
+								type: enemyType,
+								x: screenPos.x - this.mapOffset.x,
+								y: screenPos.y,
+								vx: -2,
+								vy: 0,
+								state: "walking",
+								stompTimer: 0,
+								isWinged: enemyType === "Koopa_Winged",
+								canFly: enemyType === "Koopa_Winged",
+								flyTimer: 0,
+							});
+						}
+						this.currentMap.map[i] = 0;
+					}
+				}
+			}
+		}
+
+		saveGameState() {
+			const player = js2d.animatedSprites[PlayerName[this.player]];
+			this.savedState = {
+				playerPos: {x: player.position.x, y: player.position.y}, mapOffset: {x: this.mapOffset.x, y: this.mapOffset.y},
+				player: this.player, velocityX: this.velocityX, velocityY: this.velocityY, time: this.time, score: this.score, lives: this.lives,
+				coins: this.coins, isOnGround: this.isOnGround, currentAnimation: player.currentAnimation,
+				mapState: JSON.parse(JSON.stringify(this.currentMap)), enemiesState: JSON.parse(JSON.stringify(this.enemies)),
+				specialBlocksState: JSON.parse(JSON.stringify(this.specialBlocks))
+			};
+		}
+
+		restoreGameState() {
+			if (this.savedState) {
+				this.currentMap = this.savedState.mapState;
+				this.enemies = this.savedState.enemiesState;
+				this.specialBlocks = this.savedState.specialBlocksState;
+				this.player = this.savedState.player; this.time = this.savedState.time; this.score = this.savedState.score; this.lives = this.savedState.lives;
+				this.coins = this.savedState.coins;
+				const player = js2d.animatedSprites[PlayerName[this.player]];
+				player.position.x = this.savedState.playerPos.x; player.position.y = this.savedState.playerPos.y;
+				this.mapOffset.x = this.savedState.mapOffset.x; this.mapOffset.y = this.savedState.mapOffset.y;
+				this.velocityX = this.savedState.velocityX; this.velocityY = this.savedState.velocityY;
+				this.isOnGround = this.savedState.isOnGround;
+				js2d.setAnimationForSprite(PlayerName[this.player], this.savedState.currentAnimation);
+			}
+		}
+
+		continueGame() { this.restoreGameState(); this.state = Game_State.Playing; }
+		exitGame() { this.saveGameState(); this.state = Game_State.Title_Menu; }
+
+		selectPlayer(player) {
+			this.player = player;
+			this.lives = defaultLives;
+			this.score = 0;
+			this.coins = 0;
+			this.savedState = null;
+			this.resetLevelState();
+			this.transitionToBlackScreen(Black_Screen_Type.Start_Level, 3000);
+		}
+
+		killPlayer() {
+			if (this.state === Game_State.Playing) {
+				this.state = Game_State.Player_Dying;
+				this.velocityY = -18;
+				if (this.score > this.highscore) { this.highscore = this.score; }
+				js2d.stopAudio(audio["Main_Theme"]);
+				js2d.playAudio(audio["Player_Die"], false);
+			}
+		}
+
+		handleDeath() {
+			this.lives--;
+			if (this.lives > 0) {
+				this.resetLevelState();
+				this.transitionToBlackScreen(Black_Screen_Type.Start_Level, 3000);
+			} else {
+				js2d.playAudio(audio["Game_Over_Theme"], false);
+				this.transitionToBlackScreen(Black_Screen_Type.Game_Over, 5000);
+			}
+		}
+
+		transitionToBlackScreen(type, duration) {
+			this.state = Game_State.Black_Screen;
+			this.screenType = type;
+			this.screenTimer = 0;
+			this.screenDuration = duration;
+		}
+		
+		handleBlackScreenEnd() {
+			if (this.screenType === Black_Screen_Type.Game_Over) {
+				js2d.stopAudio(audio["Game_Over_Theme"]);
+				this.state = Game_State.Title_Menu;
+			} else {
+				this.state = Game_State.Playing;
+			}
+		}
+
+		resetLevelState() {
+			const playerSprite = js2d.animatedSprites[PlayerName[this.player]];
+			playerSprite.position = {x: 150, y: 0};
+			this.mapOffset = {x: 0, y: 0};
+			this.velocityY = 0;
+			this.time = 400;
+			this.specialBlocks = {};
+			this.loadMap("1-1");
+		}
+
+		resetLevel() {
+			const player = js2d.animatedSprites[PlayerName[this.player]];
+			player.position.x = 300; player.position.y = 300;
+			this.mapOffset.x = 0; this.velocityY = 0; this.coins = 0; this.score = 0;
+			this.specialBlocks = {};
+			this.state = Game_State.Playing;
+			this.loadMap(map.world);
+		}
+
+		rectsOverlap(r1, r2) {
+			return !(r1.x + r1.w < r2.x || r1.y + r1.h < r2.y || r1.x > r2.x + r2.w || r1.y > r2.y + r2.h);
+		}
+
+		updateEnemies(dt) {
+			const player = js2d.animatedSprites[PlayerName[this.player]];
+			for (let i = this.enemies.length - 1; i >= 0; i--) {
+				const enemy = this.enemies[i];
+				const enemyScreenX = enemy.x + this.mapOffset.x;
+
+				if (enemy.type === 'Pakkun') {
+					const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
+					const isPlayerNear = Math.abs(playerRect.x - enemyScreenX) < this.tileSize * 1.5;
+					switch (enemy.state) {
+						case 'hiding':
+							enemy.timer++;
+							if (enemy.timer > 120 && !isPlayerNear) { enemy.state = 'rising'; enemy.timer = 0; }
+							break;
+						case 'rising':
+							enemy.y--;
+							if (enemy.y <= enemy.initialY - enemy.maxHeight) { enemy.state = 'showing'; }
+							break;
+						case 'showing':
+							enemy.timer++;
+							if (enemy.timer > 90) { enemy.state = 'sinking'; enemy.timer = 0; }
+							break;
+						case 'sinking':
+							enemy.y++;
+							if (enemy.y >= enemy.initialY) { enemy.state = 'hiding'; }
+							break;
+					}
+					if (enemy.state !== 'hiding') {
+						const pakkunRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: this.tileSize * 2 };
+						if (this.rectsOverlap(playerRect, pakkunRect)) { this.killPlayer(); }
+					}
+					continue;
+				}
+
+				if (enemy.type === 'Goomba' && enemy.state === 'stomped') {
+					enemy.stompTimer++;
+					if (enemy.stompTimer > 30) { this.enemies.splice(i, 1); continue; }
+				}
+
+				if (enemy.type.includes('Koopa')) {
+					if (enemy.state === 'shell') {
+						enemy.x += enemy.vx;
+						const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
+						const wallTile = this.screenToTile(wallCheckX, enemy.y);
+						if (this.currentMap.map[js2d.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
+							enemy.vx *= -1;
+						}
+					} else if (enemy.isWinged && enemy.canFly) {
+						enemy.flyTimer++;
+						if (enemy.flyTimer > 60 && enemy.vy === 0) { enemy.vy = -10; enemy.flyTimer = 0; }
+					}
+				}
+
+				enemy.vy += this.gravity;
+				const enemyRect = { x: enemy.x + this.mapOffset.x, y: enemy.y, w: this.tileSize, h: this.tileSize };
+				const groundTile = this.screenToTile(enemyRect.x, enemyRect.y + this.tileSize);
+				if (this.currentMap.map[js2d.coordsToIndex(groundTile, this.currentMap.dimensions.width)] > 0) {
+					enemy.vy = 0;
+					enemy.y = this.tileToScreen(groundTile.x, groundTile.y).y - this.tileSize;
+				}
+				if (enemy.state === 'walking') enemy.x += enemy.vx;
+				enemy.y += enemy.vy;
+				const wallTile = this.screenToTile(enemy.vx > 0 ? enemyRect.x + this.tileSize : enemyRect.x, enemyRect.y);
+				if (this.currentMap.map[js2d.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0 && enemy.state === 'walking') {
+					enemy.vx *= -1;
+				}
+
+				const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
+				if (this.rectsOverlap(playerRect, enemyRect)) {
+					const isStomping = this.velocityY > 0 && (player.position.y + this.tileSize) < (enemy.y + this.tileSize / 2);
+
+					if (isStomping) {
+						this.velocityY = -10;
+						js2d.playAudio(audio["Player_Stomp"], false);
+						if (enemy.type === 'Goomba') {
+							enemy.state = 'stomped';
+							this.score += 100;
+						} else { // Es un Koopa
+							if (enemy.isWinged) {
+								enemy.isWinged = false;
+								enemy.type = 'Koopa';
+							} else if (enemy.state === 'walking') {
+								enemy.state = 'shell';
+								enemy.vx = 0;
+								this.score += 200;
+							} else if (enemy.state === 'shell') {
+								enemy.state = 'falling';
+								enemy.vy = -10;
+								enemy.vx = 0;
+								this.score += 500;
+							}
+						}
+					} else { // Colisión lateral
+						if (enemy.state === 'walking' || (enemy.state === 'shell' && enemy.vx !== 0)) {
+							this.killPlayer(); // Muere si toca un enemigo caminando o un caparazón en movimiento
+						} else if (enemy.state === 'shell' && enemy.vx === 0) {
+							// Pone en movimiento el caparazón estacionario
+							const shellSpeed = 8; // Velocidad del caparazón (4 veces la de Koopa)
+							enemy.vx = (player.position.x < enemyRect.x) ? shellSpeed : -shellSpeed;
+						}
+					}
+				}
+				if (enemy.state === 'falling' && enemy.y > js2d.canvas.height) {
+					this.enemies.splice(i, 1);
+				}
+			}
+		}
+
+		drawEnemies() {
+			for (const enemy of this.enemies) {
+				const screenX = enemy.x + this.mapOffset.x;
+				if (screenX < -this.tileSize || screenX > js2d.canvas.width) continue;
+
+				if (enemy.type === 'Pakkun') {
+					const animSprite = js2d.animatedSprites['Pakkun'];
+					const spriteData = js2d.sprites.Enemy_Pakkun;
+					const biteAnim = animSprite.animations.Pakkun_Bite;
+					if (animSprite.frameCounter % biteAnim.frameSpeed === 0) {
+						animSprite.currentFrame = (animSprite.currentFrame + 1) % biteAnim.frames.length;
+					}
+					const frameToDraw = biteAnim.frames[animSprite.currentFrame];
+					js2d.drawSprite(spriteData.image, frameToDraw, { x: screenX, y: enemy.y }, spriteData.scale, false, 0, Pivot.Top_Left);
+				} else { // Goomba y Koopa
+					if (enemy.isWinged) {
+						const wingedSprite = js2d.animatedSprites['Koopa_Winged'];
+						js2d.setAnimationForSprite('Koopa_Winged', 'Koopa_Winged_Walk');
+						wingedSprite.position = { x: screenX, y: enemy.y - this.tileSize / 2 };
+						wingedSprite.flipped = enemy.vx > 0;
+						js2d.drawAnimatedSprite('Koopa_Winged', Pivot.Top_Left);
+					}
+					else if (enemy.type === 'Koopa' && (enemy.state === 'shell' || enemy.state === 'falling')) {
+						const shellSprite = js2d.animatedSprites['Koopa_Shell'];
+						// Elige la animación basada en la velocidad
+						if (enemy.vx === 0) {
+							js2d.setAnimationForSprite('Koopa_Shell', 'Shell_Idle', false);
+						} else {
+							js2d.setAnimationForSprite('Koopa_Shell', 'Shell_Sliding');
+						}
+						shellSprite.position = { x: screenX, y: enemy.y };
+						js2d.drawAnimatedSprite('Koopa_Shell', Pivot.Top_Left);
+					} else {
+						// Dibuja Goomba o Koopa caminando
+						const animSprite = js2d.animatedSprites[enemy.type];
+						if (enemy.state !== 'stomped') { // Evita que Goomba aplastado se anime
+							js2d.setAnimationForSprite(enemy.type, `${enemy.type}_Walk`);
+						}
+						animSprite.position = { x: screenX, y: enemy.y };
+						if (enemy.type === 'Koopa') {
+							animSprite.position.y -= this.tileSize / 2;
+						}
+						animSprite.flipped = enemy.vx > 0;
+						js2d.drawAnimatedSprite(enemy.type, Pivot.Top_Left);
+					}
+				}
+			}
+			js2d.animatedSprites["Goomba"].frameCounter++;
+			js2d.animatedSprites["Koopa"].frameCounter++;
+			js2d.animatedSprites["Koopa_Winged"].frameCounter++;
+			js2d.animatedSprites["Pakkun"].frameCounter++;
+		}
+
+		drawBlackScreen(){
+			js2d.drawRectangle(js2d.getCanvasRectangle(), Color.BLACK);
+			this.drawUI();
+			const centerX = js2d.getCanvasWidth() / 2;
+			const centerY = js2d.getCanvasHeight() / 2;
+
+			switch (this.screenType) {
+				case Black_Screen_Type.Start_Level:
+					const worldPos = { x: centerX, y: centerY - this.tileSize * 2 };
+					js2d.drawTextCustom(font, `WORLD ${this.currentMap.world}`, this.textSize, Color.WHITE, worldPos, "center");
+					
+					const livesPos = { x: centerX + this.tileSize, y: centerY };
+					js2d.drawTextCustom(font, `${String.fromCharCode('0x00D7')} ${this.lives}`, this.textSize, Color.WHITE, livesPos, "center");
+					
+					const playerImagePos = { x: centerX - this.tileSize * 2, y: centerY - this.tileSize / 2 };
+					const spriteName = "Player_" + PlayerName[this.player];
+					const playerSprite = js2d.sprites[spriteName];
+					if(playerSprite && playerSprite.image) {
+						js2d.drawSprite(playerSprite.image, 0, playerImagePos, this.spriteScale, this.player.flipped, 0, Pivot.Top_Left);
+					}
+					break;
+
+				case Black_Screen_Type.Game_Over:
+
+					const gameOverPlayerPos = { x: centerX, y: centerY - this.tileSize };
+					js2d.drawTextCustom(font, PlayerName[this.player], this.textSize, Color.WHITE, gameOverPlayerPos, "center");
+					const gameOverPos = { x: centerX, y: centerY };
+					js2d.drawTextCustom(font, "GAME OVER", this.textSize, Color.WHITE, gameOverPos, "center");
+					break;
+					
+				case Black_Screen_Type.Time_Up:
+					const timeUpPos = { x: centerX, y: centerY };
+					js2d.drawTextCustom(font, "TIME UP", this.textSize, Color.WHITE, timeUpPos, "center");
+					break;
+			}
+		}
+
+		drawMenu() {
+			js2d.drawRectangle(js2d.getCanvasRectangle(), this.BG_1);
+			this.drawUI();
+
+			const titleMaxY = 0.65;
+
+			const titleSprite = js2d.sprites["UI_Title_Image"];
+			const titleImg = titleSprite.image
+
+			const titlePosX = js2d.canvas.width / 2;
+			const titlePosY = this.tileSize;
+			const titleScale = this.spriteScale * js2d.getCanvasHeight() / titleMaxY / 1000
+			const titleWidth = titleImg.width * titleScale;
+
+			const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
+			js2d.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
+
+			const menuButtons = [
+				{ name: "MARIO GAME", action: () => { this.selectPlayer(Player.Mario); }},
+				{ name: "LUIGI GAME", action: () => { this.selectPlayer(Player.Luigi); }},
+			];
+			if(this.savedState != null){
+				menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame() } });
+			}
+
+			const numButtons = menuButtons.length;
+			const menuGap = js2d.canvas.height * 0.2 / numButtons;
+			if(js2d.keysPressed['ArrowUp'] || js2d.keysPressed['KeyW']){ js2d.keysPressed = []; this.currentSelection--; }
+			if(js2d.keysPressed['ArrowDown'] || js2d.keysPressed['KeyS']){ js2d.keysPressed = []; this.currentSelection++; }
+			
+			if(js2d.keysPressed['Enter'] || js2d.keysPressed['Space']){
+				if (menuButtons[this.currentSelection].action) {
+					menuButtons[this.currentSelection].action();
+				}
+				delete js2d.keysPressed['Enter'];
+				delete js2d.keysPressed['Space'];
+			}
+
+			this.currentSelection = ((this.currentSelection % numButtons) + numButtons) % numButtons;
+			for(let i = 0; i < numButtons; i++){
+				const menuPosY = js2d.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + this.textSize;
+				const textPos = { x: js2d.getCanvasWidth() / 2, y: menuPosY };
+				if(this.currentSelection == i){
+					const cursorPos = { x: js2d.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - this.spriteSize * 1.1 };
+					const cursorSprite = js2d.sprites["Cursor"];
+					if(cursorSprite && cursorSprite.image) {
+						js2d.drawSprite(cursorSprite.image, 0, cursorPos, cursorSprite.scale, false, 0, Pivot.Top_Left);
+					}
+				}
+				js2d.drawTextCustom(font, menuButtons[i].name, this.textSize, "#ffffff", textPos, "center");
+			}
+
+			const topScore = "TOP - " + this.highscore.toString().padStart(6, "0");
+			const topScorePos = {
+				x: js2d.getCanvasRectangle() / 2,
+				y: js2d.canvas.height * 0.65 + menuGap * numButtons + menuGap / 2 + this.textSize
+			};
+			js2d.drawTextCustom(font, topScore, this.textSize, "#ffffff", topScorePos, "center");
+		}
+
+		drawBackground() {
+			js2d.drawRectangle(js2d.getCanvasRectangle(), this.BG_1);
+			const bgStep = 0.3;
+			const parallaxSpeed = 0.5;
+			const offsetX = this.mapOffset.x * parallaxSpeed;
+			const cloudY = 80;
+			const numClouds = Math.ceil(this.currentMap.dimensions.width * bgStep);
+			for (let i = 0; i < numClouds; i++) {
+				const cloudSizeX = 3 + (i % 2);
+				const cloudOffsetY = cloudY + (i % 3) * 40;
+				const cloudX = (i * 500) + offsetX;
+				if (cloudX + cloudSizeX * this.tileSize >= 0 && cloudX <= js2d.canvas.width) {
+					this.drawCloud({x: cloudX, y: cloudOffsetY}, {x: cloudSizeX, y: 2}, this.tileSize);
+				}
+			}
+		}
+
+		drawCloud(cloudPos, cloudSize, tileSize) {
+			for (let y = 0; y < cloudSize.y; y++) {
+				for (let x = 0; x < cloudSize.x; x++) {
+					let spriteName;
+					if (y === 0) {
+						if (x === 0) spriteName = "Block_Cloud_Left";
+						else if (x === cloudSize.x - 1) spriteName = "Block_Cloud_Right";
+						else spriteName = "Block_Cloud_Middle";
+					} else {
+						if (x === 0) spriteName = "Block_Cloud_Bottom_Left";
+						else if (x === cloudSize.x - 1) spriteName = "Block_Cloud_Bottom_Right";
+						else spriteName = "Block_Cloud_Bottom";
+					}
+					const sprite = js2d.sprites[spriteName];
+					if (sprite && sprite.image) {
+						js2d.drawSprite(sprite.image, 0, { x: cloudPos.x + tileSize * x, y: cloudPos.y + tileSize * y }, this.spriteScale);
+					}
+				}
+			}
+		}
+
+		drawBlocks(){
+			if (!this.currentMap) return;
+
+			const mapWidth = this.currentMap.dimensions.width;
+			for (let i = 0; i < this.currentMap.map.length; i++) {
+				const blockId = this.currentMap.map[i];
+				
+				if (blockId === 0 || this.foregroundBlocks.includes(blockId)) continue;
+				
+				const coords = js2d.indexToCoords(i, mapWidth);
+				const blockPos = this.tileToScreen(Math.floor(coords.x), Math.floor(coords.y));
+				
+				let spriteName = BlockType[blockId];
+				if (blockId === 34) {
+					spriteName = this.specialBlocks[i]?.revealed ? 'Object_Question' : 'Block_Brick';
+				}
+
+				const sprite = js2d.sprites[spriteName];
+				if (sprite && sprite.image) {
+					js2d.drawSprite(sprite.image, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
+				}
+			}
+		}
+
+		drawForegroundBlocks() {
+			if (!this.currentMap) return;
+			const mapWidth = this.currentMap.dimensions.width;
+			for (let i = 0; i < this.currentMap.map.length; i++) {
+				const blockId = this.currentMap.map[i];
+				if (!this.foregroundBlocks.includes(blockId)) continue;
+				const coords = js2d.indexToCoords(i, mapWidth);
+				const blockPos = this.tileToScreen(coords.x, coords.y);
+				const sprite = js2d.sprites[BlockType[blockId]];
+				if (sprite && sprite.image) {
+					js2d.drawSprite(sprite.image, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
+				}
+			}
+		}
+		
+		spawnCoin(x, y) {
+			const coin = {
+				x: x + (this.tileSize / 4),
+				y: y,
+				vY: -10,
+				timer: 0,
+				active: true,
+				rotation: 0
+			};
+			this.activeCoins.push(coin);
+		}
+
+		updateAndDrawCoins() {
+			for (let i = this.activeCoins.length - 1; i >= 0; i--) {
+				const coin = this.activeCoins[i];
+
+				coin.y += coin.vY;
+				coin.vY += 0.8;
+				coin.timer++;
+
+				coin.rotation = (coin.rotation + coinSpinVelocity) % 360;
+
+				const coinSprite = js2d.animatedSprites["Coin"];
+				const coinData = js2d.sprites["Object_Coin"];
+				
+				js2d.drawSprite(
+					coinData.image, 
+					coinSprite.currentFrame, 
+					{x: coin.x, y: coin.y}, 
+					coinSprite.scale, 
+					false,
+					coin.rotation,
+					Pivot.Center
+				);
+
+				if (coin.timer > 30) {
+					this.activeCoins.splice(i, 1);
+				}
+			}
+
+			const coinAnim = js2d.animatedSprites["Coin"].animations["Coin_Shine"];
+			js2d.animatedSprites["Coin"].frameCounter++;
+			if (js2d.animatedSprites["Coin"].frameCounter % coinAnim.frameSpeed === 0) {
+				js2d.animatedSprites["Coin"].currentFrame = (js2d.animatedSprites["Coin"].currentFrame + 1) % coinAnim.frames.length;
+			}
+		}
+
+		drawBumpingBlocksOverlay() {
+			for (let i = this.bumpingBlocks.length - 1; i >= 0; i--) {
+				const block = this.bumpingBlocks[i];
+				block.y += block.vY;
+				block.vY += this.gravity * 1.5;
+				if (block.y >= block.originalY) {
+					let finalId = block.originalId;
+					if (block.originalId === 3) finalId = 4;
+					if (block.originalId === 34) {
+						finalId = (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) ? 4 : 34;
+					}
+					this.currentMap.map[block.mapIndex] = finalId;
+					this.bumpingBlocks.splice(i, 1);
+					continue;
+				}
+				let spriteNameToDraw = BlockType[block.originalId];
+				if (block.originalId === 34) {
+					if (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) {
+						spriteNameToDraw = 'Object_Question_Used';
+					} else {
+						spriteNameToDraw = 'Object_Question';
+					}
+				}
+				const spriteData = js2d.sprites[spriteNameToDraw];
+				if (spriteData) {
+					js2d.drawSprite(spriteData.image, 0, { x: block.x, y: block.y }, spriteData.scale, false, 0, Pivot.Top_Left);
+				}
+			}
+		}
+
+		drawPlayer(name, dt){
+			const player = js2d.animatedSprites[name];
+			const playerPos = player.position;
+			const dt_sec = dt / 1000;
+
+			if (this.state === Game_State.Player_Dying) {
+				js2d.setAnimationForSprite(name, `${PlayerName[this.player]}_Fail`);
+				this.velocityY += this.gravity * 60 * dt_sec;
+				playerPos.y += this.velocityY * 60 * dt_sec;
+				
+				if (playerPos.y > js2d.canvas.height + this.tileSize) { 
+					this.handleDeath(); 
+				}
+				js2d.drawAnimatedSprite(name, Pivot.Top_Left);
+				return;
+			}
+
+			const mapWidth = this.currentMap.dimensions.width;
+			const inBounds = (x, y) => x >= 0 && x < mapWidth;
+			const isSolid = (blockId) => blockId > 0 && blockId !== 25 && blockId !== 12 && blockId !== 26;
+			if (this.skidTimer > 0) this.skidTimer--;
+			
+			this.velocityY += this.gravity;
+			const newY = playerPos.y + this.velocityY;
+
+			if (this.velocityY < 0) {
+				const headCenterTile = this.screenToTile(playerPos.x + this.tileSize / 2, newY);
+				let hitCeiling = false;
+				if (inBounds(headCenterTile.x, headCenterTile.y)) {
+					const idx = js2d.coordsToIndex({x: headCenterTile.x, y: headCenterTile.y}, mapWidth);
+					const blockId = this.currentMap.map[idx] || 0;
+					if (blockId === 25) {
+						this.currentMap.map[idx] = 4;
+						const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
+						this.spawnPowerup(blockX, blockY, '1UP');
+					}
+					if (blockId === 3) {
+						this.currentMap.map[idx] = 4; this.coins++; js2d.playAudio(audio["Coin"], false);
+						const { x: coinX, y: coinY } = this.tileToScreen(idx % mapWidth, Math.floor(idx / mapWidth));
+						this.spawnCoin(coinX, coinY - this.tileSize);
+					}
+					if (blockId === 34) {
+						if (!this.specialBlocks[idx]) {
+							this.specialBlocks[idx] = { coinsLeft: 10, revealed: true }; js2d.playAudio(audio["Player_Bump"], false);
+						} else if (this.specialBlocks[idx].coinsLeft > 0) {
+							this.specialBlocks[idx].coinsLeft--; this.coins++; js2d.playAudio(audio["Coin"], false);
+							const { x: coinX, y: coinY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
+							this.spawnCoin(coinX, coinY - this.tileSize);
+							if (this.specialBlocks[idx].coinsLeft === 0) { this.currentMap.map[idx] = 4; }
+						}
+					}
+					if (blockId === 2 || blockId === 3 || blockId === 25 || (blockId === 34 && this.specialBlocks[idx]?.coinsLeft > 0)) {
+						const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
+						const isDepleted = blockId === 34 && this.specialBlocks[idx]?.coinsLeft === 0;
+						if (!isAlreadyBumping && !isDepleted) {
+							const screenPos = this.tileToScreen(headCenterTile.x, headCenterTile.y);
+							this.bumpingBlocks.push({ x: screenPos.x, y: screenPos.y, originalY: screenPos.y, vY: -6, mapIndex: idx, originalId: blockId });
+							this.currentMap.map[idx] = 0;
+						}
+					}
+					if (isSolid(blockId)) {
+						this.velocityY = 0;
+						playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y;
+						hitCeiling = true;
+						js2d.playAudio(audio["Player_Bump"]);
+					}
+				}
+				if (!hitCeiling) { playerPos.y = newY; }
+			} else {
+				const bottomLeft = this.screenToTile(playerPos.x + 4, newY + this.tileSize);
+				const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 4, newY + this.tileSize);
+				let foundGround = false;
+				for (let tx = bottomLeft.x; tx <= bottomRight.x; tx++) {
+					if (inBounds(tx, bottomLeft.y)) {
+						const idx = js2d.coordsToIndex({x: tx, y: bottomLeft.y}, mapWidth);
+						const blockId = this.currentMap.map[idx] || 0;
+						if (isSolid(blockId)) {
+							playerPos.y = this.tileToScreen(tx, bottomLeft.y).y - this.tileSize;
+							this.isOnGround = true; this.velocityY = 0; foundGround = true; break;
+						}
+					}
+				}
+				if (!foundGround) { this.isOnGround = false; playerPos.y = newY; }
+			}
+
+			const isTurbo = js2d.keysPressed['ShiftLeft'] || js2d.keysPressed['ShiftRight'];
+			const isTryingToMoveLeft = js2d.keysPressed['ArrowLeft'] || js2d.keysPressed['KeyA'];
+			const isTryingToMoveRight = js2d.keysPressed['ArrowRight'] || js2d.keysPressed['KeyD'];
+			const isMoving = isTryingToMoveLeft || isTryingToMoveRight;
+			const stoppedRunningTurbo = !isMoving && this.wasMovingTurbo;
+			const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
+			
+			if (this.isOnGround && this.skidTimer <= 0 && (stoppedRunningTurbo || changedDirection)) {
+				js2d.playAudio(audio["Player_Skid"], false);
+				this.skidTimer = 10;
+			}
+			
+			const animationName = PlayerName[this.player];
+			if (this.velocityY < 0 && !this.isOnGround) { js2d.setAnimationForSprite(name, `${animationName}_Jump`); }
+			else if (this.velocityY > this.gravity && !this.isOnGround) { js2d.setAnimationForSprite(name, `${animationName}_Fall`); }
+			else if (this.skidTimer > 0 && this.isOnGround) { js2d.setAnimationForSprite(name, `${animationName}_Stop`); }
+			else if (isMoving && this.isOnGround) { js2d.setAnimationForSprite(name, `${animationName}_Run`); }
+			else if (!isMoving && this.isOnGround) { js2d.setAnimationForSprite(name, `${animationName}_Idle`); }
+
+			if (js2d.keysPressed['Escape']) { this.exitGame(); js2d.stopAudio(audio["Main_Theme"]); js2d.playAudio(audio["Pause"], false); return; }
+
+			const velocityX = (isTurbo ? this.velocityXTurbo : this.velocityXGround) * dt_sec;
+
+			if (isTryingToMoveLeft) {
+				player.flipped = true;
+				const newX = playerPos.x - velocityX;
+				const leftTop = this.screenToTile(newX + 4, playerPos.y);
+				const leftBottom = this.screenToTile(newX + 4, playerPos.y + this.tileSize - 1);
+				let blocked = false;
+				for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
+					if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[js2d.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
+						playerPos.x = this.tileToScreen(leftTop.x + 1, ty).x; blocked = true; break;
+					}
+				}
+				if (!blocked) playerPos.x = newX;
+			} else if (isTryingToMoveRight) {
+				player.flipped = false;
+				const newX = playerPos.x + velocityX;
+				const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
+				const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + this.tileSize - 1);
+				let blocked = false;
+				for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
+					if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[js2d.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
+						playerPos.x = this.tileToScreen(rightTop.x, ty).x - this.tileSize; blocked = true; break;
+					}
+				}
+				if (!blocked) {
+					if (playerPos.x < (js2d.canvas.width / 2)) playerPos.x = newX;
+					else this.mapOffset.x -= velocityX;
+				}
+			}
+			
+			if ((js2d.keysPressed['ArrowUp'] || js2d.keysPressed['KeyW'] || js2d.keysPressed['Space']) && this.isOnGround) {
+				this.velocityY = this.jumpPower; this.isOnGround = false;
+				js2d.setVolume(audio["Player_Jump"], 0.2);
+				js2d.playAudio(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"], false);
+			}
+			
+			this.wasMovingTurbo = isMoving && isTurbo && this.isOnGround;
+			if (playerPos.y > js2d.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
+
+			js2d.drawAnimatedSprite(name, Pivot.Top_Left);
+		}
+
+		spawnPowerup(x, y, type) {
+			this.activePowerups.push({ x: x, y: y, vx: 2.5, vy: 0, type: type, state: "emerging", emergeCounter: this.tileSize });
+			js2d.playAudio(audio["Powerup_Appears"], false);
+		}
+
+		updateAndDrawPowerups() {
+			const player = js2d.animatedSprites[PlayerName[this.player]];
+			for (let i = this.activePowerups.length - 1; i >= 0; i--) {
+				const p = this.activePowerups[i];
+				if (p.state === "emerging") {
+					p.y -= 1; p.emergeCounter--;
+					if (p.emergeCounter <= 0) { p.state = "moving"; }
+				} else {
+					p.vy += this.gravity; p.x += p.vx; p.y += p.vy;
+					const groundTile = this.screenToTile(p.x, p.y + this.tileSize);
+					const groundIndex = js2d.coordsToIndex(groundTile, this.currentMap.dimensions.width);
+					if (this.currentMap.map[groundIndex] > 0) {
+						p.vy = 0; p.y = this.tileToScreen(groundTile.x, groundTile.y).y - this.tileSize;
+					}
+					const wallCheckX = p.vx > 0 ? p.x + this.tileSize : p.x;
+					const wallTile = this.screenToTile(wallCheckX, p.y);
+					if (this.currentMap.map[js2d.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) { p.vx *= -1; }
+				}
+				const powerupRect = { x: p.x, y: p.y, w: this.tileSize, h: this.tileSize };
+				const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
+				if (this.rectsOverlap(playerRect, powerupRect)) {
+					console.log("VIDA EXTRA!");
+					js2d.playAudio(audio["Life"], false);
+					this.activePowerups.splice(i, 1);
+					continue;
+				}
+				const spriteData = js2d.sprites['Object_Mushroom_1UP'];
+				js2d.drawSprite(spriteData.image, 0, { x: p.x, y: p.y }, spriteData.scale, false, 0, Pivot.Top_Left);
+			}
+		}
+
+		drawUI(){
+			const cols = 4;
+			const paddingX = this.textSize * 4;
+			const paddingY = this.textSize;
+			const colWidth = (js2d.getCanvasWidth() - paddingX * 2) / cols;
+			js2d.drawTextCustom(font, PlayerName[this.player], this.textSize, "#ffffff", {x: paddingX, y: paddingY * 2}, "left");
+			js2d.drawTextCustom(font, this.score.toString().padStart(6, "0"), this.textSize, "#ffffff", {x: paddingX, y: paddingY * 3}, "left");
+			const coinSprite = js2d.sprites["UI_Coin"];
+			if (coinSprite && coinSprite.image) {
+				const coinPos = { x: colWidth + paddingX + paddingX * 0.15, y: paddingY * 3 - this.textSize + paddingY * 0.15 };
+				js2d.drawSprite(coinSprite.image, 0, coinPos, this.spriteScale / 1.8, false, 0, Pivot.Top_Left);
+			}
+			const coinText = String.fromCharCode('0x00D7') + this.coins.toString().padStart(2, "0");
+			js2d.drawTextCustom(font, coinText, this.textSize, "#ffffff", {x: colWidth + paddingX + 32, y: paddingY * 3}, "left");
+			js2d.drawTextCustom(font, "WORLD", this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2, y: paddingY * 2}, "center");
+			js2d.drawTextCustom(font, ' ' + map.world, this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2 - this.textSize / 2, y: paddingY * 3}, "center");
+			js2d.drawTextCustom(font, "TIME", this.textSize, "#ffffff", {x: js2d.getCanvasWidth() - paddingX, y: paddingY * 2}, "right");
+			js2d.drawTextCustom(font, Math.floor(this.time).toString().padStart(3, "0"), this.textSize, "#ffffff", {x: js2d.getCanvasWidth() - paddingX, y: paddingY * 3}, "right");
+		}
+	}
+
+	js2d.resizeCanvas();
+	smb = new Game(fontSize);
+}
+
+init().then(() => {
+	requestAnimationFrame(animate);
+}).catch(error => {
+	console.error("[SMB] No se pudo cargar el juego.", error);
+});

@@ -174,13 +174,25 @@
 			}
 		}
 
+		function updateAnimations() {
+		    js2d.animatedSprites["Goomba"].frameCounter++;
+		    js2d.animatedSprites["Koopa"].frameCounter++;
+		    js2d.animatedSprites["Koopa_Winged"].frameCounter++;
+		    js2d.animatedSprites["Pakkun"].frameCounter++;
+		    js2d.animatedSprites["Coin"].frameCounter++;
+		    js2d.animatedSprites["UICoin"].frameCounter++;
+		}
+
 		function animate(timestamp) {
-			if (!js2d.last_timestamp) { js2d.last_timestamp = timestamp; }
-			let dt = timestamp - js2d.last_timestamp;
-			js2d.last_timestamp = timestamp;
-			
-			update(dt);
-			requestAnimationFrame(animate);
+		    if (!js2d.last_timestamp) { js2d.last_timestamp = timestamp; }
+		    let dt = timestamp - js2d.last_timestamp;
+		    js2d.last_timestamp = timestamp;
+
+		    js2d.tick(timestamp);
+		    updateAnimations();
+
+		    update(dt);
+		    requestAnimationFrame(animate);
 		}
 
 		async function init() {
@@ -199,7 +211,7 @@
 				["Enemy_Goomba", "assets/images/goomba.png", tileScale, 16, 16],
 				["Enemy_Koopa", "assets/images/koopa.png", tileScale, 16, 24],
 				["Enemy_Koopa_Winged", "assets/images/koopa_winged.png", tileScale, 16, 24],
-				["Enemy_Koopa_Shell", "assets/images/koopa_shell.png", tileScale],
+				["Enemy_Koopa_Shell", "assets/images/koopa_shell.png", tileScale, 16],
 				["Enemy_Pakkun", "assets/images/pakkun.png", tileScale, 16, 24],
 				["Object_Mushroom_Grow", "assets/images/mushroom_grow.png", tileScale],
 				["Object_Mushroom_1UP", "assets/images/mushroom_life.png", tileScale],
@@ -211,7 +223,7 @@
 				["Object_Question_Used", "assets/images/block_used.png", tileScale],
 				["Object_Coin", "assets/images/coin.png", tileScale, 16, 16],
 				["UI_Coin", "assets/images/coin_score.png", fontSize / tileSize, 8, 8],
-				["Cursor", "assets/images/cursor.png", fontSize / tileScale / 2],
+				["Cursor", "assets/images/cursor.png", fontSize / tileScale / 2, 8, 8],
 				["Block_Stairs", "assets/images/stair_block.png", tileScale],
 				["Block_Pipe_Top_Left", "assets/images/pipe_top_left.png", tileScale],
 				["Block_Pipe_Top_Right", "assets/images/pipe_top_right.png", tileScale],
@@ -656,10 +668,6 @@
 							}
 						}
 					}
-					js2d.animatedSprites["Goomba"].frameCounter++;
-					js2d.animatedSprites["Koopa"].frameCounter++;
-					js2d.animatedSprites["Koopa_Winged"].frameCounter++;
-					js2d.animatedSprites["Pakkun"].frameCounter++;
 				}
 
 				drawBlackScreen(){
@@ -875,12 +883,6 @@
 							this.activeCoins.splice(i, 1);
 						}
 					}
-
-					const coinAnim = js2d.animatedSprites["Coin"].animations["Coin_Shine"];
-					js2d.animatedSprites["Coin"].frameCounter++;
-					if (js2d.animatedSprites["Coin"].frameCounter % coinAnim.frameSpeed === 0) {
-						js2d.animatedSprites["Coin"].currentFrame = (js2d.animatedSprites["Coin"].currentFrame + 1) % coinAnim.frames.length;
-					}
 				}
 
 				drawBumpingBlocksOverlay() {
@@ -983,7 +985,7 @@
 						if (!hitCeiling) { playerPos.y = newY; }
 					} else {
 						const bottomLeft = this.screenToTile(playerPos.x + 4, newY + this.tileSize);
-						const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 5, newY + this.tileSize);
+						const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 4, newY + this.tileSize);
 						let foundGround = false;
 						for (let tx = bottomLeft.x; tx <= bottomRight.x; tx++) {
 							if (inBounds(tx, bottomLeft.y)) {
@@ -1036,8 +1038,8 @@
 					} else if (isTryingToMoveRight) {
 						player.flipped = false;
 						const newX = playerPos.x + velocityX;
-						const rightTop = this.screenToTile(newX + this.tileSize - 5, playerPos.y);
-						const rightBottom = this.screenToTile(newX + this.tileSize - 5, playerPos.y + this.tileSize - 1);
+						const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
+						const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + this.tileSize - 1);
 						let blocked = false;
 						for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
 							if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[js2d.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {

@@ -925,9 +925,9 @@ class Js2d {
 	    }
 
 	    if (flipped) {
-	        this.ctx.scale(-1, 1);
-	        drawOffsetX *= -1;
-	    }
+		    this.ctx.scale(-1, 1);
+		    drawOffsetX = -drawOffsetX - dWidth;
+		}
 
 	    // 4. Dibujamos la imagen en la posición desfasada.
 	    // Redondeamos también los offsets para máxima precisión.
