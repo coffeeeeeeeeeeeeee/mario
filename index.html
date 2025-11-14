@@ -25,7 +25,7 @@
 	<canvas id="game" allow="autoplay; fullscreen"></canvas>
 
 	<!-- Maps -->
-	<script type="text/javascript" src="assets/maps/1-1.json"></script>
+	<script type="application/javascript" src="assets/maps/1-1.js"></script>
 
 	<script>
 		const canvas = document.getElementById("game");
@@ -125,6 +125,7 @@
 
 		let smb;
 		let font;
+		// let map;
 
 		function update(dt) {
 			if (!smb) return;
@@ -354,7 +355,7 @@
 
 				loadMap(name) {
 					if(map.world == name){
-						this.currentMap = JSON.parse(JSON.stringify(map));
+						this.currentMap = map;
 						console.info(`[SMB] Mapa cargado: ${name}`);
 
 						this.enemies = [];
@@ -628,7 +629,7 @@
 								js2d.setAnimationForSprite('Koopa_Winged', 'Koopa_Winged_Walk');
 								wingedSprite.position = { x: screenX, y: enemy.y - this.tileSize / 2 };
 								wingedSprite.flipped = enemy.vx > 0;
-								js2d.drawAnimatedSprite('Koopa_Winged');
+								js2d.drawAnimatedSprite('Koopa_Winged', Pivot.Top_Left);
 							}
 							else if (enemy.type === 'Koopa' && (enemy.state === 'shell' || enemy.state === 'falling')) {
 								const shellSprite = js2d.animatedSprites['Koopa_Shell'];
@@ -639,7 +640,7 @@
 									js2d.setAnimationForSprite('Koopa_Shell', 'Shell_Sliding');
 								}
 								shellSprite.position = { x: screenX, y: enemy.y };
-								js2d.drawAnimatedSprite('Koopa_Shell');
+								js2d.drawAnimatedSprite('Koopa_Shell', Pivot.Top_Left);
 							} else {
 								// Dibuja Goomba o Koopa caminando
 								const animSprite = js2d.animatedSprites[enemy.type];
@@ -651,7 +652,7 @@
 									animSprite.position.y -= this.tileSize / 2;
 								}
 								animSprite.flipped = enemy.vx > 0;
-								js2d.drawAnimatedSprite(enemy.type);
+								js2d.drawAnimatedSprite(enemy.type, Pivot.Top_Left);
 							}
 						}
 					}
@@ -925,7 +926,7 @@
 						if (playerPos.y > js2d.canvas.height + this.tileSize) { 
 							this.handleDeath(); 
 						}
-						js2d.drawAnimatedSprite(name);
+						js2d.drawAnimatedSprite(name, Pivot.Top_Left);
 						return;
 					}
 
@@ -1058,7 +1059,7 @@
 					this.wasMovingTurbo = isMoving && isTurbo && this.isOnGround;
 					if (playerPos.y > js2d.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
 
-					js2d.drawAnimatedSprite(name);
+					js2d.drawAnimatedSprite(name, Pivot.Top_Left);
 				}
 
 				spawnPowerup(x, y, type) {
@@ -1130,5 +1131,4 @@
 
 	</script>
 </body>
-
 </html>
