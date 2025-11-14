@@ -297,7 +297,7 @@ class Game {
 		this.velocityY = 0;
 		this.time = 400;
 		this.specialBlocks = {};
-		this.loadMap("1-1b");
+		this.loadMap("1-1");
 	}
 
 	resetLevel() {
