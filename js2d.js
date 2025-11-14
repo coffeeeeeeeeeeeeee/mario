@@ -1000,7 +1000,7 @@ class Js2d {
 		}
 	}
 
-	drawAnimatedSprite(name) {
+	drawAnimatedSprite(name, pivot = Pivot.Center) {
 		const sprite = this.animatedSprites[name]
 		if (!sprite || !sprite.currentAnimation) return
 
@@ -1024,7 +1024,7 @@ class Js2d {
 		const spriteData = this.sprites[sprite.spriteName]
 		const frame = animation.frames[sprite.currentFrame]
 
-		this.drawSprite(spriteData.image, frame, sprite.position, sprite.scale, sprite.flipped, 0, Pivot.Top_Left)
+		this.drawSprite(spriteData.image, frame, sprite.position, sprite.scale, sprite.flipped, 0, pivot)
 	}
 
 	getCurrentFrame(name) {
