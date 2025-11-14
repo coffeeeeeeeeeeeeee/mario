@@ -19,6 +19,8 @@ const audio = {
 	"Life": js2d.loadAudio("assets/audios/1_up.mp3"),
 	"Pause": js2d.loadAudio("assets/audios/pause.mp3"),
 	"Powerup_Appears": js2d.loadAudio("assets/audios/powerup_appears.mp3"),
+	"Flagpole": js2d.loadAudio("assets/audios/flagpole.mp3"),
+	"Level_Clear": js2d.loadAudio("assets/audios/level_clear.mp3"),
 };
 
 function update(dt) {
@@ -49,6 +51,19 @@ function update(dt) {
 			smb.drawUI();
 			break;
 
+		case Game_State.Level_Complete:
+			smb.drawBackground();
+			smb.drawBlocks();
+			smb.updateAndDrawCoins();
+			smb.updateAndDrawPowerups();
+			smb.drawBumpingBlocksOverlay();
+			smb.drawEnemies(dt);
+			smb.updateAndDrawLevelComplete(dt);
+			smb.drawForegroundBlocks();
+			smb.updateAndDrawScorePopups();
+			smb.drawUI();
+			break;
+
 		case Game_State.Playing:
 			smb.time -= dt / 1000;
 			if (audio["Main_Theme"].paused && !audio["Main_Theme"].ended) {
@@ -63,6 +78,7 @@ function update(dt) {
 			smb.drawEnemies(dt);
 			smb.drawPlayer(PlayerName[smb.player], dt);
 			smb.drawForegroundBlocks();
+			smb.updateAndDrawScorePopups();
 			smb.drawUI();
 			break;
 	}
@@ -127,6 +143,9 @@ async function init() {
 		["Block_Cloud_Bottom_Left", "assets/images/cloud_left_bottom.png", tileScale],
 		["Block_Cloud_Bottom", "assets/images/cloud_bottom.png", tileScale],
 		["Block_Cloud_Bottom_Right", "assets/images/cloud_right_bottom.png", tileScale],
+		["Block_Bush_Left", "assets/images/bush_left.png", tileScale],
+		["Block_Bush_Middle", "assets/images/bush_middle.png", tileScale],
+		["Block_Bush_Right", "assets/images/bush_right.png", tileScale],
 		["Block_Multi_Coin", "assets/images/brick.png", tileScale],
 		["Block_Used", "assets/images/block_used.png", tileScale],
 		["Block_Life_Used", "assets/images/block_life_used.png", tileScale],
@@ -153,6 +172,7 @@ async function init() {
 	js2d.addAnimationToSprite("Mario", "Mario_Stop", [4], true, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Jump", [5], false, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Fail", [6], true, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Slide", [14], false, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Fall", [7, 8], true, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Swim", [9, 10, 11, 12, 13], true, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Idle", [0], true, 16);
@@ -160,6 +180,7 @@ async function init() {
 	js2d.addAnimationToSprite("Luigi", "Luigi_Stop", [4], true, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Jump", [5], false, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Fail", [6], true, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Slide", [14], false, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Fall", [7, 8], true, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Swim", [9, 10, 11, 12, 13], true, 16);
 	js2d.addAnimationToSprite("Goomba", "Goomba_Walk", [0, 1], true, 16);
@@ -192,6 +213,7 @@ async function init() {
 
 	js2d.resizeCanvas();
 	smb = new Game(js2d, fontSize);
+	smb.loadMap("0-0");
 }
 
 init().then(() => {

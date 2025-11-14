@@ -7,6 +7,7 @@ const Game_State = {
 	Playing:    2,
 	Player_Dying: 3,
 	Black_Screen: 4,
+	Level_Complete: 5,
 };
 
 const Player = {
@@ -76,10 +77,16 @@ const BlockType = [
 class Game {
 	engine = null;
 	state = Game_State.Title_Menu;
-	currentSelection = 0;
 	player = Player.Mario;
-	highscore = 0;
 	currentMap = null;
+	
+	score = 0;
+	time = 0;
+	lives = DEFAULT_LIVES;
+	coins = 0;
+	highscore = 0;
+
+	currentSelection = 0;
 	mapOffset = {x: 0, y: 0};
 	spriteSize = 16;
 	spriteScale = 4;
@@ -87,18 +94,20 @@ class Game {
 	velocityY = 0;
 	jumpPower = -22;
 	gravity = 0.8;
-	isOnGround = true;
-	isSwimming = true;
 	textSize = 16;
-	score = 0;
-	time = 0;
-	lives = DEFAULT_LIVES;
-	coins = 0;
+	
+	isOnGround = true;
+	isSwimming = true;	
+
+	levelCompleteState = 'none'; // 'sliding', 'dismounting', 'walking_to_castle', 'finished'
+    flagpoleInfo = null;
+    playerIsVisible = true;
 
 	enemies = [];
 	activeCoins = [];
 	bumpingBlocks = [];
 	activePowerups = [];
+	scorePopups = [];
 
 	skidTimer = 0;
 	wasMovingTurbo = false;
@@ -140,15 +149,17 @@ class Game {
 	}
 
 	loadMap(name) {
-		if(map.world == name){
-			this.currentMap = map;
+		// Encuentra el mapa por el nombre del mundo en el array de mapas
+		const mapData = map.find(m => m.world === name);
+
+		if (mapData) {
+			this.currentMap = JSON.parse(JSON.stringify(mapData)); // Copia profunda para evitar modificar el original
 			console.info(`[SMB] Mapa cargado: ${name}`);
 
 			this.enemies = [];
-
 			const map_w = this.currentMap.dimensions.width;
 
-			for(var i = 0; i < this.currentMap.map.length; i++){
+			for (var i = 0; i < this.currentMap.map.length; i++) {
 				const blockId = this.currentMap.map[i];
 				let enemyType = null;
 
@@ -187,6 +198,8 @@ class Game {
 					this.currentMap.map[i] = 0;
 				}
 			}
+		} else {
+			console.error(`[SMB] No se pudo encontrar el mapa: ${name}`);
 		}
 	}
 
@@ -217,8 +230,15 @@ class Game {
 		}
 	}
 
-	continueGame() { this.restoreGameState(); this.state = Game_State.Playing; }
-	exitGame() { this.saveGameState(); this.state = Game_State.Title_Menu; }
+	continueGame() {
+		this.restoreGameState();
+		this.state = Game_State.Playing;
+	}
+	
+	exitGame() {
+		this.saveGameState();
+		this.state = Game_State.Title_Menu;
+	}
 
 	selectPlayer(player) {
 		this.player = player;
@@ -573,6 +593,12 @@ class Game {
 
 	drawMenu() {
 		this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.BG_1);
+
+		// Dibuja el mapa cargado (0-0) como fondo
+		this.drawBackground();
+		this.drawBlocks();
+		this.drawForegroundBlocks();
+
 		this.drawUI();
 
 		const titleMaxY = 0.65;
@@ -633,37 +659,69 @@ class Game {
 
 	drawBackground() {
 		this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.BG_1);
-		const bgStep = 0.3;
+		
 		const parallaxSpeed = 0.5;
 		const offsetX = this.mapOffset.x * parallaxSpeed;
+		const numObjects = Math.ceil(this.currentMap.dimensions.width * 0.3);
+
+		// Dibujar Nubes
 		const cloudY = 80;
-		const numClouds = Math.ceil(this.currentMap.dimensions.width * bgStep);
-		for (let i = 0; i < numClouds; i++) {
-			const cloudSizeX = 3 + (i % 2);
+		for (let i = 0; i < numObjects; i++) {
+			const cloudSizeX = 2 + (i % 2);
 			const cloudOffsetY = cloudY + (i % 3) * 40;
 			const cloudX = (i * 500) + offsetX;
+			
 			if (cloudX + cloudSizeX * this.tileSize >= 0 && cloudX <= this.engine.canvas.width) {
-				this.drawCloud({x: cloudX, y: cloudOffsetY}, {x: cloudSizeX, y: 2}, this.tileSize);
+				this.drawCompositeObject({x: cloudX, y: cloudOffsetY}, {x: cloudSizeX, y: 2}, this.tileSize, 'Block_Cloud');
+			}
+		}
+		
+		// Dibujar Arbustos
+		const groundY = this.engine.canvas.height - this.tileSize * 2;
+		for (let i = 0; i < numObjects; i++) {
+			const bushSizeX = 2 + (i % 3);
+			const bushOffsetY = groundY + this.tileSize / 2;
+			// Movemos los arbustos un poco más rápido para dar profundidad
+			const bushX = (i * 350) + offsetX * 1.2;
+
+			if (bushX + bushSizeX * this.tileSize >= 0 && bushX <= this.engine.canvas.width) {
+				this.drawCompositeObject({x: bushX, y: bushOffsetY}, {x: bushSizeX, y: 1}, this.tileSize, 'Block_Bush');
 			}
 		}
 	}
 
-	drawCloud(cloudPos, cloudSize, tileSize) {
-		for (let y = 0; y < cloudSize.y; y++) {
-			for (let x = 0; x < cloudSize.x; x++) {
+	drawCompositeObject(objPos, objSize, tileSize, baseName) {
+		// Solo las nubes tienen sprites inferiores distintos
+		const hasBottomSprites = (baseName === 'Block_Cloud');
+
+		for (let y = 0; y < objSize.y; y++) {
+			for (let x = 0; x < objSize.x; x++) {
 				let spriteName;
-				if (y === 0) {
-					if (x === 0) spriteName = "Block_Cloud_Left";
-					else if (x === cloudSize.x - 1) spriteName = "Block_Cloud_Right";
-					else spriteName = "Block_Cloud_Middle";
-				} else {
-					if (x === 0) spriteName = "Block_Cloud_Bottom_Left";
-					else if (x === cloudSize.x - 1) spriteName = "Block_Cloud_Bottom_Right";
-					else spriteName = "Block_Cloud_Bottom";
+				let part = '';
+
+				if (hasBottomSprites && y > 0) {
+					part = '_Bottom';
 				}
+
+				if (x === 0) {
+					part += '_Left';
+				} else if (x === objSize.x - 1) {
+					part += '_Right';
+				} else if (y === 0) {
+					part = '_Middle'; // Para la parte superior central de las nubes
+				}
+
+				// Caso especial para el centro de las partes inferiores de la nube
+				if (hasBottomSprites && y > 0 && x > 0 && x < objSize.x - 1) {
+					part = '_Bottom';
+				}
+
+				spriteName = `${baseName}${part}`;
+				
 				const sprite = this.engine.sprites[spriteName];
 				if (sprite && sprite.image) {
-					this.engine.drawSprite(sprite.image, 0, { x: cloudPos.x + tileSize * x, y: cloudPos.y + tileSize * y }, this.spriteScale);
+					const drawPos = { x: objPos.x + tileSize * x, y: objPos.y + tileSize * y };
+					this.engine.drawSprite(sprite.image, 0, drawPos, this.spriteScale);
 				}
 			}
 		}
@@ -910,6 +968,51 @@ class Game {
 			const newX = playerPos.x + velocityX;
 			const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
 			const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + this.tileSize - 1);
+
+			const poleTileIdx = this.engine.coordsToIndex({x: rightTop.x, y: rightTop.y}, mapWidth);
+			const poleBlockId = this.currentMap.map[poleTileIdx];
+
+			if (poleBlockId === 13 && this.state === Game_State.Playing) { // 13 es Block_Flagpole
+				const poleScreenX = this.tileToScreen(rightTop.x, rightTop.y).x + (this.tileSize / 2);
+				
+				// Si el jugador ha cruzado la mitad del tile del mástil
+				// if (playerPos.x + this.tileSize >= poleScreenX) {
+					const poleTopScreenY = this.tileToScreen(rightTop.x, 2).y; // Coordenada Y del bloque superior del mástil (ID 26)
+					const playerGrabOffset = playerPos.y - poleTopScreenY;
+					let points = 0;
+
+					if (playerGrabOffset < this.tileSize) { // Tocar la punta (dentro del primer tile)
+						points = 5000;
+					} else if (playerGrabOffset < this.tileSize * 2.5) { // Un poco más abajo
+						points = 2000;
+					} else if (playerGrabOffset < this.tileSize * 5) { // Mitad superior
+						points = 800;
+					} else if (playerGrabOffset < this.tileSize * 8) { // Mitad inferior
+						points = 400;
+					} else { // Parte más baja
+						points = 100;
+					}
+
+					this.score += points;
+					this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
+
+					this.state = Game_State.Level_Complete;
+					this.levelCompleteState = 'sliding';
+					
+					playerPos.x = this.tileToScreen(rightTop.x, rightTop.y).x; // Ajusta a Mario al mástil
+					this.velocityY = 0;
+
+					this.engine.stopAudio(audio["Main_Theme"]);
+					this.engine.playAudio(audio["Flagpole"], false);
+					this.engine.setAnimationForSprite(name, `${PlayerName[this.player]}_Slide`);
+
+					// Guarda la posición del suelo para saber dónde parar de deslizar
+					const groundY = this.tileToScreen(rightTop.x, 13).y;
+					this.flagpoleInfo = { groundY: groundY, castleDoorX: playerPos.x + this.tileSize * 4 };
+					return; // Detiene el procesamiento normal del jugador
+				// }
+			}
+
 			let blocked = false;
 			for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
 				if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
@@ -932,6 +1035,60 @@ class Game {
 		if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
 
 		this.engine.drawAnimatedSprite(name, Pivot.Top_Left);
+	}
+
+	spawnScorePopup(text, x, y) {
+		this.scorePopups.push({ text: text, x: x, y: y, timer: 90 }); // El popup dura 1.5 segundos (90 frames)
+	}
+
+	updateAndDrawScorePopups() {
+		for (let i = this.scorePopups.length - 1; i >= 0; i--) {
+			const popup = this.scorePopups[i];
+			popup.y -= 0.5; // El texto flota hacia arriba
+			popup.timer--;
+
+			this.engine.drawTextCustom(font, popup.text, this.textSize, Color.WHITE, {x: popup.x, y: popup.y}, "center");
+
+			if (popup.timer <= 0) {
+				this.scorePopups.splice(i, 1); // Elimina el popup cuando el tiempo se acaba
+			}
+		}
+	}
+
+	updateAndDrawLevelComplete(dt) {
+		const player = this.engine.animatedSprites[PlayerName[this.player]];
+		const playerPos = player.position;
+
+		switch(this.levelCompleteState) {
+			case 'sliding':
+				playerPos.y += 5; // Velocidad de deslizamiento
+				if (playerPos.y >= this.flagpoleInfo.groundY) {
+					playerPos.y = this.flagpoleInfo.groundY;
+					this.levelCompleteState = 'dismounting'; // Cambia al estado intermedio
+				}
+				break;
+
+			case 'dismounting':
+				// Este estado se ejecuta una sola vez para preparar la caminata
+				playerPos.x += this.tileSize / 2; // Saca a Mario del mástil
+				player.flipped = false; // Asegúrate de que mira hacia el castillo
+				this.engine.setAnimationForSprite(PlayerName[this.player], `${PlayerName[this.player]}_Run`);
+				this.engine.playAudio(audio["Level_Clear"], false);
+				this.levelCompleteState = 'walking_to_castle'; // Pasa inmediatamente a caminar
+				break;
+
+			case 'walking_to_castle':
+				playerPos.x += 2; // Velocidad de caminata hacia el castillo
+				if (playerPos.x >= this.flagpoleInfo.castleDoorX) {
+					this.playerIsVisible = false; // Mario "entra" al castillo
+					this.levelCompleteState = 'finished';
+				}
+				break;
+		}
+
+		if (this.playerIsVisible) {
+			this.engine.drawAnimatedSprite(PlayerName[this.player], Pivot.Top_Left);
+		}
 	}
 
 	spawnPowerup(x, y, type) {
@@ -985,7 +1142,7 @@ class Game {
 		const coinText = String.fromCharCode('0x00D7') + this.coins.toString().padStart(2, "0");
 		this.engine.drawTextCustom(font, coinText, this.textSize, "#ffffff", {x: colWidth + paddingX + 32, y: paddingY * 3}, "left");
 		this.engine.drawTextCustom(font, "WORLD", this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2, y: paddingY * 2}, "center");
-		this.engine.drawTextCustom(font, ' ' + map.world, this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2 - this.textSize / 2, y: paddingY * 3}, "center");
+		this.engine.drawTextCustom(font, ' ' + this.currentMap.world, this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2 - this.textSize / 2, y: paddingY * 3}, "center");
 		this.engine.drawTextCustom(font, "TIME", this.textSize, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 2}, "right");
 		this.engine.drawTextCustom(font, Math.floor(this.time).toString().padStart(3, "0"), this.textSize, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 3}, "right");
 	}
