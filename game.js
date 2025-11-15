@@ -213,7 +213,7 @@ async function init() {
     js2d.defineSpriteFromTileset("Player_Mario", "Player_Mario_Tiles", 0, 0, 15, tileScale);
     
     // UI
-    js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, fontSize / tileScale / 2);
     js2d.defineSpriteFromTileset("Cursor", "UI_Tiles", 1, 0, 1, fontSize / tileScale / 2);
 	
     // Powerups

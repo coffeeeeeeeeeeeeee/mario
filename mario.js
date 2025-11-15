@@ -521,7 +521,7 @@ class Game {
 					isOnSolidGround = true;
 				}
 
-				// Lógica de MOVIMIENTO y GIRO para enemigos que caminan (no caparazones)
+				// MOVIMIENTO y GIRO para enemigos que caminan (no caparazones)
 				if (enemy.state === 'walking') {
 					enemy.x += enemy.vx;
 					
@@ -607,58 +607,70 @@ class Game {
 	}
 
 	drawEnemies() {
-		for (const enemy of this.enemies) {
-			const screenX = enemy.x + this.mapOffset.x;
-			if (screenX < -this.tileSize || screenX > this.engine.canvas.width) continue;
+	    const pakkunAnimSprite = this.engine.animatedSprites['Pakkun'];
+	    const biteAnim = pakkunAnimSprite.animations.Pakkun_Bite;
 
-			if (enemy.type === 'Pakkun') {
-				const animSprite = this.engine.animatedSprites['Pakkun'];
+	    if (pakkunAnimSprite.frameCounter % biteAnim.frameSpeed === 0) {
+	        pakkunAnimSprite.currentFrame = (pakkunAnimSprite.currentFrame + 1) % biteAnim.frames.length;
+	    }
+	    const pakkunFrameToDraw = biteAnim.frames[pakkunAnimSprite.currentFrame];
 
-				animSprite.position = { x: screenX, y: enemy.y };
+	    // Ahora, recorre y dibuja todos los enemigos.
+	    for (const enemy of this.enemies) {
+	        const screenX = enemy.x + this.mapOffset.x;
+	        if (screenX < -this.tileSize || screenX > this.engine.canvas.width) continue;
 
-				this.engine.drawAnimatedSprite('Pakkun', Pivot.Top_Left);
+	        if (enemy.type === 'Pakkun') {
+	            this.engine.drawSprite(
+	                'Enemy_Pakkun_Green',      // El nombre del sprite a dibujar
+	                pakkunFrameToDraw,         // El fotograma específico que calculamos
+	                { x: screenX, y: enemy.y },// La posición de este enemigo en particular
+	                this.spriteScale,          // La escala
+	                false, 0, Pivot.Top_Left
+	            );
+	        } else { // Lógica para Goomba y Koopa
+	            if (enemy.isWinged) {
+	                const wingedSprite = this.engine.animatedSprites['Koopa_Winged'];
+	                this.engine.setAnimationForSprite('Koopa_Winged', 'Koopa_Winged_Walk');
+	                wingedSprite.position = { x: screenX, y: enemy.y - this.tileSize / 2 };
+	                wingedSprite.flipped = enemy.vx > 0;
+	                this.engine.drawAnimatedSprite('Koopa_Winged', Pivot.Top_Left);
+	            }
+	            else if (enemy.type === 'Koopa' && (enemy.state === 'shell' || enemy.state === 'falling')) {
+	                const shellSpriteName = `Koopa_Shell_${enemy.color}`;
+	                const shellSprite = this.engine.animatedSprites[shellSpriteName];
+	                
+	                if (enemy.vx === 0) {
+	                    this.engine.setAnimationForSprite(shellSpriteName, 'Shell_Idle', false);
+	                } else {
+	                    this.engine.setAnimationForSprite(shellSpriteName, 'Shell_Sliding');
+	                }
+	                shellSprite.position = { x: screenX, y: enemy.y };
+	                this.engine.drawAnimatedSprite(shellSpriteName, Pivot.Top_Left);
+	            } else {
+	                const animSprite = this.engine.animatedSprites[enemy.type];
 
-			} else { // Goomba y Koopa
-				if (enemy.isWinged) {
-					const wingedSprite = this.engine.animatedSprites['Koopa_Winged'];
-					this.engine.setAnimationForSprite('Koopa_Winged', 'Koopa_Winged_Walk');
-					wingedSprite.position = { x: screenX, y: enemy.y - this.tileSize / 2 };
-					wingedSprite.flipped = enemy.vx > 0;
-					this.engine.drawAnimatedSprite('Koopa_Winged', Pivot.Top_Left);
-				}
-				else if (enemy.type === 'Koopa' && (enemy.state === 'shell' || enemy.state === 'falling')) {
-					const shellSpriteName = `Koopa_Shell_${enemy.color}`;
-					const shellSprite = this.engine.animatedSprites[shellSpriteName];
-					
-					if (enemy.vx === 0) {
-						this.engine.setAnimationForSprite(shellSpriteName, 'Shell_Idle', false);
-					} else {
-						this.engine.setAnimationForSprite(shellSpriteName, 'Shell_Sliding');
-					}
-					shellSprite.position = { x: screenX, y: enemy.y };
-					this.engine.drawAnimatedSprite(shellSpriteName, Pivot.Top_Left);
-				} else {
-					const animSprite = this.engine.animatedSprites[enemy.type];
+	                if (enemy.state === 'stomped') {
+	                    this.engine.setAnimationForSprite(enemy.type, 'Goomba_Stomped');
+	                } else {
+	                    this.engine.setAnimationForSprite(enemy.type, `${enemy.type}_Walk`);
+	                }
 
-					if (enemy.state === 'stomped') {
-						this.engine.setAnimationForSprite(enemy.type, 'Goomba_Stomped');
-					} else {
-						this.engine.setAnimationForSprite(enemy.type, `${enemy.type}_Walk`);
-					}
+	                animSprite.position = { x: screenX, y: enemy.y };
+	                if (enemy.type === 'Koopa') {
+	                    animSprite.position.y -= this.tileSize / 2;
+	                }
+	                animSprite.flipped = enemy.vx > 0;
+	                this.engine.drawAnimatedSprite(enemy.type, Pivot.Top_Left);
+	            }
+	        }
+	    }
 
-					animSprite.position = { x: screenX, y: enemy.y };
-					if (enemy.type === 'Koopa') {
-						animSprite.position.y -= this.tileSize / 2;
-					}
-					animSprite.flipped = enemy.vx > 0;
-					this.engine.drawAnimatedSprite(enemy.type, Pivot.Top_Left);
-				}
-			}
-		}
-		this.engine.animatedSprites["Goomba"].frameCounter++;
-		this.engine.animatedSprites["Koopa"].frameCounter++;
-		this.engine.animatedSprites["Koopa_Winged"].frameCounter++;
-		this.engine.animatedSprites["Pakkun"].frameCounter++;
+	    // Al final, incrementa los contadores de TODOS los sprites animados una vez por fotograma de juego.
+	    this.engine.animatedSprites["Goomba"].frameCounter++;
+	    this.engine.animatedSprites["Koopa"].frameCounter++;
+	    this.engine.animatedSprites["Koopa_Winged"].frameCounter++;
+	    this.engine.animatedSprites["Pakkun"].frameCounter++;
 	}
 
 	drawBlackScreen(){
