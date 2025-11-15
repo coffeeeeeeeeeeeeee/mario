@@ -71,6 +71,8 @@ class Js2d {
 	constructor(canvas) {
 		this.canvas = canvas;
 		this.ctx = canvas.getContext('2d');
+		this.tilesets = {};
+
 		this.initListeners();
 		
 		// Inicializar tablas de permutación para Simplex Noise
@@ -861,62 +863,108 @@ class Js2d {
 		}
 	}
 
-	drawSprite(image, frame = 0, pos, scale = 1, flipped = false, rotation = 0, pivot = Pivot.Center) {
+	async loadTileset(name, path, tileWidth, tileHeight) {
+		try {
+			const image = await this.loadImage(path);
+			this.tilesets[name] = {
+				image: image,
+				tileWidth: tileWidth,
+				tileHeight: tileHeight
+			};
+			console.log(`[Js2d] Tileset "${name}" cargado correctamente desde "${path}"`);
+			return this.tilesets[name];
+		} catch (error) {
+			console.error(`[Js2d] No se pudo cargar el tileset "${name}".`, error);
+			return null;
+		}
+	}
+
+	defineSpriteFromTileset(spriteName, tilesetName, tileX, tileY, numFrames = 1, scale = 1) {
+		if (!this.tilesets[tilesetName]) {
+			console.error(`[Js2d] No se puede definir el sprite "${spriteName}" porque el tileset "${tilesetName}" no existe.`);
+			return;
+		}
+
+		this.sprites[spriteName] = {
+			tilesetName: tilesetName,
+			tileX: tileX, // Coordenada X del primer fotograma (en tiles)
+			tileY: tileY, // Coordenada Y del primer fotograma (en tiles)
+			numFrames: numFrames,
+			scale: scale
+		};
+	}
+
+	drawSprite(imageOrSpriteName, frame = 0, pos, scale = 1, flipped = false, rotation = 0, pivot = Pivot.Center) {
 		let spriteInfo = null;
-		for (const key in this.sprites) {
-			if (this.sprites[key].image === image) {
-				spriteInfo = this.sprites[key];
-				break;
+		let image;
+
+		// Primero, determinamos si estamos trabajando con un nombre de sprite o una imagen directa.
+		if (typeof imageOrSpriteName === 'string') {
+			spriteInfo = this.sprites[imageOrSpriteName];
+		} else if (imageOrSpriteName instanceof HTMLImageElement) {
+			image = imageOrSpriteName;
+			// Buscamos si hay info de sprite asociada a esta imagen
+			for (const key in this.sprites) {
+				if (this.sprites[key].image === image) {
+					spriteInfo = this.sprites[key];
+					break;
+				}
 			}
 		}
 
-		if (!image) return;
-		const loaded = image._loaded || (image.complete && image.naturalWidth);
-		if (!loaded) return;
+		if (!image && !spriteInfo) return; // No se puede dibujar nada.
 
-		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
+		let sx, sy, sWidth, sHeight; // Coordenadas y tamaño del recorte (Source)
 
-		const iw = image._w || image.naturalWidth;
-		const ih = image._h || image.naturalHeight;
+		if (spriteInfo && spriteInfo.tilesetName) {
+			// Sprite de un Tileset
+			const tileset = this.tilesets[spriteInfo.tilesetName];
+			if (!tileset) return;
 
-		let sWidth, sHeight, dx, dy;
+			image = tileset.image;
+			sWidth = tileset.tileWidth;
+			sHeight = tileset.tileHeight;
 
-		if (spriteInfo && spriteInfo.frameWidth) {
-			sWidth = spriteInfo.frameWidth;
-			sHeight = spriteInfo.frameHeight || ih;
-			const framesPerRow = Math.floor(iw / sWidth);
-			const row = Math.floor(frame / framesPerRow);
-			const col = frame % framesPerRow;
-			dx = col * sWidth;
-			dy = row * sHeight;
+			// Calculamos el recorte basado en las coordenadas del tile + el frame de la animación
+			const framesPerRow = Math.floor(image._w / sWidth);
+			const startTileIndex = spriteInfo.tileY * framesPerRow + spriteInfo.tileX;
+			const currentTileIndex = startTileIndex + frame;
+			
+			sx = (currentTileIndex % framesPerRow) * sWidth;
+			sy = Math.floor(currentTileIndex / framesPerRow) * sHeight;
+
+			scale = spriteInfo.scale; // Usamos la escala definida para el sprite
 		} else {
-			sWidth = iw;
-			sHeight = ih;
-			dx = 0;
-			dy = 0;
+			// Imagen suelta
+			if (!image) image = spriteInfo.image; // Aseguramos que tenemos la imagen
+			if (!image || !image._loaded) return;
+
+			sWidth = (spriteInfo && spriteInfo.frameWidth) ? spriteInfo.frameWidth : image._w;
+			sHeight = (spriteInfo && spriteInfo.frameHeight) ? spriteInfo.frameHeight : image._h;
+			
+			const framesPerRow = Math.floor(image._w / sWidth);
+			const col = frame % framesPerRow;
+			const row = Math.floor(frame / framesPerRow);
+			sx = col * sWidth;
+			sy = row * sHeight;
 		}
 		
+		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
+
 		const dWidth = sWidth * scale;
 		const dHeight = sHeight * scale;
-		
+
 		this.ctx.save();
-		
-		// --- LÓGICA DE DIBUJADO EN PÍXELES EXACTOS ---
-		
-		// 1. Nos movemos a la posición REDONDEADA. Este es el anclaje para la rotación.
 		this.ctx.translate(Math.round(pos.x), Math.round(pos.y));
-		
-		// 2. Aplicamos la rotación alrededor de ese punto.
+
 		if (rotation !== 0) {
 			this.ctx.rotate(this.toRadians(rotation));
 		}
 		
-		// 3. Calculamos el desfase según el pivote.
 		let drawOffsetX = 0;
 		let drawOffsetY = 0;
 
 		switch(pivot) {
-			case Pivot.Top_Left:      break;
 			case Pivot.Top_Center:    drawOffsetX = -dWidth / 2; break;
 			case Pivot.Top_Right:     drawOffsetX = -dWidth; break;
 			case Pivot.Center_Left:   drawOffsetY = -dHeight / 2; break;
@@ -925,7 +973,6 @@ class Js2d {
 			case Pivot.Bottom_Left:   drawOffsetY = -dHeight; break;
 			case Pivot.Bottom_Center: drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight; break;
 			case Pivot.Bottom_Right:  drawOffsetX = -dWidth; drawOffsetY = -dHeight; break;
-			default:                  drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight / 2; break;
 		}
 
 		if (flipped) {
@@ -933,9 +980,7 @@ class Js2d {
 			drawOffsetX = -drawOffsetX - dWidth;
 		}
 
-		// 4. Dibujamos la imagen en la posición desfasada.
-		// Redondeamos también los offsets para máxima precisión.
-		this.ctx.drawImage(image, dx, dy, sWidth, sHeight, 
+		this.ctx.drawImage(image, sx, sy, sWidth, sHeight, 
 			Math.round(drawOffsetX), Math.round(drawOffsetY), 
 			dWidth, dHeight);
 		
@@ -1028,7 +1073,7 @@ class Js2d {
 		const spriteData = this.sprites[sprite.spriteName]
 		const frame = animation.frames[sprite.currentFrame]
 
-		this.drawSprite(spriteData.image, frame, sprite.position, sprite.scale, sprite.flipped, 0, pivot)
+		this.drawSprite(sprite.spriteName, frame, sprite.position, sprite.scale, sprite.flipped, 0, pivot)
 	}
 
 	getCurrentFrame(name) {

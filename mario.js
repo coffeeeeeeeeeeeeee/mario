@@ -148,11 +148,42 @@ class Game {
 		this.currentWorldIndex = 0; // Índice del mundo seleccionado
 
 		const savedHighscore = this.engine.getCookie("smb_highscore");
-		if (savedHighscore) {
-			this.highscore = parseInt(savedHighscore, 10);
-		} else {
-			this.highscore = 0;
-		}
+		this.highscore = savedHighscore ? parseInt(savedHighscore, 10) : 0;
+
+		this.HILL_SMALL_PATTERN = [
+			[' ', 'T', ' '],
+			['L', '1', 'R']
+		];
+
+		this.HILL_LARGE_PATTERN = [
+			[' ', ' ', 'T', ' ', ' '],
+			[' ', 'L', '2', 'R', ' '],
+			['L', '1', 'M', '2', 'R']
+		];
+
+		this.HILL_SPRITE_MAP = {
+			'L': 'Block_Hill_Left',
+			'M': 'Block_Hill_Middle',
+			'R': 'Block_Hill_Right',
+			'T': 'Block_Hill_Top',
+			'1': 'Block_Hill_Middle_Hole_1',
+			'2': 'Block_Hill_Middle_Hole_2'
+		};
+
+		this.CLOUD_SPRITE_MAP = {
+			'TL': 'Block_Cloud_Top_Left',
+			'TM': 'Block_Cloud_Top_Middle',
+			'TR': 'Block_Cloud_Top_Right',
+			'BL': 'Block_Cloud_Bottom_Left',
+			'BM': 'Block_Cloud_Bottom_Middle',
+			'BR': 'Block_Cloud_Bottom_Right'
+		};
+		
+		this.BUSH_SPRITE_MAP = {
+			'L': 'Block_Bush_Left',
+			'M': 'Block_Bush_Middle',
+			'R': 'Block_Bush_Right'
+		};
 	}
 
 	screenToTile(x, y) {
@@ -358,7 +389,7 @@ class Game {
 
 		const playerSprite = this.engine.animatedSprites[PlayerName[this.player]];
 		
-		playerSprite.position = {x: this.mapOffset.x + 150, y: 0};
+		playerSprite.position = {x: this.mapOffset.x + 150, y: 100};
 	}
 
 	resetLevel() {
@@ -465,7 +496,7 @@ class Game {
 							}
 						}
 					} else if (enemy.isWinged && enemy.canFly) {
-						// Lógica de Koopa volador (sin cambios)
+						// Lógica de Koopa volador
 						enemy.flyTimer++;
 						if (enemy.flyTimer > 60 && enemy.vy === 0) { enemy.vy = -10; enemy.flyTimer = 0; }
 					}
@@ -582,13 +613,11 @@ class Game {
 
 			if (enemy.type === 'Pakkun') {
 				const animSprite = this.engine.animatedSprites['Pakkun'];
-				const spriteData = this.engine.sprites.Enemy_Pakkun;
-				const biteAnim = animSprite.animations.Pakkun_Bite;
-				if (animSprite.frameCounter % biteAnim.frameSpeed === 0) {
-					animSprite.currentFrame = (animSprite.currentFrame + 1) % biteAnim.frames.length;
-				}
-				const frameToDraw = biteAnim.frames[animSprite.currentFrame];
-				this.engine.drawSprite(spriteData.image, frameToDraw, { x: screenX, y: enemy.y }, spriteData.scale, false, 0, Pivot.Top_Left);
+
+				animSprite.position = { x: screenX, y: enemy.y };
+
+				this.engine.drawAnimatedSprite('Pakkun', Pivot.Top_Left);
+
 			} else { // Goomba y Koopa
 				if (enemy.isWinged) {
 					const wingedSprite = this.engine.animatedSprites['Koopa_Winged'];
@@ -601,7 +630,6 @@ class Game {
 					const shellSpriteName = `Koopa_Shell_${enemy.color}`;
 					const shellSprite = this.engine.animatedSprites[shellSpriteName];
 					
-					// Elige la animación basada en la velocidad
 					if (enemy.vx === 0) {
 						this.engine.setAnimationForSprite(shellSpriteName, 'Shell_Idle', false);
 					} else {
@@ -610,7 +638,6 @@ class Game {
 					shellSprite.position = { x: screenX, y: enemy.y };
 					this.engine.drawAnimatedSprite(shellSpriteName, Pivot.Top_Left);
 				} else {
-					// Dibuja Goomba o Koopa caminando
 					const animSprite = this.engine.animatedSprites[enemy.type];
 
 					if (enemy.state === 'stomped') {
@@ -651,13 +678,14 @@ class Game {
 				const playerImagePos = { x: centerX - this.tileSize * 2, y: centerY - this.tileSize / 2 };
 				const spriteName = "Player_" + PlayerName[this.player];
 				const playerSprite = this.engine.sprites[spriteName];
-				if(playerSprite && playerSprite.image) {
-					this.engine.drawSprite(playerSprite.image, 0, playerImagePos, this.spriteScale, this.player.flipped, 0, Pivot.Top_Left);
+				// --- CORRECCIÓN --- Se comprueba solo la existencia del sprite, no de la imagen
+				if(playerSprite) { 
+					// --- CORRECCIÓN --- Se dibuja usando el nombre del sprite
+					this.engine.drawSprite(spriteName, 0, playerImagePos, this.spriteScale, false, 0, Pivot.Top_Left);
 				}
 				break;
 
 			case Black_Screen_Type.Game_Over:
-
 				const gameOverPlayerPos = { x: centerX, y: centerY - this.tileSize };
 				this.engine.drawTextCustom(font, PlayerName[this.player], this.textSize, Color.WHITE, gameOverPlayerPos, "center");
 				const gameOverPos = { x: centerX, y: centerY };
@@ -674,23 +702,18 @@ class Game {
 	drawMenu() {
 		this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.OVERWORLD_COLOR);
 
-		// Dibuja el mapa cargado (0-0) como fondo
 		this.drawBackground();
 		this.drawBlocks();
 		this.drawForegroundBlocks();
-
 		this.drawUI();
 
 		const titleMaxY = 0.65;
-
 		const titleSprite = this.engine.sprites["UI_Title_Image"];
-		const titleImg = titleSprite.image
-
+		const titleImg = titleSprite.image; // Esto es correcto porque se cargó con loadSprite
 		const titlePosX = this.engine.canvas.width / 2;
 		const titlePosY = this.tileSize;
-		const titleScale = this.spriteScale * this.engine.getCanvasHeight() / titleMaxY / 1000
+		const titleScale = this.spriteScale * this.engine.getCanvasHeight() / titleMaxY / 1000;
 		const titleWidth = titleImg.width * titleScale;
-
 		const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
 		this.engine.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
 
@@ -708,14 +731,14 @@ class Game {
 		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){ this.engine.keysPressed = []; this.currentSelection++; }
 
 		if (this.engine.keysPressed['KeyA']) {
-			this.engine.keysPressed['KeyA'] = false; // Evita el cambio rápido
+			this.engine.keysPressed['KeyA'] = false;
 			this.currentWorldIndex--;
 			if (this.currentWorldIndex < 0) {
 				this.currentWorldIndex = this.availableWorlds.length - 1;
 			}
 		}
 		if (this.engine.keysPressed['KeyD']) {
-			this.engine.keysPressed['KeyD'] = false; // Evita el cambio rápido
+			this.engine.keysPressed['KeyD'] = false;
 			this.currentWorldIndex++;
 			if (this.currentWorldIndex >= this.availableWorlds.length) {
 				this.currentWorldIndex = 0;
@@ -736,9 +759,9 @@ class Game {
 			const textPos = { x: this.engine.getCanvasWidth() / 2, y: menuPosY };
 			if(this.currentSelection == i){
 				const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - this.spriteSize * 1.1 };
-				const cursorSprite = this.engine.sprites["Cursor"];
-				if(cursorSprite && cursorSprite.image) {
-					this.engine.drawSprite(cursorSprite.image, 0, cursorPos, cursorSprite.scale, false, 0, Pivot.Top_Left);
+				// --- CORRECCIÓN ---
+				if(this.engine.sprites["Cursor"]) {
+					this.engine.drawSprite("Cursor", 0, cursorPos, this.engine.sprites["Cursor"].scale, false, 0, Pivot.Top_Left);
 				}
 			}
 			this.engine.drawTextCustom(font, menuButtons[i].name, this.textSize, "#ffffff", textPos, "center");
@@ -752,88 +775,101 @@ class Game {
 		this.engine.drawTextCustom(font, topScore, this.textSize, "#ffffff", topScorePos, "center");
 	}
 
+	drawCompositeObject(objPos, pattern, spriteMap) {
+		for (let y = 0; y < pattern.length; y++) {
+			const row = pattern[y];
+			for (let x = 0; x < row.length; x++) {
+				const key = row[x];
+				if (key !== ' ' && spriteMap[key]) {
+					const spriteName = spriteMap[key];
+					const drawPos = { 
+						x: objPos.x + x * this.tileSize, 
+						y: objPos.y + y * this.tileSize 
+					};
+					this.engine.drawSprite(spriteName, 0, drawPos, this.spriteScale, false, 0, Pivot.Top_Left);
+				}
+			}
+		}
+	}
+
 	drawBackground() {
 		switch(this.currentMap.type) {
 			case World_Type.Overworld:
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.OVERWORLD_COLOR);
 
-				const parallaxSpeed = 0.5;
-				const offsetX = this.mapOffset.x * parallaxSpeed;
-				const numObjects = Math.ceil(this.currentMap.dimensions.width * 0.3);
+				const parallaxSpeedClouds = 0.5;
+				const parallaxSpeedHills = 0.8;
+				const parallaxSpeedBushes = 1;
 
-				// Dibujar Nubes
+				const offsetX = this.mapOffset.x;
+				const numObjects = Math.ceil(this.currentMap.dimensions.width * 0.35);
+				const groundY = this.engine.canvas.height - this.tileSize * 2;
+
+				// Nubes
 				const cloudY = 80;
 				for (let i = 0; i < numObjects; i++) {
-					const cloudSizeX = 2 + (i % 2);
-					const cloudOffsetY = cloudY + (i % 3) * 40;
-					const cloudX = (i * 500) + offsetX;
-					
-					if (cloudX + cloudSizeX * this.tileSize >= 0 && cloudX <= this.engine.canvas.width) {
-						this.drawCompositeObject({x: cloudX, y: cloudOffsetY}, {x: cloudSizeX, y: 2}, this.tileSize, 'Block_Cloud');
-					}
+					const cloudWidth = 2 + (i % 2);
+					const cloudPos = {
+						x: (i * 500) + offsetX * parallaxSpeedClouds,
+						y: cloudY + (i % 3) * 40
+					};
+
+					if (cloudPos.x + cloudWidth * this.tileSize < 0 || cloudPos.x > this.engine.canvas.width) continue;
+
+					const cloudPattern = [
+						['TL', ...Array(cloudWidth - 2).fill('TM'), 'TR'],
+						['BL', ...Array(cloudWidth - 2).fill('BM'), 'BR']
+					];
+
+					this.drawCompositeObject(cloudPos, cloudPattern, this.CLOUD_SPRITE_MAP);
 				}
 				
-				// Dibujar Arbustos
-				const groundY = this.engine.canvas.height - this.tileSize * 2;
+				// --- Dibujar Colinas (usando patrones estáticos) ---
 				for (let i = 0; i < numObjects; i++) {
-					const bushSizeX = 2 + (i % 3);
-					const bushOffsetY = groundY + this.tileSize / 2;
-					// Movemos los arbustos un poco más rápido para dar profundidad
-					const bushX = (i * 350) + offsetX * 1.2;
+					const isLargeHill = (i % 2 === 0);
+					const pattern = isLargeHill ? this.HILL_LARGE_PATTERN : this.HILL_SMALL_PATTERN;
+					const hillWidth = isLargeHill ? 5 : 3;
+					
+					const hillPos = {
+						x: (i * 450) + offsetX * parallaxSpeedHills,
+						y: groundY - (pattern.length - 1) * this.tileSize
+					};
 
-					if (bushX + bushSizeX * this.tileSize >= 0 && bushX <= this.engine.canvas.width) {
-						this.drawCompositeObject({x: bushX, y: bushOffsetY}, {x: bushSizeX, y: 1}, this.tileSize, 'Block_Bush');
-					}
+					if (hillPos.x + hillWidth * this.tileSize < 0 || hillPos.x > this.engine.canvas.width) continue;
+
+					this.drawCompositeObject(hillPos, pattern, this.HILL_SPRITE_MAP);
+				}
+
+				// --- Dibujar Arbustos (usando el nuevo sistema) ---
+				for (let i = 0; i < numObjects; i++) {
+					const bushWidth = 2 + (i % 3);
+					 const bushPos = {
+						x: (i * 350) + offsetX * parallaxSpeedBushes,
+						y: groundY + this.tileSize / 2
+					};
+
+					if (bushPos.x + bushWidth * this.tileSize < 0 || bushPos.x > this.engine.canvas.width) continue;
+
+					const bushPattern = [
+						['L', ...Array(bushWidth - 2).fill('M'), 'R']
+					];
+					
+					this.drawCompositeObject(bushPos, bushPattern, this.BUSH_SPRITE_MAP);
 				}
 				break;
+				
 			case World_Type.Underground:
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.UNDERGROUND_COLOR);
 				break;
-			case World_Type.Underwater: break;
+			case World_Type.Underwater:
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.UNDERWATER_COLOR);
 				break;
-			case World_Type.Castle: break;
+			case World_Type.Castle:
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.CASTLE_COLOR);
+				break;
 			default:
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.OVERWORLD_COLOR);
 				break;
-		}
-	}
-
-	drawCompositeObject(objPos, objSize, tileSize, baseName) {
-		// Solo las nubes tienen sprites inferiores distintos
-		const hasBottomSprites = (baseName === 'Block_Cloud');
-
-		for (let y = 0; y < objSize.y; y++) {
-			for (let x = 0; x < objSize.x; x++) {
-				let spriteName;
-				let part = '';
-
-				if (hasBottomSprites && y > 0) {
-					part = '_Bottom';
-				}
-
-				if (x === 0) {
-					part += '_Left';
-				} else if (x === objSize.x - 1) {
-					part += '_Right';
-				} else if (y === 0) {
-					part = '_Middle'; // Para la parte superior central de las nubes
-				}
-
-				// Caso especial para el centro de las partes inferiores de la nube
-				if (hasBottomSprites && y > 0 && x > 0 && x < objSize.x - 1) {
-					part = '_Bottom';
-				}
-
-				spriteName = `${baseName}${part}`;
-				
-				const sprite = this.engine.sprites[spriteName];
-				if (sprite && sprite.image) {
-					const drawPos = { x: objPos.x + tileSize * x, y: objPos.y + tileSize * y };
-					this.engine.drawSprite(sprite.image, 0, drawPos, this.spriteScale);
-				}
-			}
 		}
 	}
 
@@ -843,7 +879,6 @@ class Game {
 		const mapWidth = this.currentMap.dimensions.width;
 		for (let i = 0; i < this.currentMap.map.length; i++) {
 			const blockId = this.currentMap.map[i];
-			
 			if (blockId === 0 || this.foregroundBlocks.includes(blockId)) continue;
 			
 			const coords = this.engine.indexToCoords(i, mapWidth);
@@ -859,14 +894,15 @@ class Game {
 						spriteName = this.specialBlocks[i]?.revealed ? 'Object_Question_Underground' : 'Block_Brick_Underground';
 						break;
 					default:
-						console.log("[SMB] TODO: Completar bloques múltiples en todos los tipos de mundos.");
 						break;
 				}
 			}
 
 			const sprite = this.engine.sprites[spriteName];
-			if (sprite && sprite.image) {
-				this.engine.drawSprite(sprite.image, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
+			// --- CORRECCIÓN --- Se comprueba solo la existencia del sprite, no de la imagen
+			if (sprite) {
+				// --- CORRECCIÓN --- Se dibuja usando el nombre del sprite
+				this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
 			}
 		}
 	}
@@ -879,9 +915,11 @@ class Game {
 			if (!this.foregroundBlocks.includes(blockId)) continue;
 			const coords = this.engine.indexToCoords(i, mapWidth);
 			const blockPos = this.tileToScreen(coords.x, coords.y);
-			const sprite = this.engine.sprites[BlockType[blockId]];
-			if (sprite && sprite.image) {
-				this.engine.drawSprite(sprite.image, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
+			const spriteName = BlockType[blockId];
+			const sprite = this.engine.sprites[spriteName];
+
+			if (sprite) {
+				this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
 			}
 		}
 	}
@@ -901,21 +939,19 @@ class Game {
 	updateAndDrawCoins() {
 		for (let i = this.activeCoins.length - 1; i >= 0; i--) {
 			const coin = this.activeCoins[i];
-
 			coin.y += coin.vY;
 			coin.vY += 0.8;
 			coin.timer++;
-
 			coin.rotation = (coin.rotation + COIN_SPIN_VELOCITY) % 360;
 
 			const coinSprite = this.engine.animatedSprites["Coin"];
-			const coinData = this.engine.sprites["Object_Coin"];
 			
+			// --- CORRECCIÓN ---
 			this.engine.drawSprite(
-				coinData.image, 
+				"Object_Coin", 
 				coinSprite.currentFrame, 
 				{x: coin.x, y: coin.y}, 
-				coinSprite.scale, 
+				this.spriteScale, 
 				false,
 				coin.rotation,
 				Pivot.Center
@@ -951,28 +987,15 @@ class Game {
 			let spriteNameToDraw = BlockType[block.originalId];
 			if (block.originalId === 34) {
 				if (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) {
-					switch (this.currentMap.type) {
-						case World_Type.Overworld:
-							spriteNameToDraw = 'Object_Question_Used';
-							break;
-						case World_Type.Underground:
-							spriteNameToDraw = 'Object_Question_Used_Underground';
-							break;
-					}
+					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Object_Question_Used' : 'Object_Question_Used_Underground';
 				} else {
-					switch (this.currentMap.type) {
-						case World_Type.Overworld:
-							spriteNameToDraw = 'Object_Question';
-							break;
-						case World_Type.Underground:
-							spriteNameToDraw = 'Object_Question_Underground';
-							break;
-					}
+					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Object_Question' : 'Object_Question_Underground';
 				}
 			}
+			// --- CORRECCIÓN ---
 			const spriteData = this.engine.sprites[spriteNameToDraw];
 			if (spriteData) {
-				this.engine.drawSprite(spriteData.image, 0, { x: block.x, y: block.y }, spriteData.scale, false, 0, Pivot.Top_Left);
+				this.engine.drawSprite(spriteNameToDraw, 0, { x: block.x, y: block.y }, spriteData.scale, false, 0, Pivot.Top_Left);
 			}
 		}
 	}
@@ -1116,18 +1139,11 @@ class Game {
 				const playerGrabOffset = playerPos.y - poleTopScreenY;
 				let points = 0;
 
-				// Puntajes del mástil
-				if (playerGrabOffset < this.tileSize) { // Tocar la punta
-					points = 5000;
-				} else if (playerGrabOffset < this.tileSize * 2.5) { // Un poco más abajo
-					points = 2000;
-				} else if (playerGrabOffset < this.tileSize * 5) { // Mitad superior
-					points = 800;
-				} else if (playerGrabOffset < this.tileSize * 8) { // Mitad inferior
-					points = 400;
-				} else { // Parte baja
-					points = 100;
-				}
+				if (playerGrabOffset < this.tileSize) { points = 5000; } 
+				else if (playerGrabOffset < this.tileSize * 2.5) { points = 2000; } 
+				else if (playerGrabOffset < this.tileSize * 5) { points = 800; } 
+				else if (playerGrabOffset < this.tileSize * 8) { points = 400; } 
+				else { points = 100; }
 
 				this.score += points;
 				this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
@@ -1148,10 +1164,9 @@ class Game {
 				this.engine.playAudio(audio["Flagpole"], false);
 				this.engine.setAnimationForSprite(name, `${PlayerName[this.player]}_Slide`);
 
-				// Guarda la posición del suelo para saber dónde parar de deslizar
 				const groundY = this.tileToScreen(rightTop.x, 13).y;
 				this.flagpoleInfo = { groundY: groundY, castleDoorX: playerPos.x + this.tileSize * 5 };
-				return; // Detiene el procesamiento normal del jugador
+				return;
 			}
 
 			let blocked = false;
@@ -1179,19 +1194,17 @@ class Game {
 	}
 
 	spawnScorePopup(text, x, y) {
-		this.scorePopups.push({ text: text, x: x, y: y, timer: 90 }); // El popup dura 1.5 segundos (90 frames)
+		this.scorePopups.push({ text: text, x: x, y: y, timer: 90 });
 	}
 
 	updateAndDrawScorePopups() {
 		for (let i = this.scorePopups.length - 1; i >= 0; i--) {
 			const popup = this.scorePopups[i];
-			popup.y -= 0.5; // El texto flota hacia arriba
+			popup.y -= 0.5;
 			popup.timer--;
-
 			this.engine.drawTextCustom(font, popup.text, this.textSize, Color.WHITE, {x: popup.x, y: popup.y}, "center");
-
 			if (popup.timer <= 0) {
-				this.scorePopups.splice(i, 1); // Elimina el popup cuando el tiempo se acaba
+				this.scorePopups.splice(i, 1);
 			}
 		}
 	}
@@ -1204,17 +1217,13 @@ class Game {
 			case 'sliding':
 				player.flipped = true;
 				this.engine.setAnimationForSprite(PlayerName[this.player], `${PlayerName[this.player]}_Slide`);
-
 				const slideSpeed = 5;
 				playerPos.y += slideSpeed;
-
 				if (this.flagpoleFlag) {
 					this.flagpoleFlag.y += slideSpeed;
 				}
-
 				if (playerPos.y >= this.flagpoleInfo.groundY) {
 					playerPos.y = this.flagpoleInfo.groundY;
-
 					player.flipped = false;
 					playerPos.x += this.tileSize / 2;
 					this.engine.setAnimationForSprite(PlayerName[this.player], `${PlayerName[this.player]}_Run`);
@@ -1222,30 +1231,26 @@ class Game {
 					this.levelCompleteState = 'walking_to_castle';
 				}
 				break;
-
 			case 'walking_to_castle':
 				playerPos.x += 2;
-
 				if (playerPos.x >= this.flagpoleInfo.castleDoorX && this.levelCompleteState !== 'finished') {
-					this.playerIsVisible = false; // Mario "entra" al castillo
-					this.levelCompleteState = 'finished'; // Marca como finalizado para evitar bucles.
-
+					this.playerIsVisible = false;
+					this.levelCompleteState = 'finished';
 					const nextWorldName = this.currentMap.nextWorld;
-
 					if (nextWorldName) {
 						this.startNextLevel(nextWorldName);
 					} else {
 						this.state = Game_State.Title_Menu;
 					}
 				}
-
 				break;
 		}
 
 		if (this.flagpoleFlag) {
+			// --- CORRECCIÓN ---
 			const flagSprite = this.engine.sprites['Object_Flag'];
-			if(flagSprite && flagSprite.image){
-				 this.engine.drawSprite(flagSprite.image, 0, this.flagpoleFlag, flagSprite.scale, false, 0, Pivot.Top_Left);
+			if(flagSprite){
+				 this.engine.drawSprite('Object_Flag', 0, this.flagpoleFlag, flagSprite.scale, false, 0, Pivot.Top_Left);
 			}
 		}
 
@@ -1280,13 +1285,16 @@ class Game {
 			const powerupRect = { x: p.x, y: p.y, w: this.tileSize, h: this.tileSize };
 			const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
 			if (this.rectsOverlap(playerRect, powerupRect)) {
-				console.log("VIDA EXTRA!");
+				this.lives++;
 				this.engine.playAudio(audio["Life"], false);
 				this.activePowerups.splice(i, 1);
 				continue;
 			}
+			// --- CORRECCIÓN ---
 			const spriteData = this.engine.sprites['Object_Mushroom_1UP'];
-			this.engine.drawSprite(spriteData.image, 0, { x: p.x, y: p.y }, spriteData.scale, false, 0, Pivot.Top_Left);
+			if (spriteData) {
+				this.engine.drawSprite('Object_Mushroom_1UP', 0, { x: p.x, y: p.y }, spriteData.scale, false, 0, Pivot.Top_Left);
+			}
 		}
 	}
 
@@ -1297,11 +1305,14 @@ class Game {
 		const colWidth = (this.engine.getCanvasWidth() - paddingX * 2) / cols;
 		this.engine.drawTextCustom(font, PlayerName[this.player], this.textSize, "#ffffff", {x: paddingX, y: paddingY * 2}, "left");
 		this.engine.drawTextCustom(font, this.score.toString().padStart(6, "0"), this.textSize, "#ffffff", {x: paddingX, y: paddingY * 3}, "left");
+		
+		// --- CORRECCIÓN ---
 		const coinSprite = this.engine.sprites["UI_Coin"];
-		if (coinSprite && coinSprite.image) {
+		if (coinSprite) {
 			const coinPos = { x: colWidth + paddingX + paddingX * 0.15, y: paddingY * 3 - this.textSize + paddingY * 0.15 };
-			this.engine.drawSprite(coinSprite.image, 0, coinPos, this.spriteScale / 1.8, false, 0, Pivot.Top_Left);
+			this.engine.drawSprite("UI_Coin", 0, coinPos, this.spriteScale / 1.8, false, 0, Pivot.Top_Left);
 		}
+
 		const coinText = String.fromCharCode('0x00D7') + this.coins.toString().padStart(2, "0");
 		this.engine.drawTextCustom(font, coinText, this.textSize, "#ffffff", {x: colWidth + paddingX + 32, y: paddingY * 3}, "left");
 		this.engine.drawTextCustom(font, "WORLD", this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2, y: paddingY * 2}, "center");

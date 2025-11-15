@@ -47,8 +47,8 @@ function update(dt) {
 			smb.updateAndDrawPowerups();
 			smb.drawBumpingBlocksOverlay();
 			smb.drawEnemies(dt);
-			smb.drawPlayer(PlayerName[smb.player], dt);
 			smb.drawForegroundBlocks();
+			smb.drawPlayer(PlayerName[smb.player], dt);
 			smb.drawUI();
 			break;
 
@@ -77,6 +77,7 @@ function update(dt) {
 						break;
 					case World_Type.Underground:
 						if (audio["Underground_Theme"].paused && !audio["Underground_Theme"].ended) {
+							js2d.setVolume(audio["Player_Jump"], 0.5);
 							js2d.playAudio(audio["Underground_Theme"], true);
 						}
 						break;
@@ -125,73 +126,117 @@ async function init() {
 	const tileScale = 4;
 	const playerPos = {x: 300, y: 300};
 
-	const spriteList = [
-		["Player_Mario", "assets/images/mario.png", tileScale, 16, 16],
-		["Player_Luigi", "assets/images/luigi.png", tileScale, 16, 16],
-		["Enemy_Goomba", "assets/images/goomba.png", tileScale, 16, 16],
-		["Enemy_Koopa", "assets/images/koopa.png", tileScale, 16, 24],
-		["Enemy_Koopa_Winged_Red", "assets/images/koopa_winged_red.png", tileScale, 16, 24],
-		["Enemy_Koopa_Winged_Green", "assets/images/koopa_winged_green.png", tileScale, 16, 24],
-		["Koopa_Shell_Red", "assets/images/koopa_shell_red.png", tileScale, 16, 16],
-		["Koopa_Shell_Green", "assets/images/koopa_shell_green.png", tileScale, 16, 16],
-		["Enemy_Pakkun", "assets/images/pakkun.png", tileScale, 16, 24],
-		["Object_Mushroom_Grow", "assets/images/mushroom_grow.png", tileScale],
-		["Object_Mushroom_1UP", "assets/images/mushroom_life.png", tileScale],
-		["UI_Title_Image", "assets/images/title.png", tileScale, 176, 88],
-		["Block_Empty", "assets/images/empty.png", tileScale],
-		["Block_Ground", "assets/images/ground.png", tileScale],
-		["Block_Brick", "assets/images/brick.png", tileScale],
-		["Object_Question", "assets/images/question_block.png", tileScale],
-		["Object_Question_Used", "assets/images/block_used.png", tileScale],
-		["Object_Coin", "assets/images/coin.png", tileScale, 16, 16],
-		["UI_Coin", "assets/images/coin_score.png", fontSize / tileSize, 8, 8],
-		["Cursor", "assets/images/cursor.png", fontSize / tileScale / 2, 8, 8],
-		["Block_Stairs", "assets/images/stair_block.png", tileScale],
-		["Block_Pipe_Top_Left", "assets/images/pipe_top_left.png", tileScale],
-		["Block_Pipe_Top_Right", "assets/images/pipe_top_right.png", tileScale],
-		["Block_Pipe_Body_Left", "assets/images/pipe_body_left.png", tileScale],
-		["Block_Pipe_Body_Right", "assets/images/pipe_body_right.png", tileScale],
-		["Block_Invisible", "assets/images/empty.png", tileScale],
-		["Object_Flag", "assets/images/flag.png", tileScale],
-		["Block_Flagpole", "assets/images/post.png", tileScale],
-		["Block_Flagpole_Top", "assets/images/post_top.png", tileScale],
-		["Block_Brick_Middle", "assets/images/brick_middle.png", tileScale],
-		["Block_Brick_Zigzag", "assets/images/brick_zigzag.png", tileScale],
-		["Block_Brick_Zigzag_Filled", "assets/images/brick_zigzag_filled.png", tileScale],
-		["Block_Brick_Break", "assets/images/brick_break.png", tileScale],
-		["Block_Brick_Cut", "assets/images/brick_cut.png", tileScale],
-		["Block_Brick_Arch", "assets/images/brick_arch.png", tileScale],
-		["Block_Black", "assets/images/black.png", tileScale],
-		["Block_Cloud_Left", "assets/images/cloud_left_top.png", tileScale],
-		["Block_Cloud_Middle", "assets/images/cloud_top.png", tileScale],
-		["Block_Cloud_Right", "assets/images/cloud_right_top.png", tileScale],
-		["Block_Cloud_Bottom_Left", "assets/images/cloud_left_bottom.png", tileScale],
-		["Block_Cloud_Bottom", "assets/images/cloud_bottom.png", tileScale],
-		["Block_Cloud_Bottom_Right", "assets/images/cloud_right_bottom.png", tileScale],
-		["Block_Bush_Left", "assets/images/bush_left.png", tileScale],
-		["Block_Bush_Middle", "assets/images/bush_middle.png", tileScale],
-		["Block_Bush_Right", "assets/images/bush_right.png", tileScale],
-		["Block_Multi_Coin", "assets/images/brick.png", tileScale],
-		["Block_Used", "assets/images/block_used.png", tileScale],
-		["Block_Life_Used", "assets/images/block_life_used.png", tileScale],
-		["Block_Ground_Underground", "assets/images/ground_underground.png", tileScale],
-		["Block_Brick_Underground", "assets/images/brick_underground.png", tileScale],
-		["Object_Coin_Underground", "assets/images/coin_underground.png", tileScale],
-		["Object_Question_Underground", "assets/images/question_block_underground.png", tileScale],
-		["Object_Question_Used_Underground", "assets/images/question_block_used_underground.png", tileScale],
-	];
-	await js2d.loadSprites(spriteList);
+	await js2d.loadTileset("World_Tiles", overworldTileset, 16, 16);
+	// await js2d.loadTileset("Enemy_Tiles", overworldTileset, 16, 24);
+	await js2d.loadTileset("Player_Mario_Tiles", marioSmallTileset, 16, 16);
+	await js2d.loadTileset("Enemy_Short_Tiles", enemiesShortTileset, 16, 16);
+	await js2d.loadTileset("Enemy_Tall_Tiles", enemiesTallTileset, 16, 24);
+	await js2d.loadTileset("UI_Tiles", uiImage, 8, 8);
+
+	// Bloques Comunes
+	js2d.defineSpriteFromTileset("Block_Black", "World_Tiles", 0, 0, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Ground", "World_Tiles", 1, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Stairs", "World_Tiles", 2, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Brick", "World_Tiles", 3, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Brick_Middle", "World_Tiles", 4, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Brick_Zigzag", "World_Tiles", 5, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Brick_Zigzag_Filled", "World_Tiles", 6, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Brick_Arch", "World_Tiles", 7, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Brick_Break", "World_Tiles", 8, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Block_Brick_Cut", "World_Tiles", 9, 0, 1, tileScale);
+
+	// Objetos Interactivos
+    js2d.defineSpriteFromTileset("Object_Question",				"World_Tiles", 0, 1, 3, tileScale);
+	js2d.defineSpriteFromTileset("Object_Question_Multiple",	"World_Tiles", 0, 1, 3, tileScale);
+	js2d.defineSpriteFromTileset("Object_Question_Used",		"World_Tiles", 1, 1, 1, tileScale);
+	js2d.defineSpriteFromTileset("Object_Twentyfive",			"World_Tiles", 2, 1, 3, tileScale);
+	js2d.defineSpriteFromTileset("Object_Coin",					"World_Tiles", 7, 1, 3, tileScale);
+
+    js2d.defineSpriteFromTileset("Block_Used",		"World_Tiles", 3, 1, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Invisible",	"World_Tiles", 15, 15, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Empty",		"World_Tiles", 15, 15, 1, tileScale);
+
+	// Enemigos bajos
+    js2d.defineSpriteFromTileset("Enemy_Goomba", "Enemy_Short_Tiles", 0, 0, 3, tileScale);
+    js2d.defineSpriteFromTileset("Koopa_Shell_Green", "Enemy_Short_Tiles", 3, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Koopa_Shell_Red", "Enemy_Short_Tiles", 4, 5, 2, tileScale);
+
+    // Enemigos altos
+    js2d.defineSpriteFromTileset("Enemy_Koopa_Green", "Enemy_Tall_Tiles", 0, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Koopa_Red", "Enemy_Tall_Tiles", 2, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Koopa_Winged_Green", "Enemy_Tall_Tiles", 4, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Koopa_Winged_Red", "Enemy_Tall_Tiles", 6, 0, 2, tileScale);
+	js2d.defineSpriteFromTileset("Enemy_Pakkun_Green", "Enemy_Tall_Tiles", 8, 0, 2, tileScale);
+	js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
+
+	// Tuberías
+	js2d.defineSpriteFromTileset("Block_Pipe_Top_Left", "World_Tiles", 0, 2, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", "World_Tiles", 1, 2, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", "World_Tiles", 2, 2, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", "World_Tiles", 3, 2, 1, tileScale);
+	
+	// Nivel Subterráneo (VER: crear otro tileset y cambiar según 'type' en el mapa)
+	js2d.defineSpriteFromTileset("Block_Ground_Underground", "World_Tiles", 4, 0, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Brick_Underground", "World_Tiles", 5, 0, 1, tileScale);
+	js2d.defineSpriteFromTileset("Object_Question_Underground", "World_Tiles", 4, 1, 3, tileScale);
+	js2d.defineSpriteFromTileset("Object_Question_Used_Underground", "World_Tiles", 2, 0, 1, tileScale);
+	js2d.defineSpriteFromTileset("Object_Coin_Underground", "World_Tiles", 0, 10, 3, tileScale);
+	
+	// Nubes
+	js2d.defineSpriteFromTileset("Block_Cloud_Top_Left", "World_Tiles", 0, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Cloud_Top_Middle", "World_Tiles", 1, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Cloud_Top_Right", "World_Tiles", 2, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Left", "World_Tiles", 3, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Middle", "World_Tiles", 4, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Right", "World_Tiles", 5, 4, 1, tileScale);
+
+	// Arbustos
+	js2d.defineSpriteFromTileset("Block_Bush_Left", "World_Tiles", 12, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Bush_Middle", "World_Tiles", 13, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Bush_Right", "World_Tiles", 14, 4, 1, tileScale);
+	
+	// Colinas
+	js2d.defineSpriteFromTileset("Block_Hill_Left", "World_Tiles", 6, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_1", "World_Tiles", 7, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Hill_Middle", "World_Tiles", 8, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_2", "World_Tiles", 9, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Hill_Right", "World_Tiles", 10, 4, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Hill_Top", "World_Tiles", 11, 4, 1, tileScale);
+
+	// Bandera
+	js2d.defineSpriteFromTileset("Block_Flagpole_Top", "World_Tiles", 0, 3, 1, tileScale);
+	js2d.defineSpriteFromTileset("Block_Flagpole", "World_Tiles", 1, 3, 1, tileScale);
+	js2d.defineSpriteFromTileset("Object_Flag", "World_Tiles", 2, 3, 1, tileScale);
+
+	// Mario
+	await js2d.loadSprite("UI_Title_Image", titleImage, tileScale);
+    js2d.defineSpriteFromTileset("Player_Mario", "Player_Mario_Tiles", 0, 0, 15, tileScale);
+    
+    // UI
+    js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Cursor", "UI_Tiles", 1, 0, 1, fontSize / tileScale / 2);
+	
+    // Powerups
+    js2d.defineSpriteFromTileset("Object_Mushroom_Grow", "World_Tiles", 0, 6, 1, tileScale);
+	js2d.defineSpriteFromTileset("Object_Mushroom_1UP", "World_Tiles", 1, 6, 1, tileScale);
+
+    // --- CORRECCIÓN TERMINA AQUÍ ---
+
+
+	// const spriteList = [ ... ];
+	// await js2d.loadSprites(spriteList);
 
 	js2d.createAnimatedSprite("Mario", "Player_Mario", playerPos, tileScale);
-	js2d.createAnimatedSprite("Luigi", "Player_Luigi", playerPos, tileScale);
+	js2d.createAnimatedSprite("Luigi", "Player_Mario", playerPos, tileScale); // Usa el mismo tileset de Mario para Luigi por ahora
 	js2d.createAnimatedSprite("Goomba", "Enemy_Goomba", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Koopa", "Enemy_Koopa", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Koopa", "Enemy_Koopa_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Koopa_Winged", "Enemy_Koopa_Winged_Red", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Koopa_Winged", "Enemy_Koopa_Winged_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Koopa_Shell_Red", "Koopa_Shell_Red", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Koopa_Shell_Green", "Koopa_Shell_Green", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Pakkun", "Enemy_Pakkun", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Mushroom_Grow", "Object_Mushroom_Grow", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Pakkun", "Enemy_Pakkun_Green", {x: 0, y: 0}, tileScale);
+    
+    // --- CORREGIR CREACIÓN DE SPRITE ANIMADO ---
+	js2d.createAnimatedSprite("Mushroom_Grow", "Object_Mushroom_Grow", {x: 0, y: 0}, tileScale); // CORREGIDO
 	js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, fontSize / tileSize);
