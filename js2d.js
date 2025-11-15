@@ -162,12 +162,12 @@ class Js2d {
 	}
 
 	 isKeyPressed(key) {
-        return this.keysPressed[key] === true;
-    }
+		return this.keysPressed[key] === true;
+	}
 
 	resizeCanvas() {
-	    this.canvas.width = window.innerWidth;
-	    this.canvas.height = window.innerHeight;
+		this.canvas.width = window.innerWidth;
+		this.canvas.height = window.innerHeight;
 	}
 
 	tick(timestamp) {
@@ -410,21 +410,21 @@ class Js2d {
 		this.ctx.restore()
 	}
 	drawTextCustom(font, text, size, color, pos, alignment = "left") {
-	    this.ctx.save();
+		this.ctx.save();
 
-	    if (!font || !font.family) {
-	        if (!font) {
-	            console.warn("[Js2d] Intento de usar una fuente nula. Se usará la fuente por defecto.");
-	        }
-	        this.ctx.font = `${size}px monospace`;
-	    } else {
-	        this.ctx.font = `${size}px "${font.family}"`;
-	    }
+		if (!font || !font.family) {
+			if (!font) {
+				console.warn("[Js2d] Intento de usar una fuente nula. Se usará la fuente por defecto.");
+			}
+			this.ctx.font = `${size}px monospace`;
+		} else {
+			this.ctx.font = `${size}px "${font.family}"`;
+		}
 
-	    this.ctx.textAlign = alignment;
-	    this.ctx.fillStyle = color;
-	    this.ctx.fillText(text, pos.x, pos.y);
-	    this.ctx.restore();
+		this.ctx.textAlign = alignment;
+		this.ctx.fillStyle = color;
+		this.ctx.fillText(text, pos.x, pos.y);
+		this.ctx.restore();
 	}
 	loadFont(name, path) {
 		const customFont = new FontFace(name, `url(${path})`)
@@ -510,78 +510,78 @@ class Js2d {
 	}
 
 	drawTextWrapped(font, text, x, y, maxWidth, lineHeight, lineSpacing, alignment = "left", color = Color.BLACK) {
-	    let drawX;
-	    switch (alignment) {
-	        case "center":
-	            drawX = x + (maxWidth / 2);
-	            break;
-	        case "right":
-	            drawX = x + maxWidth;
-	            break;
-	        case "left":
-	        default:
-	            drawX = x;
-	            break;
-	    }
-	    
-	    if (font && font.family) {
-	        this.ctx.font = `${lineHeight}px "${font.family}"`;
-	    } else {
-	        // Fallback
-	        this.ctx.font = `${lineHeight}px monospace`;
-	    }
+		let drawX;
+		switch (alignment) {
+			case "center":
+				drawX = x + (maxWidth / 2);
+				break;
+			case "right":
+				drawX = x + maxWidth;
+				break;
+			case "left":
+			default:
+				drawX = x;
+				break;
+		}
+		
+		if (font && font.family) {
+			this.ctx.font = `${lineHeight}px "${font.family}"`;
+		} else {
+			// Fallback
+			this.ctx.font = `${lineHeight}px monospace`;
+		}
 
-	    const words = text.split(' ');
-	    let line = '';
+		const words = text.split(' ');
+		let line = '';
 
-	    for (let n = 0; n < words.length; n++) {
-	        const testLine = line + words[n] + ' ';
-	        const metrics = this.ctx.measureText(testLine);
-	        const testWidth = metrics.width;
+		for (let n = 0; n < words.length; n++) {
+			const testLine = line + words[n] + ' ';
+			const metrics = this.ctx.measureText(testLine);
+			const testWidth = metrics.width;
 
-	        if (testWidth > maxWidth && n > 0) {
-	            this.drawTextCustom(font, line.trim(), lineHeight, color, { x: drawX, y: y }, alignment);
-	            
-	            line = words[n] + ' ';
-	            y += lineSpacing;
-	        } else {
-	            line = testLine;
-	        }
-	    }
+			if (testWidth > maxWidth && n > 0) {
+				this.drawTextCustom(font, line.trim(), lineHeight, color, { x: drawX, y: y }, alignment);
+				
+				line = words[n] + ' ';
+				y += lineSpacing;
+			} else {
+				line = testLine;
+			}
+		}
 
-	    this.drawTextCustom(font, line.trim(), lineHeight, color, { x: drawX, y: y }, alignment);
+		this.drawTextCustom(font, line.trim(), lineHeight, color, { x: drawX, y: y }, alignment);
 	}
 
 	countWrappedLines(font, text, maxWidth, fontSize, lineSpacing) {
-        if (!text || text.length === 0) return 0;
-        const ctx = this.ctx; // Accede al contexto de dibujo de Js2d
-        
-        // Guarda el estado actual de la fuente
-        const originalFont = ctx.font; 
+		if (!text || text.length === 0) return 0;
+		const ctx = this.ctx; // Accede al contexto de dibujo de Js2d
+		
+		// Guarda el estado actual de la fuente
+		const originalFont = ctx.font; 
 
-        ctx.font = `${fontSize}px ${font.fontFamily}`; // Establece la fuente para medir
+		ctx.font = `${fontSize}px ${font.fontFamily}`; // Establece la fuente para medir
 
-        const words = text.split(' ');
-        let currentLine = '';
-        let numLines = 1;
+		const words = text.split(' ');
+		let currentLine = '';
+		let numLines = 1;
 
-        for (let i = 0; i < words.length; i++) {
-            const word = words[i];
-            const testLine = currentLine.length === 0 ? word : currentLine + ' ' + word;
-            const metrics = ctx.measureText(testLine);
-            if (metrics.width > maxWidth && currentLine.length > 0) {
-                numLines++;
-                currentLine = word;
-            } else {
-                currentLine = testLine;
-            }
-        }
-        
-        // Restaura el estado original de la fuente
-        ctx.font = originalFont;
+		for (let i = 0; i < words.length; i++) {
+			const word = words[i];
+			const testLine = currentLine.length === 0 ? word : currentLine + ' ' + word;
+			const metrics = ctx.measureText(testLine);
+			if (metrics.width > maxWidth && currentLine.length > 0) {
+				numLines++;
+				currentLine = word;
+			} else {
+				currentLine = testLine;
+			}
+		}
+		
+		// Restaura el estado original de la fuente
+		ctx.font = originalFont;
 
-        return numLines;
-    }
+		return numLines;
+	}
 
 	loadImages(imagePaths) {
 		const promises = imagePaths.map((path) => {
@@ -752,8 +752,8 @@ class Js2d {
 		}
 	}
 	setMasterVolume(volume) {
-        this.masterVolume = Math.max(0, Math.min(1, volume));
-    }
+		this.masterVolume = Math.max(0, Math.min(1, volume));
+	}
 
 	playSoundEffect({ frequency = 440, duration = 0.1, volume = 0.5, type = 'sine', attack = 0.01, release = 0.1 }) {
 		if (!this.audioCtx) {
@@ -762,17 +762,17 @@ class Js2d {
 		}
 
 		const now = this.audioCtx.currentTime;
-	    const gainNode = this.audioCtx.createGain();
-	    gainNode.connect(this.audioCtx.destination);
+		const gainNode = this.audioCtx.createGain();
+		gainNode.connect(this.audioCtx.destination);
 
-	    const finalVolume = volume * this.masterVolume;
+		const finalVolume = volume * this.masterVolume;
 
-	    gainNode.gain.setValueAtTime(0, now);
-	    gainNode.gain.linearRampToValueAtTime(finalVolume, now + attack);
-	    
-	    const releaseStart = Math.max(now + attack, now + duration - release);
-	    gainNode.gain.setValueAtTime(finalVolume, releaseStart);
-	    gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
+		gainNode.gain.setValueAtTime(0, now);
+		gainNode.gain.linearRampToValueAtTime(finalVolume, now + attack);
+		
+		const releaseStart = Math.max(now + attack, now + duration - release);
+		gainNode.gain.setValueAtTime(finalVolume, releaseStart);
+		gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
 
 		const oscillator = this.audioCtx.createOscillator();
 		oscillator.type = type;
@@ -818,22 +818,22 @@ class Js2d {
 	sprites = {}
 
 	async loadSprite(name, pathOrImage, scale = 1, frameWidth = null, frameHeight = null) {
-	    this.sprites[name] = {};
-	    let image;
+		this.sprites[name] = {};
+		let image;
 
-	    if (pathOrImage instanceof HTMLImageElement) {
-	        image = pathOrImage;
-	        this.sprites[name].path = pathOrImage.src || "";
-	    } else {
-	        image = await this.loadImage(pathOrImage);
-	        this.sprites[name].path = pathOrImage;
-	    }
-	    
-	    this.sprites[name].image = image;
-	    this.sprites[name].scale = scale;
+		if (pathOrImage instanceof HTMLImageElement) {
+			image = pathOrImage;
+			this.sprites[name].path = pathOrImage.src || "";
+		} else {
+			image = await this.loadImage(pathOrImage);
+			this.sprites[name].path = pathOrImage;
+		}
+		
+		this.sprites[name].image = image;
+		this.sprites[name].scale = scale;
 
-	    this.sprites[name].frameWidth = frameWidth || image._w;
-	    this.sprites[name].frameHeight = frameHeight || image._h;
+		this.sprites[name].frameWidth = frameWidth || image._w;
+		this.sprites[name].frameHeight = frameHeight || image._h;
 	}
 
 	async loadSprites(spriteList) {
@@ -862,84 +862,84 @@ class Js2d {
 	}
 
 	drawSprite(image, frame = 0, pos, scale = 1, flipped = false, rotation = 0, pivot = Pivot.Center) {
-	    let spriteInfo = null;
-	    for (const key in this.sprites) {
-	        if (this.sprites[key].image === image) {
-	            spriteInfo = this.sprites[key];
-	            break;
-	        }
-	    }
-
-	    if (!image) return;
-	    const loaded = image._loaded || (image.complete && image.naturalWidth);
-	    if (!loaded) return;
-
-	    this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
-
-	    const iw = image._w || image.naturalWidth;
-	    const ih = image._h || image.naturalHeight;
-
-	    let sWidth, sHeight, dx, dy;
-
-	    if (spriteInfo && spriteInfo.frameWidth) {
-	        sWidth = spriteInfo.frameWidth;
-	        sHeight = spriteInfo.frameHeight || ih;
-	        const framesPerRow = Math.floor(iw / sWidth);
-	        const row = Math.floor(frame / framesPerRow);
-	        const col = frame % framesPerRow;
-	        dx = col * sWidth;
-	        dy = row * sHeight;
-	    } else {
-	        sWidth = iw;
-	        sHeight = ih;
-	        dx = 0;
-	        dy = 0;
-	    }
-	    
-	    const dWidth = sWidth * scale;
-	    const dHeight = sHeight * scale;
-	    
-	    this.ctx.save();
-	    
-	    // --- LÓGICA DE DIBUJADO EN PÍXELES EXACTOS ---
-	    
-	    // 1. Nos movemos a la posición REDONDEADA. Este es el anclaje para la rotación.
-	    this.ctx.translate(Math.round(pos.x), Math.round(pos.y));
-	    
-	    // 2. Aplicamos la rotación alrededor de ese punto.
-	    if (rotation !== 0) {
-	        this.ctx.rotate(this.toRadians(rotation));
-	    }
-	    
-	    // 3. Calculamos el desfase según el pivote.
-	    let drawOffsetX = 0;
-	    let drawOffsetY = 0;
-
-	    switch(pivot) {
-	        case Pivot.Top_Left:      break;
-	        case Pivot.Top_Center:    drawOffsetX = -dWidth / 2; break;
-	        case Pivot.Top_Right:     drawOffsetX = -dWidth; break;
-	        case Pivot.Center_Left:   drawOffsetY = -dHeight / 2; break;
-	        case Pivot.Center:        drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight / 2; break;
-	        case Pivot.Center_Right:  drawOffsetX = -dWidth; drawOffsetY = -dHeight / 2; break;
-	        case Pivot.Bottom_Left:   drawOffsetY = -dHeight; break;
-	        case Pivot.Bottom_Center: drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight; break;
-	        case Pivot.Bottom_Right:  drawOffsetX = -dWidth; drawOffsetY = -dHeight; break;
-	        default:                  drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight / 2; break;
-	    }
-
-	    if (flipped) {
-		    this.ctx.scale(-1, 1);
-		    drawOffsetX = -drawOffsetX - dWidth;
+		let spriteInfo = null;
+		for (const key in this.sprites) {
+			if (this.sprites[key].image === image) {
+				spriteInfo = this.sprites[key];
+				break;
+			}
 		}
 
-	    // 4. Dibujamos la imagen en la posición desfasada.
-	    // Redondeamos también los offsets para máxima precisión.
-	    this.ctx.drawImage(image, dx, dy, sWidth, sHeight, 
-	        Math.round(drawOffsetX), Math.round(drawOffsetY), 
-	        dWidth, dHeight);
-	    
-	    this.ctx.restore();
+		if (!image) return;
+		const loaded = image._loaded || (image.complete && image.naturalWidth);
+		if (!loaded) return;
+
+		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
+
+		const iw = image._w || image.naturalWidth;
+		const ih = image._h || image.naturalHeight;
+
+		let sWidth, sHeight, dx, dy;
+
+		if (spriteInfo && spriteInfo.frameWidth) {
+			sWidth = spriteInfo.frameWidth;
+			sHeight = spriteInfo.frameHeight || ih;
+			const framesPerRow = Math.floor(iw / sWidth);
+			const row = Math.floor(frame / framesPerRow);
+			const col = frame % framesPerRow;
+			dx = col * sWidth;
+			dy = row * sHeight;
+		} else {
+			sWidth = iw;
+			sHeight = ih;
+			dx = 0;
+			dy = 0;
+		}
+		
+		const dWidth = sWidth * scale;
+		const dHeight = sHeight * scale;
+		
+		this.ctx.save();
+		
+		// --- LÓGICA DE DIBUJADO EN PÍXELES EXACTOS ---
+		
+		// 1. Nos movemos a la posición REDONDEADA. Este es el anclaje para la rotación.
+		this.ctx.translate(Math.round(pos.x), Math.round(pos.y));
+		
+		// 2. Aplicamos la rotación alrededor de ese punto.
+		if (rotation !== 0) {
+			this.ctx.rotate(this.toRadians(rotation));
+		}
+		
+		// 3. Calculamos el desfase según el pivote.
+		let drawOffsetX = 0;
+		let drawOffsetY = 0;
+
+		switch(pivot) {
+			case Pivot.Top_Left:      break;
+			case Pivot.Top_Center:    drawOffsetX = -dWidth / 2; break;
+			case Pivot.Top_Right:     drawOffsetX = -dWidth; break;
+			case Pivot.Center_Left:   drawOffsetY = -dHeight / 2; break;
+			case Pivot.Center:        drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight / 2; break;
+			case Pivot.Center_Right:  drawOffsetX = -dWidth; drawOffsetY = -dHeight / 2; break;
+			case Pivot.Bottom_Left:   drawOffsetY = -dHeight; break;
+			case Pivot.Bottom_Center: drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight; break;
+			case Pivot.Bottom_Right:  drawOffsetX = -dWidth; drawOffsetY = -dHeight; break;
+			default:                  drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight / 2; break;
+		}
+
+		if (flipped) {
+			this.ctx.scale(-1, 1);
+			drawOffsetX = -drawOffsetX - dWidth;
+		}
+
+		// 4. Dibujamos la imagen en la posición desfasada.
+		// Redondeamos también los offsets para máxima precisión.
+		this.ctx.drawImage(image, dx, dy, sWidth, sHeight, 
+			Math.round(drawOffsetX), Math.round(drawOffsetY), 
+			dWidth, dHeight);
+		
+		this.ctx.restore();
 	}
 	
 	animatedSprites = {}
@@ -1044,6 +1044,27 @@ class Js2d {
 	//
 	// Herramientas
 	//
+
+	setCookie(name, value, days) {
+		let expires = "";
+		if (days) {
+			const date = new Date();
+			date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+			expires = "; expires=" + date.toUTCString();
+		}
+		document.cookie = name + "=" + (value || "")  + expires + "; path=/";
+	}
+
+	getCookie(name) {
+	    const nameEQ = name + "=";
+	    const ca = document.cookie.split(';');
+	    for(let i = 0; i < ca.length; i++) {
+	        let c = ca[i];
+	        while (c.charAt(0) == ' ') c = c.substring(1, c.length); // Quita espacios en blanco
+	        if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+	    }
+	    return null;
+	}
 
 	getFileExtention(filename) {
 		const parts = filename.split(".")

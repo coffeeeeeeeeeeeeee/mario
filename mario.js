@@ -146,6 +146,13 @@ class Game {
 			'1-2'
 		]; 
 		this.currentWorldIndex = 0; // Índice del mundo seleccionado
+
+		const savedHighscore = this.engine.getCookie("smb_highscore");
+		if (savedHighscore) {
+			this.highscore = parseInt(savedHighscore, 10);
+		} else {
+			this.highscore = 0;
+		}
 	}
 
 	screenToTile(x, y) {
@@ -287,7 +294,17 @@ class Game {
 		if (this.state === Game_State.Playing) {
 			this.state = Game_State.Player_Dying;
 			this.velocityY = -18;
-			if (this.score > this.highscore) { this.highscore = this.score; }
+
+			if (this.score > this.highscore) {
+				this.highscore = this.score;
+				this.engine.setCookie("smb_highscore", this.highscore, 365);
+				console.log(`[SMB] Nuevo highscore guardado: ${this.highscore}`);
+			}
+
+			if (this.score > this.highscore) {
+				this.highscore = this.score;
+			}
+
 			this.stopAllMusic();
 			this.engine.playAudio(audio["Player_Die"], false);
 		}
