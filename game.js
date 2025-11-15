@@ -3,8 +3,9 @@ let font;
 
 // https://downloads.khinsider.com/game-soundtracks/album/super-mario-bros
 const audio = {
-	"Main_Theme": js2d.loadAudio("assets/audios/main_theme.mp3"),
-	"Sub_Theme": js2d.loadAudio("assets/audios/sub_theme.mp3"),
+	"Overworld_Theme": js2d.loadAudio("assets/audios/overworld_theme.mp3"),
+	"Underground_Theme": js2d.loadAudio("assets/audios/underground_theme.mp3"),
+	"Underwater_Theme": js2d.loadAudio("assets/audios/underwater_theme.mp3"),
 	"Castle_Theme": js2d.loadAudio("assets/audios/castle_theme.mp3"),
 	"Win_Theme": js2d.loadAudio("assets/audios/win_theme.mp3"),
 	"Game_Over_Theme": js2d.loadAudio("assets/audios/game_over.mp3"),
@@ -66,9 +67,32 @@ function update(dt) {
 
 		case Game_State.Playing:
 			smb.time -= dt / 1000;
-			if (audio["Main_Theme"].paused && !audio["Main_Theme"].ended) {
-				js2d.playAudio(audio["Main_Theme"], true);
+
+			if (smb.currentMap) {
+				switch (smb.currentMap.type) {
+					case World_Type.Overworld:
+						if (audio["Overworld_Theme"].paused && !audio["Overworld_Theme"].ended) {
+							js2d.playAudio(audio["Overworld_Theme"], true);
+						}
+						break;
+					case World_Type.Underground:
+						if (audio["Underground_Theme"].paused && !audio["Underground_Theme"].ended) {
+							js2d.playAudio(audio["Underground_Theme"], true);
+						}
+						break;
+					case World_Type.Underwater:
+						if (audio["Underwater_Theme"].paused && !audio["Underwater_Theme"].ended) {
+							js2d.playAudio(audio["Underwater_Theme"], true);
+						}
+						break;
+					case World_Type.Castle:
+						if (audio["Castle_Theme"].paused && !audio["Castle_Theme"].ended) {
+							js2d.playAudio(audio["Castle_Theme"], true);
+						}
+						break;
+				}
 			}
+
 			smb.updateEnemies(dt);
 			smb.drawBackground();
 			smb.drawBlocks();
@@ -128,6 +152,7 @@ async function init() {
 		["Block_Pipe_Body_Left", "assets/images/pipe_body_left.png", tileScale],
 		["Block_Pipe_Body_Right", "assets/images/pipe_body_right.png", tileScale],
 		["Block_Invisible", "assets/images/empty.png", tileScale],
+		["Object_Flag", "assets/images/flag.png", tileScale],
 		["Block_Flagpole", "assets/images/post.png", tileScale],
 		["Block_Flagpole_Top", "assets/images/post_top.png", tileScale],
 		["Block_Brick_Middle", "assets/images/brick_middle.png", tileScale],
@@ -149,6 +174,11 @@ async function init() {
 		["Block_Multi_Coin", "assets/images/brick.png", tileScale],
 		["Block_Used", "assets/images/block_used.png", tileScale],
 		["Block_Life_Used", "assets/images/block_life_used.png", tileScale],
+		["Block_Ground_Underground", "assets/images/ground_underground.png", tileScale],
+		["Block_Brick_Underground", "assets/images/brick_underground.png", tileScale],
+		["Object_Coin_Underground", "assets/images/coin_underground.png", tileScale],
+		["Object_Question_Underground", "assets/images/question_block_underground.png", tileScale],
+		["Object_Question_Used_Underground", "assets/images/question_block_used_underground.png", tileScale],
 	];
 	await js2d.loadSprites(spriteList);
 
@@ -172,7 +202,7 @@ async function init() {
 	js2d.addAnimationToSprite("Mario", "Mario_Stop", [4], true, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Jump", [5], false, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Fail", [6], true, 16);
-	js2d.addAnimationToSprite("Mario", "Mario_Slide", [14], false, 16);
+	js2d.addAnimationToSprite("Mario", "Mario_Slide", [7], false, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Fall", [7, 8], true, 16);
 	js2d.addAnimationToSprite("Mario", "Mario_Swim", [9, 10, 11, 12, 13], true, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Idle", [0], true, 16);
@@ -180,7 +210,7 @@ async function init() {
 	js2d.addAnimationToSprite("Luigi", "Luigi_Stop", [4], true, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Jump", [5], false, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Fail", [6], true, 16);
-	js2d.addAnimationToSprite("Luigi", "Luigi_Slide", [14], false, 16);
+	js2d.addAnimationToSprite("Luigi", "Luigi_Slide", [7], false, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Fall", [7, 8], true, 16);
 	js2d.addAnimationToSprite("Luigi", "Luigi_Swim", [9, 10, 11, 12, 13], true, 16);
 	js2d.addAnimationToSprite("Goomba", "Goomba_Walk", [0, 1], true, 16);

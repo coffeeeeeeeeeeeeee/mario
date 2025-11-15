@@ -741,11 +741,15 @@ class Js2d {
 		audio.volume = vol * this.masterVolume;
 	}
 	stopAudio(audio) {
-		audio.pause();
-		audio.currentTime = 0;
+		if (audio && typeof audio.pause === 'function') {
+			audio.pause();
+			audio.currentTime = 0;
+		}
 	}
 	pauseAudio(audio) {
-		miAudio.pause();
+		if (audio && typeof audio.pause === 'function') {
+			audio.pause();
+		}
 	}
 	setMasterVolume(volume) {
         this.masterVolume = Math.max(0, Math.min(1, volume));
