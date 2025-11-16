@@ -591,8 +591,6 @@ class Game {
 
 							if (this.currentMap.map[wallIndex] > 0 && this.currentMap.map[wallIndex] !== BlockType.Enemy_Pakkun) {
 								enemy.vx *= -1; // Rebotar
-								this.engine.playAudio(audio["Shell"], false);
-
 								// Pequeño ajuste para evitar que se quede atascado en la pared
 								enemy.x += enemy.vx > 0 ? 1 : -1;
 							}
@@ -684,12 +682,12 @@ class Game {
 
 				if (isStomping) {
 					this.velocityY = -10; // Pequeño rebote al aplastar
-					this.engine.playAudio(audio["Player_Stomp"], false);
+					this.engine.playAudioOverlap(audio["Player_Stomp"]);
 
 					if (enemy.type === 'Goomba') {
 						enemy.state = 'stomped';
 						this.score += 100;
-					} else if (enemy.type.includes('Koopa') || enemy.type.includes('Koopa_Winged')) { // Comprobación más robusta
+					} else if (enemy.type.includes('Koopa') || enemy.type.includes('Koopa_Winged')) {
 						if (enemy.isWinged) {
 							enemy.isWinged = false; // Le quita las alas
 							enemy.type = 'Koopa';   // Lo convierte en un Koopa normal
@@ -698,17 +696,25 @@ class Game {
 							enemy.vx = 0;
 							this.score += 200;
 						} else if (enemy.state === 'shell') {
-							// Si ya es un caparazón, patearlo con el salto
-							const shellSpeed = 8;
-							enemy.vx = (player.position.x < enemyRect.x) ? shellSpeed : -shellSpeed;
-							this.score += 500;
+							// Si el caparazón SE ESTÁ MOVIENDO, lo detenemos.
+							if (enemy.vx !== 0) {
+								enemy.vx = 0; // Se detiene
+								this.score += 500; // Gana puntos por detenerlo
+							} 
+							// Si está QUIETO, lo pateamos (como antes).
+							else {
+								const shellSpeed = 8;
+								enemy.vx = (player.position.x < enemyRect.x) ? shellSpeed : -shellSpeed;
+								this.score += 500;
+							}
 						}
 					}
 				} else { // Colisión lateral
 					if ((enemy.state === 'walking' && this.velocityY >= 0) || (enemy.state === 'shell' && enemy.vx !== 0)) {
- 						this.killPlayer();
- 					} else if (enemy.state === 'shell' && enemy.vx === 0) {
-						const shellSpeed = 8;					
+						this.killPlayer();
+					} 
+					else if (enemy.state === 'shell' && enemy.vx === 0) {
+						const shellSpeed = 8;
 						enemy.vx = (player.position.x < enemyRect.x) ? shellSpeed : -shellSpeed;
 					}
 				}
@@ -1156,15 +1162,15 @@ class Game {
 					this.spawnPowerup(blockX, blockY, '1UP');
 				}
 				if (blockId === 3) {
-					this.currentMap.map[idx] = 4; this.coins++; this.engine.playAudio(audio["Coin"], false);
+					this.currentMap.map[idx] = 4; this.coins++; this.engine.playAudioOverlap(audio["Coin"], false);
 					const { x: coinX, y: coinY } = this.tileToScreen(idx % mapWidth, Math.floor(idx / mapWidth));
 					this.spawnCoin(coinX, coinY - this.tileSize);
 				}
 				if (blockId === 34) {
 					if (!this.specialBlocks[idx]) {
-						this.specialBlocks[idx] = { coinsLeft: 10, revealed: true }; this.engine.playAudio(audio["Player_Bump"], false);
+						this.specialBlocks[idx] = { coinsLeft: 10, revealed: true }; this.engine.playAudioOverlap(audio["Player_Bump"], false);
 					} else if (this.specialBlocks[idx].coinsLeft > 0) {
-						this.specialBlocks[idx].coinsLeft--; this.coins++; this.engine.playAudio(audio["Coin"], false);
+						this.specialBlocks[idx].coinsLeft--; this.coins++; this.engine.playAudioOverlap(audio["Coin"], false);
 						const { x: coinX, y: coinY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 						this.spawnCoin(coinX, coinY - this.tileSize);
 						if (this.specialBlocks[idx].coinsLeft === 0) { this.currentMap.map[idx] = 4; }
@@ -1183,7 +1189,7 @@ class Game {
 					this.velocityY = 0;
 					playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y;
 					hitCeiling = true;
-					this.engine.playAudio(audio["Player_Bump"]);
+					this.engine.playAudioOverlap(audio["Player_Bump"]);
 				}
 			}
 			if (!hitCeiling) { playerPos.y = newY; }
@@ -1212,7 +1218,7 @@ class Game {
 		const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
 		
 		if (this.isOnGround && this.skidTimer <= 0 && (stoppedRunningTurbo || changedDirection)) {
-			this.engine.playAudio(audio["Player_Skid"], false);
+			this.engine.playAudioOverlap(audio["Player_Skid"], false);
 			this.skidTimer = 10;
 		}
 		
@@ -1303,7 +1309,7 @@ class Game {
 		if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW'] || this.engine.keysPressed['Space']) && this.isOnGround) {
 			this.velocityY = this.jumpPower; this.isOnGround = false;
 			this.engine.setVolume(audio["Player_Jump"], 0.2);
-			this.engine.playAudio(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"], false);
+			this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"], false);
 		}
 		
 		this.wasMovingTurbo = isMoving && isTurbo && this.isOnGround;

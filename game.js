@@ -135,31 +135,6 @@ async function init() {
 	await js2d.loadTileset("Enemy_Tall_Tiles", enemiesTallTileset, 16, 24);
 	await js2d.loadTileset("UI_Tiles", uiImage, 8, 8);
 
-	/*
-	// Bloques Comunes
-	js2d.defineSpriteFromTileset("Block_Black", "World_Tiles", 0, 0, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Ground", "World_Tiles", 1, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Stairs", "World_Tiles", 2, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Brick", "World_Tiles", 3, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Brick_Middle", "World_Tiles", 4, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Brick_Zigzag", "World_Tiles", 5, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Brick_Zigzag_Filled", "World_Tiles", 6, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Brick_Arch", "World_Tiles", 7, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Brick_Break", "World_Tiles", 8, 0, 1, tileScale);
-    js2d.defineSpriteFromTileset("Block_Brick_Cut", "World_Tiles", 9, 0, 1, tileScale);
-
-	// Objetos Interactivos
-    js2d.defineSpriteFromTileset("Object_Question",				"World_Tiles", 0, 1, 3, tileScale);
-	js2d.defineSpriteFromTileset("Object_Question_Multiple",	"World_Tiles", 0, 1, 3, tileScale);
-	js2d.defineSpriteFromTileset("Object_Question_Used",		"World_Tiles", 1, 1, 1, tileScale);
-	js2d.defineSpriteFromTileset("Object_Twentyfive",			"World_Tiles", 2, 1, 3, tileScale);
-	js2d.defineSpriteFromTileset("Object_Coin",					"World_Tiles", 7, 1, 3, tileScale);
-
-    js2d.defineSpriteFromTileset("Block_Used",		"World_Tiles", 3, 1, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Invisible",	"World_Tiles", 15, 15, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Empty",		"World_Tiles", 15, 15, 1, tileScale);
-	*/
-
 	// Enemigos bajos
     js2d.defineSpriteFromTileset("Enemy_Goomba", "Enemy_Short_Tiles", 0, 0, 3, tileScale);
     js2d.defineSpriteFromTileset("Koopa_Shell_Green", "Enemy_Short_Tiles", 3, 0, 2, tileScale);
@@ -173,56 +148,11 @@ async function init() {
 	js2d.defineSpriteFromTileset("Enemy_Pakkun_Green", "Enemy_Tall_Tiles", 8, 0, 2, tileScale);
 	js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
-	/*
-	// Tuberías
-	js2d.defineSpriteFromTileset("Block_Pipe_Top_Left", "World_Tiles", 0, 2, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", "World_Tiles", 1, 2, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", "World_Tiles", 2, 2, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", "World_Tiles", 3, 2, 1, tileScale);
-	
-	// Nivel Subterráneo (VER: crear otro tileset y cambiar según 'type' en el mapa)
-	js2d.defineSpriteFromTileset("Block_Ground_Underground", "World_Tiles", 4, 0, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Brick_Underground", "World_Tiles", 5, 0, 1, tileScale);
-	js2d.defineSpriteFromTileset("Object_Question_Underground", "World_Tiles", 4, 1, 3, tileScale);
-	js2d.defineSpriteFromTileset("Object_Question_Used_Underground", "World_Tiles", 2, 0, 1, tileScale);
-	js2d.defineSpriteFromTileset("Object_Coin_Underground", "World_Tiles", 0, 10, 3, tileScale);
-	
-	// Nubes
-	js2d.defineSpriteFromTileset("Block_Cloud_Top_Left", "World_Tiles", 0, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Cloud_Top_Middle", "World_Tiles", 1, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Cloud_Top_Right", "World_Tiles", 2, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Left", "World_Tiles", 3, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Middle", "World_Tiles", 4, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Right", "World_Tiles", 5, 4, 1, tileScale);
-
-	// Arbustos
-	js2d.defineSpriteFromTileset("Block_Bush_Left", "World_Tiles", 12, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Bush_Middle", "World_Tiles", 13, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Bush_Right", "World_Tiles", 14, 4, 1, tileScale);
-	
-	// Colinas
-	js2d.defineSpriteFromTileset("Block_Hill_Left", "World_Tiles", 6, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_1", "World_Tiles", 7, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Hill_Middle", "World_Tiles", 8, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_2", "World_Tiles", 9, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Hill_Right", "World_Tiles", 10, 4, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Hill_Top", "World_Tiles", 11, 4, 1, tileScale);
-
-	// Bandera
-	js2d.defineSpriteFromTileset("Block_Flagpole_Top", "World_Tiles", 0, 3, 1, tileScale);
-	js2d.defineSpriteFromTileset("Block_Flagpole", "World_Tiles", 1, 3, 1, tileScale);
-	js2d.defineSpriteFromTileset("Object_Flag", "World_Tiles", 2, 3, 1, tileScale);
-	*/
-
 	await js2d.loadSprite("UI_Title_Image", titleImage, tileScale);
     js2d.defineSpriteFromTileset("Player_Mario", "Player_Mario_Tiles", 0, 0, 15, tileScale);
     
     js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, fontSize / tileScale / 2);
     js2d.defineSpriteFromTileset("Cursor", "UI_Tiles", 1, 0, 1, fontSize / tileScale / 2);
-    /*
-    js2d.defineSpriteFromTileset("Object_Mushroom_Grow", "World_Tiles", 0, 6, 1, tileScale);
-	js2d.defineSpriteFromTileset("Object_Mushroom_1UP", "World_Tiles", 1, 6, 1, tileScale);
-	*/
 
 	js2d.createAnimatedSprite("Mario", "Player_Mario", playerPos, tileScale);
 	js2d.createAnimatedSprite("Luigi", "Player_Mario", playerPos, tileScale); // Usa el mismo tileset de Mario para Luigi por ahora
