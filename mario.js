@@ -541,7 +541,10 @@ class Game {
 			const enemy = this.enemies[i];
 			const enemyScreenX = enemy.x + this.mapOffset.x;
 
+			// --- LÓGICA DE MOVIMIENTO Y FÍSICA DE CADA ENEMIGO ---
+
 			if (enemy.type === 'Pakkun') {
+				// La lógica de Pakkun ya incluye su propio movimiento vertical, así que podemos saltar el resto.
 				const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
 				const isPlayerNear = Math.abs(playerRect.x - enemyScreenX) < this.tileSize * 1.5;
 				switch (enemy.state) {
@@ -562,73 +565,49 @@ class Game {
 						if (enemy.y >= enemy.initialY) { enemy.state = 'hiding'; }
 						break;
 				}
-				if (enemy.state !== 'hiding') {
-					const pakkunRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: this.tileSize * 2 };
-					if (this.rectsOverlap(playerRect, pakkunRect)) {
-						this.killPlayer();
-					}
-				}
-				continue;
-			}
-
-			if (enemy.type === 'Goomba' && enemy.state === 'stomped') {
+			} else if (enemy.type === 'Goomba' && enemy.state === 'stomped') {
+				// Goomba aplastado solo necesita un temporizador, sin física.
 				enemy.stompTimer++;
 				if (enemy.stompTimer > 30) { this.enemies.splice(i, 1); continue; }
-			}
-
-			if (enemy.type.includes('Koopa')) {
-				if (enemy.type.includes('Koopa')) {
-					// Lógica para cuando el Koopa está en estado de caparazón
-					if (enemy.state === 'shell') {
-						// 1. Aplicar movimiento horizontal si se está deslizando
-						if (enemy.vx !== 0) {
-							enemy.x += enemy.vx;
-							
-							// Colisión con paredes
-							const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
-							const wallTile = this.screenToTile(wallCheckX, enemy.y);
-							const wallIndex = this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width);
-
-							if (this.currentMap.map[wallIndex] > 0 && this.currentMap.map[wallIndex] !== BlockType.Enemy_Pakkun) {
-								enemy.vx *= -1; // Rebotar
-								// Pequeño ajuste para evitar que se quede atascado en la pared
-								enemy.x += enemy.vx > 0 ? 1 : -1;
-							}
-
-							// Colisión con otros enemigos
-							for (let j = this.enemies.length - 1; j >= 0; j--) {
-								const otherEnemy = this.enemies[j];
-								// Evitar que colisione consigo mismo
-								if (otherEnemy.id === enemy.id) continue;
-
-								const shellRect = { x: enemy.x + this.mapOffset.x, y: enemy.y, w: this.tileSize, h: this.tileSize };
-								const otherRect = { x: otherEnemy.x + this.mapOffset.x, y: otherEnemy.y, w: this.tileSize, h: this.tileSize };
-
-								if (this.rectsOverlap(shellRect, otherRect)) {
-									this.score += 400; // Puntos por derrotar a un enemigo con un caparazón
-									this.enemies.splice(j, 1); // Eliminar el otro enemigo
-								}
+			} else if (enemy.type.includes('Koopa')) {
+				// LÓGICA COMPLEJA DE KOOPAS (NORMALES, ALADOS, CAPARAZONES)
+				if (enemy.state === 'shell') {
+					if (enemy.vx !== 0) {
+						enemy.x += enemy.vx;
+						const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
+						const wallTile = this.screenToTile(wallCheckX, enemy.y);
+						if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
+							enemy.vx *= -1;
+							enemy.x += enemy.vx > 0 ? 1 : -1;
+						}
+						for (let j = this.enemies.length - 1; j >= 0; j--) {
+							const otherEnemy = this.enemies[j];
+							if (otherEnemy.id === enemy.id) continue;
+							const shellRect = { x: enemy.x + this.mapOffset.x, y: enemy.y, w: this.tileSize, h: this.tileSize };
+							const otherRect = { x: otherEnemy.x + this.mapOffset.x, y: otherEnemy.y, w: this.tileSize, h: this.tileSize };
+							if (this.rectsOverlap(shellRect, otherRect)) {
+								this.score += 400;
+								this.enemies.splice(j, 1);
 							}
 						}
-					} else if (enemy.isWinged && enemy.canFly) {
-						// Lógica de Koopa volador
-						enemy.flyTimer++;
-						if (enemy.flyTimer > 60 && enemy.vy === 0) { enemy.vy = -10; enemy.flyTimer = 0; }
+					}
+				} else if (enemy.isWinged && enemy.canFly) {
+					enemy.flyTimer++;
+					if (enemy.flyTimer > 60 && enemy.vy === 0) { 
+						enemy.vy = -10; 
+						enemy.flyTimer = 0; 
 					}
 				}
 
-				// Lógica de GRAVEDAD y SUELO para TODOS los enemigos (incluyendo caparazones)
-				const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+				const enemyHeight = (enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
 				enemy.vy += this.gravity;
 				enemy.y += enemy.vy;
 
 				const feetY = enemy.y + enemyHeight;
 				const feetLeft = this.screenToTile(enemy.x + this.mapOffset.x + 4, feetY);
 				const feetRight = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize - 4, feetY);
-				const groundIndexLeft = this.engine.coordsToIndex(feetLeft, this.currentMap.dimensions.width);
-				const groundIndexRight = this.engine.coordsToIndex(feetRight, this.currentMap.dimensions.width);
-				const onGroundLeft = this.currentMap.map[groundIndexLeft] > 0 && this.currentMap.map[groundIndexLeft] !== BlockType.Enemy_Pakkun;
-				const onGroundRight = this.currentMap.map[groundIndexRight] > 0 && this.currentMap.map[groundIndexRight] !== BlockType.Enemy_Pakkun;
+				const onGroundLeft = this.currentMap.map[this.engine.coordsToIndex(feetLeft, this.currentMap.dimensions.width)] > 0;
+				const onGroundRight = this.currentMap.map[this.engine.coordsToIndex(feetRight, this.currentMap.dimensions.width)] > 0;
 
 				let isOnSolidGround = false;
 				if (onGroundLeft || onGroundRight) {
@@ -637,88 +616,80 @@ class Game {
 					isOnSolidGround = true;
 				}
 
-				// MOVIMIENTO y GIRO para enemigos que caminan (no caparazones)
 				if (enemy.state === 'walking') {
 					enemy.x += enemy.vx;
-					
-					// Girar si llega a una pared
 					const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
 					const wallTile = this.screenToTile(wallCheckX, enemy.y);
 					if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
 						enemy.vx *= -1;
 					}
-					
-					if (isOnSolidGround) {
-						if (enemy.vx < 0 && !onGroundLeft) { // Si va a la izquierda y no hay suelo a la izquierda
-							enemy.vx *= -1;
-						} else if (enemy.vx > 0 && !onGroundRight) { // Si va a la derecha y no hay suelo a la derecha
-							enemy.vx *= -1;
-						}
+					if (isOnSolidGround && !enemy.isWinged) {
+						if (enemy.vx < 0 && !onGroundLeft) enemy.vx *= -1;
+						else if (enemy.vx > 0 && !onGroundRight) enemy.vx *= -1;
 					}
 				}
+			} else {
+				// --- INICIO DEL CÓDIGO RESTAURADO PARA GOOMBAS Y OTROS ENEMIGOS ---
+				// Lógica de física genérica para enemigos que no son Koopas ni Pakkuns.
+				const enemyHeight = this.tileSize;
+				enemy.vy += this.gravity;
+				enemy.y += enemy.vy;
+
+				const feetY = enemy.y + enemyHeight;
+				const feetTile = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize / 2, feetY);
+				if (this.currentMap.map[this.engine.coordsToIndex(feetTile, this.currentMap.dimensions.width)] > 0) {
+					enemy.vy = 0;
+					enemy.y = this.tileToScreen(feetTile.x, feetTile.y).y - enemyHeight;
+				}
+
+				if (enemy.state === 'walking') {
+					enemy.x += enemy.vx;
+					const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
+					const wallTile = this.screenToTile(wallCheckX, enemy.y);
+					if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
+						enemy.vx *= -1;
+					}
+				}
+				// --- FIN DEL CÓDIGO RESTAURADO ---
 			}
 
-			enemy.vy += this.gravity;
+			// --- LÓGICA DE COLISIÓN CON EL JUGADOR (PARA TODOS LOS ENEMIGOS) ---
 			
 			const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
-			const enemyRect = { x: enemy.x + this.mapOffset.x, y: enemy.y, w: this.tileSize, h: enemyHeight };
-
-			const groundTile = this.screenToTile(enemyRect.x, enemyRect.y + enemyHeight);
-			if (this.currentMap.map[this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width)] > 0) {
-				enemy.vy = 0;
-				enemy.y = this.tileToScreen(groundTile.x, groundTile.y).y - enemyHeight;
-			}
-			if (enemy.state === 'walking') enemy.x += enemy.vx;
-			enemy.y += enemy.vy;
-			const wallTile = this.screenToTile(enemy.vx > 0 ? enemyRect.x + this.tileSize : enemyRect.x, enemyRect.y);
-			if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0 && enemy.state === 'walking') {
-				enemy.vx *= -1;
-			}
-
+			const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: enemyHeight };
 			const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
 
 			if (this.rectsOverlap(playerRect, enemyRect)) {
 				const isStomping = this.velocityY > 0 && (player.position.y + this.tileSize) < (enemy.y + enemyHeight / 2);
 
 				if (isStomping) {
-					this.velocityY = -10; // Pequeño rebote al aplastar
+					this.velocityY = -10;
 					this.engine.playAudioOverlap(audio["Player_Stomp"]);
-
 					if (enemy.type === 'Goomba') {
 						enemy.state = 'stomped';
 						this.score += 100;
-					} else if (enemy.type.includes('Koopa') || enemy.type.includes('Koopa_Winged')) {
+					} else if (enemy.type.includes('Koopa')) {
 						if (enemy.isWinged) {
-							enemy.isWinged = false; // Le quita las alas
-							enemy.type = 'Koopa';   // Lo convierte en un Koopa normal
+							enemy.isWinged = false; enemy.type = 'Koopa';
 						} else if (enemy.state === 'walking') {
-							enemy.state = 'shell'; // Lo convierte en caparazón
-							enemy.vx = 0;
-							this.score += 200;
+							enemy.state = 'shell'; enemy.vx = 0; this.score += 200;
 						} else if (enemy.state === 'shell') {
-							// Si el caparazón SE ESTÁ MOVIENDO, lo detenemos.
 							if (enemy.vx !== 0) {
-								enemy.vx = 0; // Se detiene
-								this.score += 500; // Gana puntos por detenerlo
-							} 
-							// Si está QUIETO, lo pateamos (como antes).
-							else {
-								const shellSpeed = 8;
-								enemy.vx = (player.position.x < enemyRect.x) ? shellSpeed : -shellSpeed;
-								this.score += 500;
+								enemy.vx = 0; this.score += 500;
+							} else {
+								enemy.vx = (player.position.x < enemyRect.x) ? 8 : -8; this.score += 500;
 							}
 						}
 					}
 				} else { // Colisión lateral
-					if ((enemy.state === 'walking' && this.velocityY >= 0) || (enemy.state === 'shell' && enemy.vx !== 0)) {
+					if (enemy.type === 'Pakkun' || (enemy.state === 'walking' && this.velocityY >= 0) || (enemy.state === 'shell' && enemy.vx !== 0)) {
 						this.killPlayer();
-					} 
-					else if (enemy.state === 'shell' && enemy.vx === 0) {
-						const shellSpeed = 8;
-						enemy.vx = (player.position.x < enemyRect.x) ? shellSpeed : -shellSpeed;
+					} else if (enemy.state === 'shell' && enemy.vx === 0) {
+						enemy.vx = (player.position.x < enemyRect.x) ? 8 : -8;
 					}
 				}
 			}
+
 			if (enemy.state === 'falling' && enemy.y > this.engine.canvas.height) {
 				this.enemies.splice(i, 1);
 			}
