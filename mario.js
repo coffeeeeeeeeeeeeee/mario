@@ -72,14 +72,9 @@ const BlockType = [
 	'Block_Used',					// 35
 	'Block_Life_Used',				// 36
 	'Enemy_Koopa_Winged_Red',		// 37
-	'Block_Ground_Underground',		// 38
-	'Block_Brick_Underground',		// 39
-	'Object_Coin_Underground',		// 40
-	'Object_Question_Underground',			// 41
-	'Object_Question_Used_Underground',		// 42,
-	'Enemy_Koopa_Winged_Green',		// 43
-	'Enemy_Koopa_Red',				// 44
-	'Enemy_Pakkun_Red'				// 45
+	'Enemy_Koopa_Winged_Green',		// 38
+	'Enemy_Koopa_Red',				// 39
+	'Enemy_Pakkun_Red'				// 40
 ];
 
 class Game {
@@ -186,6 +181,96 @@ class Game {
 		};
 	}
 
+	defineWorldSprites() {
+		let tilesetName = "Overworld_Tiles";
+		const tileScale = this.spriteScale;
+
+		switch (this.currentMap.type) {
+			case World_Type.Underground:
+				tilesetName = "Underground_Tiles";
+				break;
+			case World_Type.Overworld:
+			default:
+				tilesetName = "Overworld_Tiles";
+				break;
+		}
+
+		// Bloques Comunes
+		js2d.defineSpriteFromTileset("Block_Black", tilesetName, 0, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Ground", tilesetName, 1, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Stairs", tilesetName, 2, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Zigzag", tilesetName, 5, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Zigzag_Filled", tilesetName, 6, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Arch", tilesetName, 7, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Break", tilesetName, 8, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Cut", tilesetName, 9, 0, 1, tileScale);
+
+		// Objetos Interactivos
+		js2d.defineSpriteFromTileset("Object_Question",				tilesetName, 0, 1, 3, tileScale);
+		js2d.defineSpriteFromTileset("Object_Question_Multiple",	tilesetName, 0, 1, 3, tileScale);
+		js2d.defineSpriteFromTileset("Object_Question_Used",		tilesetName, 1, 1, 1, tileScale);
+		js2d.defineSpriteFromTileset("Object_Twentyfive",			tilesetName, 2, 1, 3, tileScale);
+		js2d.defineSpriteFromTileset("Object_Coin",					tilesetName, 7, 1, 3, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Used",		tilesetName, 3, 1, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Invisible",	tilesetName, 15, 15, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Empty",		tilesetName, 15, 15, 1, tileScale);
+
+		// Tuberías
+		js2d.defineSpriteFromTileset("Block_Pipe_Top_Left", tilesetName, 0, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", tilesetName, 1, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
+		
+		// Escenario (Nubes, Arbustos, etc.) - Usamos Overworld por defecto
+		const sceneryTileset = "Overworld_Tiles";
+		// Nubes
+		js2d.defineSpriteFromTileset("Block_Cloud_Top_Left", sceneryTileset, 0, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Top_Middle", sceneryTileset, 1, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Top_Right", sceneryTileset, 2, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Left", sceneryTileset, 3, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Middle", sceneryTileset, 4, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Right", sceneryTileset, 5, 4, 1, tileScale);
+
+		// Arbustos
+		js2d.defineSpriteFromTileset("Block_Bush_Left", sceneryTileset, 12, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Bush_Middle", sceneryTileset, 13, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Bush_Right", sceneryTileset, 14, 4, 1, tileScale);
+		
+		// Colinas
+		js2d.defineSpriteFromTileset("Block_Hill_Left", sceneryTileset, 6, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_1", sceneryTileset, 7, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Middle", sceneryTileset, 8, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_2", sceneryTileset, 9, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Right", sceneryTileset, 10, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Top", sceneryTileset, 11, 4, 1, tileScale);
+
+		// Bandera
+		js2d.defineSpriteFromTileset("Block_Flagpole_Top", sceneryTileset, 0, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Flagpole", sceneryTileset, 1, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Object_Flag", sceneryTileset, 2, 3, 1, tileScale);
+
+		// Power-ups
+		js2d.defineSpriteFromTileset("Object_Mushroom_Grow", sceneryTileset, 0, 6, 1, tileScale);
+		js2d.defineSpriteFromTileset("Object_Mushroom_1UP", sceneryTileset, 1, 6, 1, tileScale);
+
+		// ---
+
+		js2d.createAnimatedSprite("Mushroom_Grow", "Object_Mushroom_Grow", {x: 0, y: 0}, tileScale);
+		js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
+		js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
+		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, this.textSize / this.tileSize);
+		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, this.textSize / this.tileSize);
+
+		js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
+		js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
+		
+		js2d.setAnimationForSprite("Coin", "Coin_Shine");
+		js2d.setAnimationForSprite("UICoin", "Coin_Score");
+	}
+
 	screenToTile(x, y) {
 		const mapWidth = this.currentMap.dimensions.width;
 		const mapHeight = this.currentMap.dimensions.height;
@@ -210,8 +295,10 @@ class Game {
 		const mapData = map.find(m => m.world === name);
 
 		if (mapData) {
-			this.currentMap = JSON.parse(JSON.stringify(mapData)); // Copia profunda para evitar modificar el original
+			this.currentMap = JSON.parse(JSON.stringify(mapData));
 			console.info(`[SMB] Mapa cargado: ${name}`);
+
+			this.defineWorldSprites();
 
 			// Centrar el mapa si es más pequeño que la pantalla
 			const mapPixelWidth = this.currentMap.dimensions.width * this.tileSize;
@@ -505,7 +592,7 @@ class Game {
 							if (this.currentMap.map[wallIndex] > 0 && this.currentMap.map[wallIndex] !== BlockType.Enemy_Pakkun) {
 								enemy.vx *= -1; // Rebotar
 								this.engine.playAudio(audio["Shell"], false);
-								
+
 								// Pequeño ajuste para evitar que se quede atascado en la pared
 								enemy.x += enemy.vx > 0 ? 1 : -1;
 							}

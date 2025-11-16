@@ -127,12 +127,15 @@ async function init() {
 	const tileScale = 4;
 	const playerPos = {x: 300, y: 300};
 
-	await js2d.loadTileset("World_Tiles", overworldTileset, 16, 16);
+	await js2d.loadTileset("Overworld_Tiles", overworldTileset, 16, 16);
+	await js2d.loadTileset("Underground_Tiles", undergroundTileset, 16, 16);
+
 	await js2d.loadTileset("Player_Mario_Tiles", marioSmallTileset, 16, 16);
 	await js2d.loadTileset("Enemy_Short_Tiles", enemiesShortTileset, 16, 16);
 	await js2d.loadTileset("Enemy_Tall_Tiles", enemiesTallTileset, 16, 24);
 	await js2d.loadTileset("UI_Tiles", uiImage, 8, 8);
 
+	/*
 	// Bloques Comunes
 	js2d.defineSpriteFromTileset("Block_Black", "World_Tiles", 0, 0, 1, tileScale);
 	js2d.defineSpriteFromTileset("Block_Ground", "World_Tiles", 1, 0, 1, tileScale);
@@ -155,6 +158,7 @@ async function init() {
     js2d.defineSpriteFromTileset("Block_Used",		"World_Tiles", 3, 1, 1, tileScale);
 	js2d.defineSpriteFromTileset("Block_Invisible",	"World_Tiles", 15, 15, 1, tileScale);
 	js2d.defineSpriteFromTileset("Block_Empty",		"World_Tiles", 15, 15, 1, tileScale);
+	*/
 
 	// Enemigos bajos
     js2d.defineSpriteFromTileset("Enemy_Goomba", "Enemy_Short_Tiles", 0, 0, 3, tileScale);
@@ -169,6 +173,7 @@ async function init() {
 	js2d.defineSpriteFromTileset("Enemy_Pakkun_Green", "Enemy_Tall_Tiles", 8, 0, 2, tileScale);
 	js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
+	/*
 	// Tuberías
 	js2d.defineSpriteFromTileset("Block_Pipe_Top_Left", "World_Tiles", 0, 2, 1, tileScale);
 	js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", "World_Tiles", 1, 2, 1, tileScale);
@@ -207,14 +212,17 @@ async function init() {
 	js2d.defineSpriteFromTileset("Block_Flagpole_Top", "World_Tiles", 0, 3, 1, tileScale);
 	js2d.defineSpriteFromTileset("Block_Flagpole", "World_Tiles", 1, 3, 1, tileScale);
 	js2d.defineSpriteFromTileset("Object_Flag", "World_Tiles", 2, 3, 1, tileScale);
+	*/
 
 	await js2d.loadSprite("UI_Title_Image", titleImage, tileScale);
     js2d.defineSpriteFromTileset("Player_Mario", "Player_Mario_Tiles", 0, 0, 15, tileScale);
     
     js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, fontSize / tileScale / 2);
     js2d.defineSpriteFromTileset("Cursor", "UI_Tiles", 1, 0, 1, fontSize / tileScale / 2);
+    /*
     js2d.defineSpriteFromTileset("Object_Mushroom_Grow", "World_Tiles", 0, 6, 1, tileScale);
 	js2d.defineSpriteFromTileset("Object_Mushroom_1UP", "World_Tiles", 1, 6, 1, tileScale);
+	*/
 
 	js2d.createAnimatedSprite("Mario", "Player_Mario", playerPos, tileScale);
 	js2d.createAnimatedSprite("Luigi", "Player_Mario", playerPos, tileScale); // Usa el mismo tileset de Mario para Luigi por ahora
@@ -228,12 +236,6 @@ async function init() {
 	js2d.createAnimatedSprite("Koopa_Shell_Green", "Koopa_Shell_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Pakkun_Green", "Enemy_Pakkun_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Pakkun_Red", "Enemy_Pakkun_Red", {x: 0, y: 0}, tileScale);
-
-	js2d.createAnimatedSprite("Mushroom_Grow", "Object_Mushroom_Grow", {x: 0, y: 0}, tileScale); // CORREGIDO
-	js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, fontSize / tileSize);
-	js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, fontSize / tileSize);
 
 	// Animaciones
 	js2d.addAnimationToSprite("Mario", "Mario_Idle", [0], true, 16);
@@ -264,8 +266,6 @@ async function init() {
 	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Sliding", [0, 1], false, 16);
 	js2d.addAnimationToSprite("Pakkun_Green", "Pakkun_Bite", [0, 1], true, 16);
 	js2d.addAnimationToSprite("Pakkun_Red", "Pakkun_Bite", [0, 1], true, 16);
-	js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
-	js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
 
 	js2d.setAnimationForSprite("Mario", "Mario_Idle");
 	js2d.setAnimationForSprite("Luigi", "Luigi_Idle");
@@ -276,8 +276,6 @@ async function init() {
 	js2d.setAnimationForSprite("Koopa_Winged_Red", "Koopa_Winged_Walk");
 	js2d.setAnimationForSprite("Pakkun_Red", "Pakkun_Bite");
 	js2d.setAnimationForSprite("Pakkun_Green", "Pakkun_Bite");
-	js2d.setAnimationForSprite("Coin", "Coin_Shine");
-	js2d.setAnimationForSprite("UICoin", "Coin_Score");
 
 	// Animaciones adicionales
 	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Idle", [0], true, 16);
