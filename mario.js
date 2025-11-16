@@ -46,7 +46,7 @@ const BlockType = [
 	'Object_Coin',					// 	9
 	'Enemy_Goomba',					// 10
 	'Enemy_Koopa',					// 11
-	'Enemy_Pakkun',					// 12
+	'Enemy_Pakkun_Green',			// 12
 	'Block_Flagpole',				// 13
 	'Block_Cloud_Left',				// 14
 	'Block_Cloud_Middle',			// 15
@@ -76,7 +76,10 @@ const BlockType = [
 	'Block_Brick_Underground',		// 39
 	'Object_Coin_Underground',		// 40
 	'Object_Question_Underground',			// 41
-	'Object_Question_Used_Underground',		// 42
+	'Object_Question_Used_Underground',		// 42,
+	'Enemy_Koopa_Winged_Green',		// 43
+	'Enemy_Koopa_Red',				// 44
+	'Enemy_Pakkun_Red'				// 45
 ];
 
 class Game {
@@ -140,12 +143,9 @@ class Game {
 		this.foregroundBlocks = [5, 6, 7, 8];
 		
 		this.availableWorlds = [
-			'0-0',
-			'1-1',
-			'1-1b',
-			'1-2'
+			'0-0', '1-1', '1-1b', '1-2'
 		]; 
-		this.currentWorldIndex = 0; // Índice del mundo seleccionado
+		this.currentWorldIndex = 0;
 
 		const savedHighscore = this.engine.getCookie("smb_highscore");
 		this.highscore = savedHighscore ? parseInt(savedHighscore, 10) : 0;
@@ -233,28 +233,54 @@ class Game {
 			for (var i = 0; i < this.currentMap.map.length; i++) {
 				const blockId = this.currentMap.map[i];
 				let enemyType = null;
+				let enemyColor = null;
 
 				switch (blockId) {
-					case 10: enemyType = "Goomba"; break;
-					case 11: enemyType = "Koopa"; break;
-					case 12: enemyType = "Pakkun"; break;
-					case 37: enemyType = "Koopa_Winged"; break;
+					case 10: 
+						enemyType = "Goomba"; 
+						break;
+					case 11: 
+						enemyType = "Koopa"; 
+						enemyColor = "Green";
+						break;
+					case 12: 
+						enemyType = "Pakkun"; 
+						enemyColor = "Green";
+						break;
+					case 37: 
+						enemyType = "Koopa_Winged";
+						enemyColor = "Red";
+						break;
+					case 43:
+						enemyType = "Koopa_Winged";
+						enemyColor = "Green";
+						break;
+					case 44:
+						enemyType = "Koopa";
+						enemyColor = "Red";
+						break;
+					case 45:
+						enemyType = "Pakkun";
+						enemyColor = "Red";
+						break;
 				}
 
 				if (enemyType) {
 					let coords = this.engine.indexToCoords(i, map_w);
 					let screenPos = this.tileToScreen(coords.x, coords.y);
 
-					if (enemyType === "Pakkun") {
+					if (enemyType.includes("Pakkun")) {
 						this.enemies.push({
-							type: 'Pakkun', x: (screenPos.x - this.mapOffset.x) + (this.tileSize / 2), y: screenPos.y + this.tileSize,
+							type: 'Pakkun', 
+							color: enemyColor,
+							x: (screenPos.x - this.mapOffset.x) + (this.tileSize / 2), y: screenPos.y + this.tileSize,
 							initialY: screenPos.y + this.tileSize, maxHeight: this.tileSize * 1.5, state: 'hiding', timer: 120
 						});
 					} else {
 						this.enemies.push({
 							id: this.enemies.length,
 							type: enemyType,
-							color: 'Green',
+							color: enemyColor,
 							x: screenPos.x - this.mapOffset.x,
 							y: screenPos.y,
 							vx: -2,
@@ -451,7 +477,9 @@ class Game {
 				}
 				if (enemy.state !== 'hiding') {
 					const pakkunRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: this.tileSize * 2 };
-					if (this.rectsOverlap(playerRect, pakkunRect)) { this.killPlayer(); }
+					if (this.rectsOverlap(playerRect, pakkunRect)) {
+						this.killPlayer();
+					}
 				}
 				continue;
 			}
@@ -469,18 +497,20 @@ class Game {
 						if (enemy.vx !== 0) {
 							enemy.x += enemy.vx;
 							
-							// 2. Colisión con PAREDES
+							// Colisión con paredes
 							const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
 							const wallTile = this.screenToTile(wallCheckX, enemy.y);
 							const wallIndex = this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width);
 
 							if (this.currentMap.map[wallIndex] > 0 && this.currentMap.map[wallIndex] !== BlockType.Enemy_Pakkun) {
 								enemy.vx *= -1; // Rebotar
+								this.engine.playAudio(audio["Shell"], false);
+								
 								// Pequeño ajuste para evitar que se quede atascado en la pared
 								enemy.x += enemy.vx > 0 ? 1 : -1;
 							}
 
-							// 3. NOVEDAD: Colisión con otros enemigos
+							// Colisión con otros enemigos
 							for (let j = this.enemies.length - 1; j >= 0; j--) {
 								const otherEnemy = this.enemies[j];
 								// Evitar que colisione consigo mismo
@@ -503,10 +533,11 @@ class Game {
 				}
 
 				// Lógica de GRAVEDAD y SUELO para TODOS los enemigos (incluyendo caparazones)
+				const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
 				enemy.vy += this.gravity;
 				enemy.y += enemy.vy;
 
-				const feetY = enemy.y + this.tileSize;
+				const feetY = enemy.y + enemyHeight;
 				const feetLeft = this.screenToTile(enemy.x + this.mapOffset.x + 4, feetY);
 				const feetRight = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize - 4, feetY);
 				const groundIndexLeft = this.engine.coordsToIndex(feetLeft, this.currentMap.dimensions.width);
@@ -516,7 +547,7 @@ class Game {
 
 				let isOnSolidGround = false;
 				if (onGroundLeft || onGroundRight) {
-					enemy.y = this.tileToScreen(feetLeft.x, feetLeft.y).y - this.tileSize;
+					enemy.y = this.tileToScreen(feetLeft.x, feetLeft.y).y - enemyHeight;
 					enemy.vy = 0;
 					isOnSolidGround = true;
 				}
@@ -532,7 +563,6 @@ class Game {
 						enemy.vx *= -1;
 					}
 					
-					// NOVEDAD: Los enemigos que caminan giran en los acantilados, los caparazones no
 					if (isOnSolidGround) {
 						if (enemy.vx < 0 && !onGroundLeft) { // Si va a la izquierda y no hay suelo a la izquierda
 							enemy.vx *= -1;
@@ -544,11 +574,14 @@ class Game {
 			}
 
 			enemy.vy += this.gravity;
-			const enemyRect = { x: enemy.x + this.mapOffset.x, y: enemy.y, w: this.tileSize, h: this.tileSize };
-			const groundTile = this.screenToTile(enemyRect.x, enemyRect.y + this.tileSize);
+			
+			const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+			const enemyRect = { x: enemy.x + this.mapOffset.x, y: enemy.y, w: this.tileSize, h: enemyHeight };
+
+			const groundTile = this.screenToTile(enemyRect.x, enemyRect.y + enemyHeight);
 			if (this.currentMap.map[this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width)] > 0) {
 				enemy.vy = 0;
-				enemy.y = this.tileToScreen(groundTile.x, groundTile.y).y - this.tileSize;
+				enemy.y = this.tileToScreen(groundTile.x, groundTile.y).y - enemyHeight;
 			}
 			if (enemy.state === 'walking') enemy.x += enemy.vx;
 			enemy.y += enemy.vy;
@@ -558,10 +591,9 @@ class Game {
 			}
 
 			const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
-			// const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: this.tileSize }; // Definimos enemyRect aquí para usarlo después
 
 			if (this.rectsOverlap(playerRect, enemyRect)) {
-				const isStomping = this.velocityY > 0 && (player.position.y + this.tileSize) < (enemy.y + this.tileSize / 2);
+				const isStomping = this.velocityY > 0 && (player.position.y + this.tileSize) < (enemy.y + enemyHeight / 2);
 
 				if (isStomping) {
 					this.velocityY = -10; // Pequeño rebote al aplastar
@@ -570,10 +602,10 @@ class Game {
 					if (enemy.type === 'Goomba') {
 						enemy.state = 'stomped';
 						this.score += 100;
-					} else if (enemy.type.includes('Koopa')) { // Es un Koopa
+					} else if (enemy.type.includes('Koopa') || enemy.type.includes('Koopa_Winged')) { // Comprobación más robusta
 						if (enemy.isWinged) {
 							enemy.isWinged = false; // Le quita las alas
-							enemy.type = 'Koopa';
+							enemy.type = 'Koopa';   // Lo convierte en un Koopa normal
 						} else if (enemy.state === 'walking') {
 							enemy.state = 'shell'; // Lo convierte en caparazón
 							enemy.vx = 0;
@@ -586,16 +618,10 @@ class Game {
 						}
 					}
 				} else { // Colisión lateral
-					// Si el jugador choca con un enemigo caminando O un caparazón YA EN MOVIMIENTO, muere.
-					if (enemy.state === 'walking' || (enemy.state === 'shell' && enemy.vx !== 0)) {
-						this.killPlayer();
-					} 
-					// NOVEDAD: Lógica para patear un caparazón detenido
-					else if (enemy.state === 'shell' && enemy.vx === 0) {
-						// Pone en movimiento el caparazón estacionario
-						const shellSpeed = 8; // Velocidad del caparazón
-						
-						// Determina la dirección del empuje basado en la posición del jugador
+					if ((enemy.state === 'walking' && this.velocityY >= 0) || (enemy.state === 'shell' && enemy.vx !== 0)) {
+ 						this.killPlayer();
+ 					} else if (enemy.state === 'shell' && enemy.vx === 0) {
+						const shellSpeed = 8;					
 						enemy.vx = (player.position.x < enemyRect.x) ? shellSpeed : -shellSpeed;
 					}
 				}
@@ -607,70 +633,71 @@ class Game {
 	}
 
 	drawEnemies() {
-	    const pakkunAnimSprite = this.engine.animatedSprites['Pakkun'];
-	    const biteAnim = pakkunAnimSprite.animations.Pakkun_Bite;
+		const pakkunGreenAnim = this.engine.animatedSprites['Pakkun_Green'];
+		const pakkunRedAnim = this.engine.animatedSprites['Pakkun_Red'];
+		const biteAnim = pakkunGreenAnim.animations.Pakkun_Bite;
 
-	    if (pakkunAnimSprite.frameCounter % biteAnim.frameSpeed === 0) {
-	        pakkunAnimSprite.currentFrame = (pakkunAnimSprite.currentFrame + 1) % biteAnim.frames.length;
-	    }
-	    const pakkunFrameToDraw = biteAnim.frames[pakkunAnimSprite.currentFrame];
+		if (pakkunGreenAnim.frameCounter % biteAnim.frameSpeed === 0) {
+			const nextFrame = (pakkunGreenAnim.currentFrame + 1) % biteAnim.frames.length;
+			pakkunGreenAnim.currentFrame = nextFrame;
+			pakkunRedAnim.currentFrame = nextFrame; // Sincroniza la animación
+		}
 
-	    // Ahora, recorre y dibuja todos los enemigos.
-	    for (const enemy of this.enemies) {
-	        const screenX = enemy.x + this.mapOffset.x;
-	        if (screenX < -this.tileSize || screenX > this.engine.canvas.width) continue;
+		// Ahora, recorre y dibuja todos los enemigos.
+		for (const enemy of this.enemies) {
+			const screenX = enemy.x + this.mapOffset.x;
+			if (screenX < -this.tileSize || screenX > this.engine.canvas.width) continue;
 
-	        if (enemy.type === 'Pakkun') {
-	            this.engine.drawSprite(
-	                'Enemy_Pakkun_Green',      // El nombre del sprite a dibujar
-	                pakkunFrameToDraw,         // El fotograma específico que calculamos
-	                { x: screenX, y: enemy.y },// La posición de este enemigo en particular
-	                this.spriteScale,          // La escala
-	                false, 0, Pivot.Top_Left
-	            );
-	        } else { // Lógica para Goomba y Koopa
-	            if (enemy.isWinged) {
-	                const wingedSprite = this.engine.animatedSprites['Koopa_Winged'];
-	                this.engine.setAnimationForSprite('Koopa_Winged', 'Koopa_Winged_Walk');
-	                wingedSprite.position = { x: screenX, y: enemy.y - this.tileSize / 2 };
-	                wingedSprite.flipped = enemy.vx > 0;
-	                this.engine.drawAnimatedSprite('Koopa_Winged', Pivot.Top_Left);
-	            }
-	            else if (enemy.type === 'Koopa' && (enemy.state === 'shell' || enemy.state === 'falling')) {
-	                const shellSpriteName = `Koopa_Shell_${enemy.color}`;
-	                const shellSprite = this.engine.animatedSprites[shellSpriteName];
-	                
-	                if (enemy.vx === 0) {
-	                    this.engine.setAnimationForSprite(shellSpriteName, 'Shell_Idle', false);
-	                } else {
-	                    this.engine.setAnimationForSprite(shellSpriteName, 'Shell_Sliding');
-	                }
-	                shellSprite.position = { x: screenX, y: enemy.y };
-	                this.engine.drawAnimatedSprite(shellSpriteName, Pivot.Top_Left);
-	            } else {
-	                const animSprite = this.engine.animatedSprites[enemy.type];
+			let spriteNameToDraw = enemy.type;
+			// Construye el nombre del sprite si tiene un color (Goomba no tiene)
+			if (enemy.color) {
+				spriteNameToDraw = `${enemy.type}_${enemy.color}`;
+			}
 
-	                if (enemy.state === 'stomped') {
-	                    this.engine.setAnimationForSprite(enemy.type, 'Goomba_Stomped');
-	                } else {
-	                    this.engine.setAnimationForSprite(enemy.type, `${enemy.type}_Walk`);
-	                }
+			// Si es un Koopa que ha perdido sus alas, su tipo cambia a 'Koopa'
+			// y esta lógica lo dibujará correctamente con su color original.
+			if (enemy.type === 'Koopa' && enemy.isWinged) {
+				 spriteNameToDraw = `Koopa_Winged_${enemy.color}`;
+			}
+			
+			// Dibujado
+			if (enemy.type === 'Pakkun') {
+				const baseSpriteName = `Enemy_Pakkun_${enemy.color}`;
+				this.engine.drawSprite(
+					baseSpriteName,
+					pakkunGreenAnim.animations.Pakkun_Bite.frames[pakkunGreenAnim.currentFrame],
+					{ x: screenX, y: enemy.y },
+					this.spriteScale, false, 0, Pivot.Top_Left
+				);
+			} else {
+				const animSprite = this.engine.animatedSprites[spriteNameToDraw];
+				if (!animSprite) continue; // Si el sprite no existe, no lo dibujes
 
-	                animSprite.position = { x: screenX, y: enemy.y };
-	                if (enemy.type === 'Koopa') {
-	                    animSprite.position.y -= this.tileSize / 2;
-	                }
-	                animSprite.flipped = enemy.vx > 0;
-	                this.engine.drawAnimatedSprite(enemy.type, Pivot.Top_Left);
-	            }
-	        }
-	    }
+				if (enemy.state === 'stomped') {
+					this.engine.setAnimationForSprite(spriteNameToDraw, `${enemy.type}_Stomped`);
+				} else if (enemy.state === 'shell') {
+					 const shellSpriteName = `Koopa_Shell_${enemy.color}`;
+					 const shellSprite = this.engine.animatedSprites[shellSpriteName];
+					 if(shellSprite) {
+						shellSprite.position = { x: screenX, y: enemy.y };
+						this.engine.setAnimationForSprite(shellSpriteName, enemy.vx === 0 ? 'Shell_Idle' : 'Shell_Sliding');
+						this.engine.drawAnimatedSprite(shellSpriteName, Pivot.Top_Left);
+					 }
+				} else {
+					 this.engine.setAnimationForSprite(spriteNameToDraw, `${enemy.type.includes("Winged") ? `${enemy.type}_Walk` : `${enemy.type}_Walk`}`);
+				}
 
-	    // Al final, incrementa los contadores de TODOS los sprites animados una vez por fotograma de juego.
-	    this.engine.animatedSprites["Goomba"].frameCounter++;
-	    this.engine.animatedSprites["Koopa"].frameCounter++;
-	    this.engine.animatedSprites["Koopa_Winged"].frameCounter++;
-	    this.engine.animatedSprites["Pakkun"].frameCounter++;
+				// Actualiza posición y dibujado (excepto para caparazones ya dibujados)
+				if (enemy.state !== 'shell') {
+					animSprite.position = { x: screenX, y: enemy.y };
+					animSprite.flipped = enemy.vx > 0;
+					this.engine.drawAnimatedSprite(spriteNameToDraw, Pivot.Top_Left);
+				}
+			}
+		}
+
+		// Incrementa todos los contadores al final
+		Object.values(this.engine.animatedSprites).forEach(sprite => sprite.frameCounter++);
 	}
 
 	drawBlackScreen(){
@@ -690,9 +717,7 @@ class Game {
 				const playerImagePos = { x: centerX - this.tileSize * 2, y: centerY - this.tileSize / 2 };
 				const spriteName = "Player_" + PlayerName[this.player];
 				const playerSprite = this.engine.sprites[spriteName];
-				// --- CORRECCIÓN --- Se comprueba solo la existencia del sprite, no de la imagen
-				if(playerSprite) { 
-					// --- CORRECCIÓN --- Se dibuja usando el nombre del sprite
+				if(playerSprite) {
 					this.engine.drawSprite(spriteName, 0, playerImagePos, this.spriteScale, false, 0, Pivot.Top_Left);
 				}
 				break;
@@ -721,7 +746,7 @@ class Game {
 
 		const titleMaxY = 0.65;
 		const titleSprite = this.engine.sprites["UI_Title_Image"];
-		const titleImg = titleSprite.image; // Esto es correcto porque se cargó con loadSprite
+		const titleImg = titleSprite.image;
 		const titlePosX = this.engine.canvas.width / 2;
 		const titlePosY = this.tileSize;
 		const titleScale = this.spriteScale * this.engine.getCanvasHeight() / titleMaxY / 1000;
@@ -771,7 +796,6 @@ class Game {
 			const textPos = { x: this.engine.getCanvasWidth() / 2, y: menuPosY };
 			if(this.currentSelection == i){
 				const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - this.spriteSize * 1.1 };
-				// --- CORRECCIÓN ---
 				if(this.engine.sprites["Cursor"]) {
 					this.engine.drawSprite("Cursor", 0, cursorPos, this.engine.sprites["Cursor"].scale, false, 0, Pivot.Top_Left);
 				}
@@ -911,9 +935,7 @@ class Game {
 			}
 
 			const sprite = this.engine.sprites[spriteName];
-			// --- CORRECCIÓN --- Se comprueba solo la existencia del sprite, no de la imagen
 			if (sprite) {
-				// --- CORRECCIÓN --- Se dibuja usando el nombre del sprite
 				this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
 			}
 		}
@@ -958,7 +980,6 @@ class Game {
 
 			const coinSprite = this.engine.animatedSprites["Coin"];
 			
-			// --- CORRECCIÓN ---
 			this.engine.drawSprite(
 				"Object_Coin", 
 				coinSprite.currentFrame, 
@@ -1004,7 +1025,6 @@ class Game {
 					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Object_Question' : 'Object_Question_Underground';
 				}
 			}
-			// --- CORRECCIÓN ---
 			const spriteData = this.engine.sprites[spriteNameToDraw];
 			if (spriteData) {
 				this.engine.drawSprite(spriteNameToDraw, 0, { x: block.x, y: block.y }, spriteData.scale, false, 0, Pivot.Top_Left);
@@ -1200,7 +1220,9 @@ class Game {
 		}
 		
 		this.wasMovingTurbo = isMoving && isTurbo && this.isOnGround;
-		if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
+		if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) {
+			this.killPlayer();
+		}
 
 		this.engine.drawAnimatedSprite(name, Pivot.Top_Left);
 	}
@@ -1259,7 +1281,6 @@ class Game {
 		}
 
 		if (this.flagpoleFlag) {
-			// --- CORRECCIÓN ---
 			const flagSprite = this.engine.sprites['Object_Flag'];
 			if(flagSprite){
 				 this.engine.drawSprite('Object_Flag', 0, this.flagpoleFlag, flagSprite.scale, false, 0, Pivot.Top_Left);
@@ -1302,7 +1323,6 @@ class Game {
 				this.activePowerups.splice(i, 1);
 				continue;
 			}
-			// --- CORRECCIÓN ---
 			const spriteData = this.engine.sprites['Object_Mushroom_1UP'];
 			if (spriteData) {
 				this.engine.drawSprite('Object_Mushroom_1UP', 0, { x: p.x, y: p.y }, spriteData.scale, false, 0, Pivot.Top_Left);
@@ -1318,7 +1338,6 @@ class Game {
 		this.engine.drawTextCustom(font, PlayerName[this.player], this.textSize, "#ffffff", {x: paddingX, y: paddingY * 2}, "left");
 		this.engine.drawTextCustom(font, this.score.toString().padStart(6, "0"), this.textSize, "#ffffff", {x: paddingX, y: paddingY * 3}, "left");
 		
-		// --- CORRECCIÓN ---
 		const coinSprite = this.engine.sprites["UI_Coin"];
 		if (coinSprite) {
 			const coinPos = { x: colWidth + paddingX + paddingX * 0.15, y: paddingY * 3 - this.textSize + paddingY * 0.15 };
