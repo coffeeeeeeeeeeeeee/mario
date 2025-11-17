@@ -100,6 +100,19 @@ function update(dt) {
 			smb.drawUI();
 			break;
 
+		case Game_State.Player_Growing:
+			// Dibujamos todo de forma estática, excepto la animación del jugador
+			smb.drawBackground();
+			smb.drawBlocks();
+			smb.drawPowerups();
+			smb.drawCoins();
+			smb.drawBumpingBlocksOverlay();
+			smb.drawEnemies(dt);
+			smb.drawForegroundBlocks();
+			smb.drawUI();
+			smb.updateAndDrawGrowingPlayer(dt);
+			break;
+
 		case Game_State.Playing:
 			smb.time -= dt / 1000;
 
@@ -193,7 +206,7 @@ async function init() {
 	js2d.createAnimatedSprite("Mario_Grow", "Player_Mario_Grow", playerPos, tileScale);
 	js2d.createAnimatedSprite("Luigi_Grow", "Player_Luigi_Grow", playerPos, tileScale);
 	js2d.createAnimatedSprite("Mario", "Player_Mario", playerPos, tileScale);
-	js2d.createAnimatedSprite("Luigi", "Player_Mario", playerPos, tileScale);
+	js2d.createAnimatedSprite("Luigi", "Player_Luigi", playerPos, tileScale);
 	js2d.createAnimatedSprite("Mario_Big", "Player_Mario_Big", playerPos, tileScale);
 	js2d.createAnimatedSprite("Luigi_Big", "Player_Luigi_Big", playerPos, tileScale);
 	js2d.createAnimatedSprite("Mario_Fire", "Player_Mario_Fire", playerPos, tileScale);
