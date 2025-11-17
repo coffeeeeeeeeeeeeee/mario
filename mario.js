@@ -1229,246 +1229,262 @@ class Game {
 	}
 
 	drawPlayer(name, dt) {
-		// --- 1. Determinar el estado y las variables del jugador ---
-		let currentSpriteName;
-		const isBig = this.playerSize > Player_Size.Small; // Es true para Big y Fire
+	    // --- 1. Determinar el estado y las variables del jugador ---
+	    let currentSpriteName;
+	    const isBig = this.playerSize > Player_Size.Small; // Es true para Big y Fire
 
-		// Selecciona el nombre del sprite a usar basado en el tamaño actual
-		switch (this.playerSize) {
-			case Player_Size.Small:
-				currentSpriteName = PlayerName[this.player];
-				break;
-			case Player_Size.Big:
-				currentSpriteName = PlayerName[this.player] + "_Big";
-				break;
-			case Player_Size.Fire:
-				currentSpriteName = PlayerName[this.player] + "_Fire";
-				break;
-		}
+	    switch (this.playerSize) {
+	        case Player_Size.Small:
+	            currentSpriteName = PlayerName[this.player];
+	            break;
+	        case Player_Size.Big:
+	            currentSpriteName = PlayerName[this.player] + "_Big";
+	            break;
+	        case Player_Size.Fire:
+	            currentSpriteName = PlayerName[this.player] + "_Fire";
+	            break;
+	    }
 
-		const player = this.engine.animatedSprites[currentSpriteName];
-		if (!player) {
-			console.error(`Sprite animado no encontrado: ${currentSpriteName}`);
-			return; 
-		}
+	    const player = this.engine.animatedSprites[currentSpriteName];
+	    if (!player) {
+	        console.error(`Sprite animado no encontrado: ${currentSpriteName}`);
+	        return; 
+	    }
 
-		const playerPos = player.position;
-		const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
-		const dt_sec = dt / 1000;
+	    const playerPos = player.position;
+	    const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
+	    const dt_sec = dt / 1000;
 
-		// Lógica de invencibilidad y parpadeo
-		if (this.isInvincible) {
-			this.invincibleTimer -= dt;
-			if (this.invincibleTimer <= 0) this.isInvincible = false;
-		}
-		const shouldDrawPlayer = !this.isInvincible || Math.floor(this.invincibleTimer / 100) % 2 === 0;
+	    if (this.isInvincible) {
+	        this.invincibleTimer -= dt;
+	        if (this.invincibleTimer <= 0) this.isInvincible = false;
+	    }
+	    const shouldDrawPlayer = !this.isInvincible || Math.floor(this.invincibleTimer / 100) % 2 === 0;
 
-		// --- 2. Lógica de Muerte (Estado de Muerte) ---
-		if (this.state === Game_State.Player_Dying) {
-			this.deathTimer += dt;
-			const deathAnimDuration = 400;
-			const maxScaleMultiplier = 1.5;
-			const progress = Math.min(1, this.deathTimer / deathAnimDuration);
-			const newScale = this.spriteScale + (this.spriteScale * (maxScaleMultiplier - 1) * progress);
-			const newWidth = this.spriteSize * newScale;
-			const offset = (newWidth - this.tileSize) / 2;
-			const drawPos = { x: playerPos.x - offset, y: playerPos.y - offset };
-			
-			this.velocityY += this.gravity * 60 * dt_sec;
-			playerPos.y += this.velocityY * 60 * dt_sec;
+	    if (this.state === Game_State.Player_Dying) {
+	        this.deathTimer += dt;
+	        const deathAnimDuration = 400;
+	        const maxScaleMultiplier = 1.5;
+	        const progress = Math.min(1, this.deathTimer / deathAnimDuration);
+	        const newScale = this.spriteScale + (this.spriteScale * (maxScaleMultiplier - 1) * progress);
+	        const newWidth = this.spriteSize * newScale;
+	        const offset = (newWidth - this.tileSize) / 2;
+	        const drawPos = { x: playerPos.x - offset, y: playerPos.y - offset };
+	        
+	        this.velocityY += this.gravity * 60 * dt_sec;
+	        playerPos.y += this.velocityY * 60 * dt_sec;
 
-			if (playerPos.y > this.engine.canvas.height + this.tileSize) {
-				this.handleDeath();
-			}
+	        if (playerPos.y > this.engine.canvas.height + this.tileSize) {
+	            this.handleDeath();
+	        }
 
-			const deathFrameIndex = 6;
-			this.engine.drawSprite(player.spriteName, deathFrameIndex, drawPos, newScale, player.flipped, 0, Pivot.Top_Left);
-			return;
-		}
+	        const deathFrameIndex = 6;
+	        this.engine.drawSprite(player.spriteName, deathFrameIndex, drawPos, newScale, player.flipped, 0, Pivot.Top_Left);
+	        return;
+	    }
 
-		// --- 3. Lógica de Físicas y Colisiones ---
-		const mapWidth = this.currentMap.dimensions.width;
-		const inBounds = (x, y) => x >= 0 && x < mapWidth;
-		const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
-		
-		this.velocityY += this.gravity;
-		const newY = playerPos.y + this.velocityY;
+	    // --- 3. Lógica de Físicas y Colisiones ---
+	    const mapWidth = this.currentMap.dimensions.width;
+	    const inBounds = (x, y) => x >= 0 && x < mapWidth;
+	    const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
+	    
+	    this.velocityY += this.gravity;
+	    const newY = playerPos.y + this.velocityY;
 
-		// Colisión con el TECHO (cuando salta)
-		if (this.velocityY < 0) {
-			const headCenterTile = this.screenToTile(playerPos.x + this.tileSize / 2, newY);
-			let hitCeiling = false;
+	    if (this.velocityY < 0) {
+	        const headCenterTile = this.screenToTile(playerPos.x + this.tileSize / 2, newY);
+	        let hitCeiling = false;
 
-			if (inBounds(headCenterTile.x, headCenterTile.y)) {
-				const idx = this.engine.coordsToIndex(headCenterTile, mapWidth);
-				const blockId = this.currentMap.map[idx] || 0;
+	        if (inBounds(headCenterTile.x, headCenterTile.y)) {
+	            const idx = this.engine.coordsToIndex(headCenterTile, mapWidth);
+	            const blockId = this.currentMap.map[idx] || 0;
 
-				if (isSolid(blockId)) {
-					const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
-					let blockSoundPlayed = false;
+	            if (isSolid(blockId)) {
+	                const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
+	                let blockSoundPlayed = false;
 
-					// Lógica de Bloques Múltiples
-					if (blockId === 34) {
-						if (!this.specialBlocks[idx]) {
-							this.specialBlocks[idx] = { coinsLeft: 10, revealed: true };
-						}
-
-						
-						if (this.specialBlocks[idx].coinsLeft > 0) {
-							this.specialBlocks[idx].coinsLeft--;
-							this.coins++;
-							this.spawnCoin(blockX, blockY);
-							this.engine.playAudioOverlap(audio["Coin"]);
-							blockSoundPlayed = true;
-							if (this.specialBlocks[idx].coinsLeft === 0) {
-								this.currentMap.map[idx] = 35; // Bloque Usado
-							}
-						}
-					}
-					// Lógica de Romper Ladrillos
-					else if (blockId === 2 && isBig) {
-						this.currentMap.map[idx] = 0;
-						this.spawnBrickParticles(blockX, blockY);
-						blockSoundPlayed = true; // El sonido de rotura ya se reproduce en spawnBrickParticles
-					}
-					// Caja de una sola moneda
-					else if (blockId === 41) {
+	                if (blockId === 34) {
+	                    if (!this.specialBlocks[idx]) {
+	                        this.specialBlocks[idx] = { coinsLeft: 10, revealed: true };
+	                    }
+	                    
+	                    if (this.specialBlocks[idx].coinsLeft > 0) {
+	                        this.specialBlocks[idx].coinsLeft--;
+	                        this.coins++;
+	                        this.spawnCoin(blockX, blockY);
+	                        this.engine.playAudioOverlap(audio["Coin"]);
+	                        blockSoundPlayed = true;
+	                        if (this.specialBlocks[idx].coinsLeft === 0) {
+	                            this.currentMap.map[idx] = 35;
+	                        }
+	                    }
+	                }
+	                else if (blockId === 2 && isBig) {
+	                    this.currentMap.map[idx] = 0;
+	                    this.spawnBrickParticles(blockX, blockY);
+	                    blockSoundPlayed = true;
+	                }
+	                else if (blockId === 41) {
 	                    this.spawnCoin(blockX, blockY);
 	                    this.engine.playAudioOverlap(audio["Coin"]);
 	                    blockSoundPlayed = true;
 	                }
-					// Lógica de Golpeo Genérico
-					else { 
-						if (blockId === 3) { // Bloque de Pregunta
-							this.currentMap.map[idx] = 35;
-							const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
-							this.spawnPowerup(blockX, blockY, powerupType);
-						}
-					}
-					
-					// Efecto visual de "bump"
-					const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
-
-	                // Condición para saber si un bloque de monedas múltiples se acaba de agotar.
+	                else { 
+	                    if (blockId === 3) {
+	                        this.currentMap.map[idx] = 35;
+	                        const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
+	                        this.spawnPowerup(blockX, blockY, powerupType);
+	                    }
+	                }
+	                
+	                const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
 	                const justExhausted = (blockId === 34 && this.specialBlocks[idx]?.coinsLeft === 0);
 
-	                // Añadimos "!justExhausted" a la condición para evitar el "bump" en el último golpe.
 	                if (!isAlreadyBumping && [2, 3, 34, 41].includes(blockId) && !(blockId === 2 && isBig) && !justExhausted) {
 	                     this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId });
 	                     this.currentMap.map[idx] = 0;
 	                }
-					
-					if (!blockSoundPlayed) this.engine.playAudioOverlap(audio["Player_Bump"]);
-					
-					this.velocityY = 0;
-					playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y;
-					hitCeiling = true;
-				}
-			}
-			if (!hitCeiling) playerPos.y = newY;
-		}
-		// Colisión con el SUELO (cuando cae)
-		else {
-			const bottomLeft = this.screenToTile(playerPos.x + 4, newY + playerHeight);
-			const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 4, newY + playerHeight);
-			let foundGround = false;
-			for (let tx = bottomLeft.x; tx <= bottomRight.x; tx++) {
-				if (inBounds(tx, bottomLeft.y)) {
-					const idx = this.engine.coordsToIndex({x: tx, y: bottomLeft.y}, mapWidth);
-					if (isSolid(this.currentMap.map[idx])) {
-						playerPos.y = this.tileToScreen(tx, bottomLeft.y).y - playerHeight;
-						this.isOnGround = true; this.velocityY = 0; foundGround = true; break;
-					}
-				}
-			}
-			if (!foundGround) { this.isOnGround = false; playerPos.y = newY; }
-		}
+	                
+	                if (!blockSoundPlayed) this.engine.playAudioOverlap(audio["Player_Bump"]);
+	                
+	                this.velocityY = 0;
+	                playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y;
+	                hitCeiling = true;
+	            }
+	        }
+	        if (!hitCeiling) playerPos.y = newY;
+	    }
+	    else {
+	        const bottomLeft = this.screenToTile(playerPos.x + 4, newY + playerHeight);
+	        const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 4, newY + playerHeight);
+	        let foundGround = false;
+	        for (let tx = bottomLeft.x; tx <= bottomRight.x; tx++) {
+	            if (inBounds(tx, bottomLeft.y)) {
+	                const idx = this.engine.coordsToIndex({x: tx, y: bottomLeft.y}, mapWidth);
+	                if (isSolid(this.currentMap.map[idx])) {
+	                    playerPos.y = this.tileToScreen(tx, bottomLeft.y).y - playerHeight;
+	                    this.isOnGround = true; this.velocityY = 0; foundGround = true; break;
+	                }
+	            }
+	        }
+	        if (!foundGround) { this.isOnGround = false; playerPos.y = newY; }
+	    }
 
-		// --- 4. Lógica de Movimiento y Animación ---
-		if (this.skidTimer > 0) this.skidTimer--;
-		const isTurbo = this.engine.keysPressed['ShiftLeft'] || this.engine.keysPressed['ShiftRight'];
-		const isTryingToMoveLeft = this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA'];
-		const isTryingToMoveRight = this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD'];
-		const isMoving = isTryingToMoveLeft || isTryingToMoveRight;
-		
-		const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
-		if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) {
-			this.skidTimer = 10;
-			this.engine.playAudioOverlap(audio["Player_Skid"]);
-		}
-		this.wasMovingTurbo = isMoving && isTurbo;
-		
-		const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
-		if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
-		else if (this.velocityY > this.gravity && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Fall`);
-		else if (this.skidTimer > 0) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Stop`);
-		else if (isMoving) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Run`);
-		else this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Idle`);
+	    // --- 4. Lógica de Movimiento y Animación ---
+	    if (this.skidTimer > 0) this.skidTimer--;
+	    const isTurbo = this.engine.keysPressed['ShiftLeft'] || this.engine.keysPressed['ShiftRight'];
+	    const isTryingToMoveLeft = this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA'];
+	    const isTryingToMoveRight = this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD'];
+	    const isMoving = isTryingToMoveLeft || isTryingToMoveRight;
+	    
+	    const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
+	    if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) {
+	        this.skidTimer = 10;
+	        this.engine.playAudioOverlap(audio["Player_Skid"]);
+	    }
+	    this.wasMovingTurbo = isMoving && isTurbo;
+	    
+	    const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
+	    if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
+	    else if (this.velocityY > this.gravity && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Fall`);
+	    else if (this.skidTimer > 0) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Stop`);
+	    else if (isMoving) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Run`);
+	    else this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Idle`);
 
-		const velocityX = (isTurbo ? this.velocityXTurbo : this.velocityXGround) * dt_sec;
+	    const velocityX = (isTurbo ? this.velocityXTurbo : this.velocityXGround) * dt_sec;
 
-		if (isTryingToMoveLeft) {
-			player.flipped = true;
-			const newX = playerPos.x - velocityX;
-			const leftTop = this.screenToTile(newX + 4, playerPos.y);
-			const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
-			let blocked = false;
-			for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
-				if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
-					blocked = true; break;
-				}
-			}
-			if (!blocked) playerPos.x = newX;
-		} else if (isTryingToMoveRight) {
-			player.flipped = false;
-			const newX = playerPos.x + velocityX;
-			const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
-			const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
-			let blocked = false;
-			for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
-				if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
-					blocked = true; break;
-				}
-			}
-			if (!blocked) {
-				if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX;
-				else this.mapOffset.x -= velocityX;
-			}
-		}
-		
-		if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW'] || this.engine.keysPressed['Space']) && this.isOnGround) {
-			this.velocityY = this.jumpPower; this.isOnGround = false;
-			this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]);
-		}
-		
-		if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) {
-			this.killPlayer();
-		}
+	    if (isTryingToMoveLeft) {
+	        player.flipped = true;
+	        const newX = playerPos.x - velocityX;
+	        const leftTop = this.screenToTile(newX + 4, playerPos.y);
+	        const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
+	        let blocked = false;
+	        for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
+	            if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
+	                blocked = true; break;
+	            }
+	        }
+	        if (!blocked) playerPos.x = newX;
+	    } else if (isTryingToMoveRight) {
+	        player.flipped = false;
+	        const newX = playerPos.x + velocityX;
+	        const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
+	        const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
+	        let blocked = false;
+	        for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
+	            const tileCoords = { x: rightTop.x, y: ty };
+	            const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
+	            const blockId = this.currentMap.map[mapIndex];
 
-		// --- 5. Dibujar el Sprite y Sincronizar ---
-		if (shouldDrawPlayer) {
-			const allPlayerSprites = [
-				this.engine.animatedSprites[PlayerName[this.player]],
-				this.engine.animatedSprites[PlayerName[this.player] + "_Big"],
-				this.engine.animatedSprites[PlayerName[this.player] + "_Fire"]
-			];
+	            if (blockId === 13) {
+	                const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
+	                playerPos.x = poleCoords.x - this.tileSize / 2;
+	                
+	                let groundYTile = ty;
+	                while (this.currentMap.map[this.engine.coordsToIndex({ x: tileCoords.x, y: groundYTile + 1 }, mapWidth)] === 13) {
+	                    groundYTile++;
+	                }
+	                
+	                // <<< --- ESTA ES LA LÍNEA MODIFICADA --- >>>
+	                // Añadimos this.tileSize al final para que caiga un bloque extra.
+	                const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize;
+	                
+	                this.flagpoleInfo = {
+	                    topY: poleCoords.y,
+	                    groundY: finalLandingY, // Usamos la nueva posición final.
+	                    castleDoorX: poleCoords.x + this.tileSize * 5
+	                };
+	                
+	                this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y };
 
-			allPlayerSprites.forEach(spriteToSync => {
-				if (spriteToSync && spriteToSync !== player) {
-					spriteToSync.position.x = player.position.x;
-					if (isBig && spriteToSync.spriteName.indexOf("_") === -1) {
-						spriteToSync.position.y = player.position.y + this.tileSize;
-					} else if (!isBig && spriteToSync.spriteName.indexOf("_") !== -1) {
-						spriteToSync.position.y = player.position.y - this.tileSize;
-					} else {
-						spriteToSync.position.y = player.position.y;
-					}
-					spriteToSync.flipped = player.flipped;
-				}
-			});
+	                this.state = Game_State.Level_Complete;
+	                this.levelCompleteState = 'none';
+	                
+	                return; 
+	            }
+	            
+	            if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
+	                blocked = true; break;
+	            }
+	        }
+	        if (!blocked) {
+	            if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX;
+	            else this.mapOffset.x -= velocityX;
+	        }
+	    }
+	    
+	    if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW'] || this.engine.keysPressed['Space']) && this.isOnGround) {
+	        this.velocityY = this.jumpPower; this.isOnGround = false;
+	        this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]);
+	    }
+	    
+	    if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) {
+	        this.killPlayer();
+	    }
 
-			this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
-		}
+	    if (shouldDrawPlayer) {
+	        const allPlayerSprites = [
+	            this.engine.animatedSprites[PlayerName[this.player]],
+	            this.engine.animatedSprites[PlayerName[this.player] + "_Big"],
+	            this.engine.animatedSprites[PlayerName[this.player] + "_Fire"]
+	        ];
+
+	        allPlayerSprites.forEach(spriteToSync => {
+	            if (spriteToSync && spriteToSync !== player) {
+	                spriteToSync.position.x = player.position.x;
+	                if (isBig && spriteToSync.spriteName.indexOf("_") === -1) {
+	                    spriteToSync.position.y = player.position.y + this.tileSize;
+	                } else if (!isBig && spriteToSync.spriteName.indexOf("_") !== -1) {
+	                    spriteToSync.position.y = player.position.y - this.tileSize;
+	                } else {
+	                    spriteToSync.position.y = player.position.y;
+	                }
+	                spriteToSync.flipped = player.flipped;
+	            }
+	        });
+
+	        this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
+	    }
 	}
 
 	spawnScorePopup(text, x, y) {
@@ -1488,52 +1504,108 @@ class Game {
 	}
 
 	updateAndDrawLevelComplete(dt) {
-		const player = this.engine.animatedSprites[PlayerName[this.player]];
-		const playerPos = player.position;
+	    // Añadimos la misma lógica que en drawPlayer para obtener el nombre del sprite correcto.
+	    let currentSpriteName;
+	    const isBig = this.playerSize > Player_Size.Small;
 
-		switch(this.levelCompleteState) {
-			case 'sliding':
-				player.flipped = true;
-				this.engine.setAnimationForSprite(PlayerName[this.player], `${PlayerName[this.player]}_Slide`);
-				const slideSpeed = 5;
-				playerPos.y += slideSpeed;
-				if (this.flagpoleFlag) {
-					this.flagpoleFlag.y += slideSpeed;
-				}
-				if (playerPos.y >= this.flagpoleInfo.groundY) {
-					playerPos.y = this.flagpoleInfo.groundY;
-					player.flipped = false;
-					playerPos.x += this.tileSize / 2;
-					this.engine.setAnimationForSprite(PlayerName[this.player], `${PlayerName[this.player]}_Run`);
-					this.engine.playAudio(audio["Level_Clear"], false);
-					this.levelCompleteState = 'walking_to_castle';
-				}
-				break;
-			case 'walking_to_castle':
-				playerPos.x += 2;
-				if (playerPos.x >= this.flagpoleInfo.castleDoorX && this.levelCompleteState !== 'finished') {
-					this.playerIsVisible = false;
-					this.levelCompleteState = 'finished';
-					const nextWorldName = this.currentMap.nextWorld;
-					if (nextWorldName) {
-						this.startNextLevel(nextWorldName);
-					} else {
-						this.state = Game_State.Title_Menu;
-					}
-				}
-				break;
-		}
+	    switch (this.playerSize) {
+	        case Player_Size.Small:
+	            currentSpriteName = PlayerName[this.player];
+	            break;
+	        case Player_Size.Big:
+	            currentSpriteName = PlayerName[this.player] + "_Big";
+	            break;
+	        case Player_Size.Fire:
+	            currentSpriteName = PlayerName[this.player] + "_Fire";
+	            break;
+	    }
+	    
+	    // Usamos el nombre del sprite correcto para obtener el objeto del jugador.
+	    const player = this.engine.animatedSprites[currentSpriteName];
 
-		if (this.flagpoleFlag) {
-			const flagSprite = this.engine.sprites['Object_Flag'];
-			if(flagSprite){
-				 this.engine.drawSprite('Object_Flag', 0, this.flagpoleFlag, flagSprite.scale, false, 0, Pivot.Top_Left);
-			}
-		}
+	    const playerPos = player.position;
+	    const slideSpeed = 5;
+	    const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
 
-		if (this.playerIsVisible) {
-			this.engine.drawAnimatedSprite(PlayerName[this.player], Pivot.Top_Left);
-		}
+	    switch(this.levelCompleteState) {
+	        case 'none':
+	            this.stopAllMusic();
+	            this.engine.playAudio(audio["Flagpole"], false);
+
+	            const poleHeight = this.flagpoleInfo.groundY - this.flagpoleInfo.topY + playerHeight;
+	            const playerHeightOnPole = this.flagpoleInfo.groundY - playerPos.y + playerHeight;
+	            
+	            const heightPercentage = Math.max(0, Math.min(1, playerHeightOnPole / poleHeight));
+
+	            let points = 0;
+	            if (heightPercentage > 0.95) {
+	                points = 5000;
+	            } else if (heightPercentage > 0.7) {
+	                points = 2000;
+	            } else if (heightPercentage > 0.4) {
+	                points = 800;
+	            } else if (heightPercentage > 0.15) {
+	                points = 400;
+	            } else {
+	                points = 100;
+	            }
+
+	            this.score += points;
+	            this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
+	            
+	            player.flipped = true;
+	            
+	            const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
+	            this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Slide`);
+
+	            this.levelCompleteState = 'sliding';
+	            break;
+
+	        case 'sliding':
+	            playerPos.y += slideSpeed;
+	            if (this.flagpoleFlag) {
+	                this.flagpoleFlag.y += slideSpeed;
+	            }
+
+	            if (playerPos.y >= this.flagpoleInfo.groundY) {
+	                playerPos.y = this.flagpoleInfo.groundY;
+	                player.flipped = false;
+	                playerPos.x += this.tileSize / 2;
+	                
+	                // CORRECCIÓN: Usar el prefijo de animación correcto aquí también.
+	                const runAnimPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
+	                this.engine.setAnimationForSprite(currentSpriteName, `${runAnimPrefix}_Run`);
+	                this.engine.playAudio(audio["Level_Clear"], false);
+	                this.levelCompleteState = 'walking_to_castle';
+	            }
+	            break;
+
+	        case 'walking_to_castle':
+	            playerPos.x += 2;
+	            if (playerPos.x >= this.flagpoleInfo.castleDoorX && this.levelCompleteState !== 'finished') {
+	                this.playerIsVisible = false;
+	                this.levelCompleteState = 'finished';
+	                const nextWorldName = this.currentMap.nextWorld;
+	                if (nextWorldName) {
+	                    this.startNextLevel(nextWorldName);
+	                } else {
+	                    this.state = Game_State.Title_Menu;
+	                }
+	            }
+	            break;
+	    }
+
+	    if (this.flagpoleFlag) {
+	        const flagSprite = this.engine.sprites['Object_Flag'];
+	        if(flagSprite){
+	             this.engine.drawSprite('Object_Flag', 0, this.flagpoleFlag, flagSprite.scale, false, 0, Pivot.Top_Left);
+	        }
+	    }
+
+	    if (this.playerIsVisible) {
+	        // CORRECCIÓN: Dibujar el sprite correcto (grande, fuego, etc.).
+	        this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
+	    }
 	}
 
 	spawnPowerup(x, y, type) {
