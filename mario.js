@@ -887,12 +887,12 @@ class Game {
 		this.drawForegroundBlocks();
 		this.drawUI();
 
-		const titleMaxY = 0.65;
+		const titleMaxY = 0.60;
 		const titleSprite = this.engine.sprites["UI_Title_Image"];
 		const titleImg = titleSprite.image;
 		const titlePosX = this.engine.canvas.width / 2;
 		const titlePosY = this.tileSize * 1.5;
-		const titleScale = this.spriteScale * this.engine.getCanvasHeight() / titleMaxY / 1000;
+		const titleScale = this.spriteScale * this.engine.getCanvasHeight() * titleMaxY * 0.002;
 		const titleWidth = titleImg.width * titleScale;
 		const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
 		this.engine.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
@@ -906,7 +906,7 @@ class Game {
 		}
 
 		const numButtons = menuButtons.length;
-		const menuGap = this.engine.canvas.height * 0.2 / numButtons;
+		const menuGap = this.engine.canvas.height * 0.1 / numButtons;
 		if(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']){ this.engine.keysPressed = []; this.currentSelection--; }
 		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){ this.engine.keysPressed = []; this.currentSelection++; }
 
