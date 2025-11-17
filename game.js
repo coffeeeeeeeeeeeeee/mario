@@ -30,6 +30,12 @@ const audio = {
 function update(dt) {
 	if (!smb) return;
 
+	if (js2d.keysPressed['KeyE'] || js2d.keysPressed['E']) {
+		js2d.keysPressed['KeyE'] = false; // Consumir la tecla
+		js2d.keysPressed['E'] = false; // Consumir la tecla
+		smb.toggleEditor();
+	}
+
 	switch(smb.state) {
 		case Game_State.Title_Menu:
 			smb.drawMenu();
@@ -111,6 +117,10 @@ function update(dt) {
 			smb.drawPlayer(PlayerName[smb.player], dt);
 			smb.drawForegroundBlocks();
 			smb.drawUI();
+			break;
+
+		case Game_State.Editor:
+			smb.updateAndDrawEditor();
 			break;
 	}
 }

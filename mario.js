@@ -8,6 +8,7 @@ const Game_State = {
 	Player_Dying: 3,
 	Black_Screen: 4,
 	Level_Complete: 5,
+	Editor: 6,
 };
 
 const Player = {
@@ -138,9 +139,18 @@ class Game {
 
 	skidTimer = 0;
 
+	// Black screens
 	screenTimer = 0;
 	screenDuration = 0
 	screenType = Black_Screen_Type.Start_Level;
+
+	// Editor
+	isEditorMode = false;
+	editorCursorPos = { x: 0, y: 0 };
+	selectedTileIndex = 0;
+	editorPalette = [
+		1, 2, 24, 3, 41, 34, 5, 6, 7, 8, 13, 26, 10, 11, 39, 12
+	];
 
 	OVERWORLD_COLOR = "#5C94FC";
 	UNDERGROUND_COLOR = "#000000";
@@ -335,6 +345,7 @@ class Game {
 
 		if (mapData) {
 			this.currentMap = JSON.parse(JSON.stringify(mapData));
+			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
 			console.info(`[SMB] Mapa cargado: ${name}`);
 
 			this.defineWorldSprites();
@@ -1231,7 +1242,7 @@ class Game {
 	drawPlayer(name, dt) {
 	    // --- 1. Determinar el estado y las variables del jugador ---
 	    let currentSpriteName;
-	    const isBig = this.playerSize > Player_Size.Small; // Es true para Big y Fire
+	    const isBig = this.playerSize > Player_Size.Small;
 
 	    switch (this.playerSize) {
 	        case Player_Size.Small:
@@ -1248,11 +1259,36 @@ class Game {
 	    const player = this.engine.animatedSprites[currentSpriteName];
 	    if (!player) {
 	        console.error(`Sprite animado no encontrado: ${currentSpriteName}`);
-	        return; 
+	        return;
 	    }
 
 	    const playerPos = player.position;
-	    const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
+	    const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
+	    
+	    // --- INICIO DEL CAMBIO 1: LÓGICA DE AGACHARSE MEJORADA ---
+	    let isCrouching = false;
+	    const oldPlayerHeight = isBig ? (this.wasCrouching ? this.tileSize : this.tileSize * 2) : this.tileSize;
+
+	    if (isBig) {
+	        const isPressingCrouchKey = this.engine.keysPressed['KeyS'];
+	        const checkPos = { x: playerPos.x + this.tileSize / 2, y: playerPos.y - 1 };
+	        const tileAbove = this.screenToTile(checkPos.x, checkPos.y);
+	        const mapIndex = this.engine.coordsToIndex(tileAbove, this.currentMap.dimensions.width);
+	        const ceilingBlocksStand = isSolid(this.currentMap.map[mapIndex]);
+	        
+	        isCrouching = isPressingCrouchKey || (!isPressingCrouchKey && this.wasCrouching && ceilingBlocksStand);
+	    }
+	    
+	    let playerHeight = isBig ? (isCrouching ? this.tileSize : this.tileSize * 2) : this.tileSize;
+
+	    // Si el jugador acaba de dejar de agacharse, ajustamos su posición Y hacia arriba
+	    // para evitar que se hunda en el suelo.
+	    if (oldPlayerHeight < playerHeight) {
+	        playerPos.y -= (playerHeight - oldPlayerHeight);
+	    }
+	    this.wasCrouching = isCrouching; // Guardamos el estado para el próximo fotograma
+	    // --- FIN DEL CAMBIO 1 ---
+
 	    const dt_sec = dt / 1000;
 
 	    if (this.isInvincible) {
@@ -1262,6 +1298,7 @@ class Game {
 	    const shouldDrawPlayer = !this.isInvincible || Math.floor(this.invincibleTimer / 100) % 2 === 0;
 
 	    if (this.state === Game_State.Player_Dying) {
+	        // ... (sin cambios aquí)
 	        this.deathTimer += dt;
 	        const deathAnimDuration = 400;
 	        const maxScaleMultiplier = 1.5;
@@ -1270,14 +1307,11 @@ class Game {
 	        const newWidth = this.spriteSize * newScale;
 	        const offset = (newWidth - this.tileSize) / 2;
 	        const drawPos = { x: playerPos.x - offset, y: playerPos.y - offset };
-	        
 	        this.velocityY += this.gravity * 60 * dt_sec;
 	        playerPos.y += this.velocityY * 60 * dt_sec;
-
 	        if (playerPos.y > this.engine.canvas.height + this.tileSize) {
 	            this.handleDeath();
 	        }
-
 	        const deathFrameIndex = 6;
 	        this.engine.drawSprite(player.spriteName, deathFrameIndex, drawPos, newScale, player.flipped, 0, Pivot.Top_Left);
 	        return;
@@ -1286,75 +1320,42 @@ class Game {
 	    // --- 3. Lógica de Físicas y Colisiones ---
 	    const mapWidth = this.currentMap.dimensions.width;
 	    const inBounds = (x, y) => x >= 0 && x < mapWidth;
-	    const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
 	    
 	    this.velocityY += this.gravity;
 	    const newY = playerPos.y + this.velocityY;
 
-	    if (this.velocityY < 0) {
+	    if (this.velocityY < 0) { // Saltando
+	        // ... (sin cambios aquí)
 	        const headCenterTile = this.screenToTile(playerPos.x + this.tileSize / 2, newY);
 	        let hitCeiling = false;
-
 	        if (inBounds(headCenterTile.x, headCenterTile.y)) {
 	            const idx = this.engine.coordsToIndex(headCenterTile, mapWidth);
 	            const blockId = this.currentMap.map[idx] || 0;
-
 	            if (isSolid(blockId)) {
 	                const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 	                let blockSoundPlayed = false;
-
 	                if (blockId === 34) {
-	                    if (!this.specialBlocks[idx]) {
-	                        this.specialBlocks[idx] = { coinsLeft: 10, revealed: true };
-	                    }
-	                    
+	                    if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { coinsLeft: 10, revealed: true }; }
 	                    if (this.specialBlocks[idx].coinsLeft > 0) {
-	                        this.specialBlocks[idx].coinsLeft--;
-	                        this.coins++;
-	                        this.spawnCoin(blockX, blockY);
-	                        this.engine.playAudioOverlap(audio["Coin"]);
-	                        blockSoundPlayed = true;
-	                        if (this.specialBlocks[idx].coinsLeft === 0) {
-	                            this.currentMap.map[idx] = 35;
-	                        }
+	                        this.specialBlocks[idx].coinsLeft--; this.coins++; this.spawnCoin(blockX, blockY);
+	                        this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
+	                        if (this.specialBlocks[idx].coinsLeft === 0) { this.currentMap.map[idx] = 35; }
 	                    }
 	                }
-	                else if (blockId === 2 && isBig) {
-	                    this.currentMap.map[idx] = 0;
-	                    this.spawnBrickParticles(blockX, blockY);
-	                    blockSoundPlayed = true;
-	                }
-	                else if (blockId === 41) {
-	                    this.spawnCoin(blockX, blockY);
-	                    this.engine.playAudioOverlap(audio["Coin"]);
-	                    blockSoundPlayed = true;
-	                }
-	                else { 
-	                    if (blockId === 3) {
-	                        this.currentMap.map[idx] = 35;
-	                        const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
-	                        this.spawnPowerup(blockX, blockY, powerupType);
-	                    }
-	                }
-	                
+	                else if (blockId === 2 && isBig) { this.currentMap.map[idx] = 0; this.spawnBrickParticles(blockX, blockY); blockSoundPlayed = true; }
+	                else if (blockId === 41) { this.spawnCoin(blockX, blockY); this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true; }
+	                else { if (blockId === 3) { this.currentMap.map[idx] = 35; const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super; this.spawnPowerup(blockX, blockY, powerupType); } }
 	                const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
 	                const justExhausted = (blockId === 34 && this.specialBlocks[idx]?.coinsLeft === 0);
-
-	                if (!isAlreadyBumping && [2, 3, 34, 41].includes(blockId) && !(blockId === 2 && isBig) && !justExhausted) {
-	                     this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId });
-	                     this.currentMap.map[idx] = 0;
-	                }
-	                
+	                if (!isAlreadyBumping && [2, 3, 34, 41].includes(blockId) && !(blockId === 2 && isBig) && !justExhausted) { this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId }); this.currentMap.map[idx] = 0; }
 	                if (!blockSoundPlayed) this.engine.playAudioOverlap(audio["Player_Bump"]);
-	                
-	                this.velocityY = 0;
-	                playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y;
-	                hitCeiling = true;
+	                this.velocityY = 0; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y; hitCeiling = true;
 	            }
 	        }
 	        if (!hitCeiling) playerPos.y = newY;
 	    }
-	    else {
+	    else { // Cayendo o en el suelo
+	        // ... (sin cambios aquí)
 	        const bottomLeft = this.screenToTile(playerPos.x + 4, newY + playerHeight);
 	        const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 4, newY + playerHeight);
 	        let foundGround = false;
@@ -1371,119 +1372,65 @@ class Game {
 	    }
 
 	    // --- 4. Lógica de Movimiento y Animación ---
+	    // ... (sin cambios en la sección de movimiento horizontal y selección de animación)
 	    if (this.skidTimer > 0) this.skidTimer--;
 	    const isTurbo = this.engine.keysPressed['ShiftLeft'] || this.engine.keysPressed['ShiftRight'];
 	    const isTryingToMoveLeft = this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA'];
 	    const isTryingToMoveRight = this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD'];
 	    const isMoving = isTryingToMoveLeft || isTryingToMoveRight;
-	    
 	    const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
-	    if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) {
-	        this.skidTimer = 10;
-	        this.engine.playAudioOverlap(audio["Player_Skid"]);
-	    }
+	    if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) { this.skidTimer = 10; this.engine.playAudioOverlap(audio["Player_Skid"]); }
 	    this.wasMovingTurbo = isMoving && isTurbo;
-	    
 	    const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
-	    if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
+	    if (isCrouching) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Crouch`);
+	    else if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
 	    else if (this.velocityY > this.gravity && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Fall`);
 	    else if (this.skidTimer > 0) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Stop`);
 	    else if (isMoving) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Run`);
 	    else this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Idle`);
-
 	    const velocityX = (isTurbo ? this.velocityXTurbo : this.velocityXGround) * dt_sec;
-
-	    if (isTryingToMoveLeft) {
-	        player.flipped = true;
-	        const newX = playerPos.x - velocityX;
-	        const leftTop = this.screenToTile(newX + 4, playerPos.y);
-	        const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
-	        let blocked = false;
-	        for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
-	            if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
-	                blocked = true; break;
+	    if (!isCrouching) {
+	        if (isTryingToMoveLeft) {
+	            player.flipped = true; const newX = playerPos.x - velocityX; const leftTop = this.screenToTile(newX + 4, playerPos.y); const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
+	            let blocked = false; for (let ty = leftTop.y; ty <= leftBottom.y; ty++) { if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) { blocked = true; break; } }
+	            if (!blocked) playerPos.x = newX;
+	        } else if (isTryingToMoveRight) {
+	            player.flipped = false; const newX = playerPos.x + velocityX; const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y); const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
+	            let blocked = false; for (let ty = rightTop.y; ty <= rightBottom.y; ty++) { const tileCoords = { x: rightTop.x, y: ty }; const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth); const blockId = this.currentMap.map[mapIndex];
+	                if (blockId === 13) { const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y); playerPos.x = poleCoords.x - this.tileSize / 2; let groundYTile = ty; while (this.currentMap.map[this.engine.coordsToIndex({ x: tileCoords.x, y: groundYTile + 1 }, mapWidth)] === 13) { groundYTile++; } const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize; this.flagpoleInfo = { topY: poleCoords.y, groundY: finalLandingY, castleDoorX: poleCoords.x + this.tileSize * 5 }; this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y }; this.state = Game_State.Level_Complete; this.levelCompleteState = 'none'; return; }
+	                if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) { blocked = true; break; }
 	            }
-	        }
-	        if (!blocked) playerPos.x = newX;
-	    } else if (isTryingToMoveRight) {
-	        player.flipped = false;
-	        const newX = playerPos.x + velocityX;
-	        const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
-	        const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
-	        let blocked = false;
-	        for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
-	            const tileCoords = { x: rightTop.x, y: ty };
-	            const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
-	            const blockId = this.currentMap.map[mapIndex];
-
-	            if (blockId === 13) {
-	                const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
-	                playerPos.x = poleCoords.x - this.tileSize / 2;
-	                
-	                let groundYTile = ty;
-	                while (this.currentMap.map[this.engine.coordsToIndex({ x: tileCoords.x, y: groundYTile + 1 }, mapWidth)] === 13) {
-	                    groundYTile++;
-	                }
-	                
-	                // <<< --- ESTA ES LA LÍNEA MODIFICADA --- >>>
-	                // Añadimos this.tileSize al final para que caiga un bloque extra.
-	                const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize;
-	                
-	                this.flagpoleInfo = {
-	                    topY: poleCoords.y,
-	                    groundY: finalLandingY, // Usamos la nueva posición final.
-	                    castleDoorX: poleCoords.x + this.tileSize * 5
-	                };
-	                
-	                this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y };
-
-	                this.state = Game_State.Level_Complete;
-	                this.levelCompleteState = 'none';
-	                
-	                return; 
-	            }
-	            
-	            if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
-	                blocked = true; break;
-	            }
-	        }
-	        if (!blocked) {
-	            if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX;
-	            else this.mapOffset.x -= velocityX;
+	            if (!blocked) { if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX; else this.mapOffset.x -= velocityX; }
 	        }
 	    }
-	    
-	    if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW'] || this.engine.keysPressed['Space']) && this.isOnGround) {
-	        this.velocityY = this.jumpPower; this.isOnGround = false;
-	        this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]);
-	    }
-	    
-	    if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) {
-	        this.killPlayer();
-	    }
+	    if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW'] || this.engine.keysPressed['Space']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
+	    if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
 
 	    if (shouldDrawPlayer) {
-	        const allPlayerSprites = [
-	            this.engine.animatedSprites[PlayerName[this.player]],
-	            this.engine.animatedSprites[PlayerName[this.player] + "_Big"],
-	            this.engine.animatedSprites[PlayerName[this.player] + "_Fire"]
-	        ];
-
+	        const allPlayerSprites = [ this.engine.animatedSprites[PlayerName[this.player]], this.engine.animatedSprites[PlayerName[this.player] + "_Big"], this.engine.animatedSprites[PlayerName[this.player] + "_Fire"] ];
 	        allPlayerSprites.forEach(spriteToSync => {
 	            if (spriteToSync && spriteToSync !== player) {
 	                spriteToSync.position.x = player.position.x;
-	                if (isBig && spriteToSync.spriteName.indexOf("_") === -1) {
-	                    spriteToSync.position.y = player.position.y + this.tileSize;
-	                } else if (!isBig && spriteToSync.spriteName.indexOf("_") !== -1) {
-	                    spriteToSync.position.y = player.position.y - this.tileSize;
-	                } else {
-	                    spriteToSync.position.y = player.position.y;
-	                }
+	                spriteToSync.position.y = player.position.y; // Sincronización simple
 	                spriteToSync.flipped = player.flipped;
 	            }
 	        });
 
+	        // --- INICIO DEL CAMBIO 2: CORRECCIÓN VISUAL AL DIBUJAR ---
+	        // Guardamos la posición física original
+	        const originalY = player.position.y;
+	        
+	        // Si es grande y está agachado, lo dibujamos un bloque más arriba
+	        // para compensar el espacio vacío en el marco de su sprite.
+	        if (isBig && isCrouching) {
+	            player.position.y -= this.tileSize;
+	        }
+
 	        this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
+
+	        // Restauramos la posición física para que no afecte los cálculos del próximo fotograma.
+	        player.position.y = originalY;
+	        // --- FIN DEL CAMBIO 2 ---
 	    }
 	}
 
@@ -1762,5 +1709,156 @@ class Game {
 
 		this.engine.drawTextCustom(font, "TIME", this.textSize, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 2}, "right");
 		this.engine.drawTextCustom(font, Math.floor(this.time).toString().padStart(3, "0"), this.textSize, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 3}, "right");
+	}
+
+	// En mario.js, dentro de la clase Game
+
+	toggleEditor() {
+		// Solo se puede entrar al editor desde el estado de "Jugando".
+		if (this.state === Game_State.Playing) {
+			this.isEditorMode = true;
+			this.state = Game_State.Editor;
+			this.stopAllMusic();
+			 this.currentMap.map = JSON.parse(JSON.stringify(this.pristineMapData));
+	        this.enemies = [];
+			console.log("[EDITOR] Modo editor activado.");
+		} else if (this.state === Game_State.Editor) {
+			this.isEditorMode = false;
+			this.state = Game_State.Playing;
+			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
+			console.log("[EDITOR] Saliendo del modo editor. Recargando enemigos.");
+			// Recargamos los enemigos del mapa para que aparezcan los que hemos añadido.
+			this.reloadEnemiesFromMap();
+		}
+	}
+
+	reloadEnemiesFromMap() {
+		this.enemies = []; // Limpiamos la lista de enemigos existentes.
+		const map_w = this.currentMap.dimensions.width;
+
+		// Este bucle es una adaptación del que existe en `loadMap`.
+		for (var i = 0; i < this.currentMap.map.length; i++) {
+			const blockId = this.currentMap.map[i];
+			let enemyType = null;
+			let enemyColor = null;
+
+			switch (blockId) {
+				case 10: enemyType = "Goomba"; break;
+				case 11: enemyType = "Koopa"; enemyColor = "Green"; break;
+				case 12: enemyType = "Pakkun"; enemyColor = "Green"; break;
+				case 37: enemyType = "Koopa_Winged"; enemyColor = "Red"; break;
+				case 43: enemyType = "Koopa_Winged"; enemyColor = "Green"; break;
+				case 44: enemyType = "Koopa"; enemyColor = "Red"; break;
+				case 45: enemyType = "Pakkun"; enemyColor = "Red"; break;
+			}
+
+			if (enemyType) {
+				let coords = this.engine.indexToCoords(i, map_w);
+				let screenPos = this.tileToScreen(coords.x, coords.y);
+
+				if (enemyType.includes("Pakkun")) {
+					this.enemies.push({
+						type: 'Pakkun', color: enemyColor,
+						x: (screenPos.x - this.mapOffset.x) + (this.tileSize / 2), y: screenPos.y + this.tileSize,
+						initialY: screenPos.y + this.tileSize, maxHeight: this.tileSize * 1.5, state: 'hiding', timer: 120
+					});
+				} else {
+					this.enemies.push({
+						id: this.enemies.length, type: enemyType, color: enemyColor,
+						x: screenPos.x - this.mapOffset.x, y: screenPos.y,
+						vx: -2, vy: 0, state: "walking", stompTimer: 0,
+						isWinged: enemyType.includes("Winged"), canFly: enemyType.includes("Winged"), flyTimer: 0,
+					});
+				}
+				// IMPORTANTE: Reemplazamos el tile del enemigo por aire para no generarlo dos veces.
+				this.currentMap.map[i] = 0;
+			}
+		}
+	}
+
+	updateAndDrawEditor() {
+	    // --- 1. ACTUALIZAR ESTADO ---
+	    const mousePos = this.engine.getMousePosition();
+	    const worldTile = this.screenToTile(mousePos.x, mousePos.y);
+	    const mapIndex = this.engine.coordsToIndex(worldTile, this.currentMap.dimensions.width);
+
+	    // Cambiar tile seleccionado con la rueda del ratón
+	    const wheelDelta = this.engine.getMouseWheelDelta();
+	    if (wheelDelta < 0) { this.selectedTileIndex++; }
+	    if (wheelDelta > 0) { this.selectedTileIndex--; }
+	    
+	    const len = this.editorPalette.length;
+	    this.selectedTileIndex = ((this.selectedTileIndex % len) + len) % len;
+
+	    // Colocar o borrar tiles con los botones del ratón
+	    if (this.engine.mouseButtons[0] && mapIndex >= 0) { // Click izquierdo
+	        this.currentMap.map[mapIndex] = this.editorPalette[this.selectedTileIndex];
+	    }
+	    if (this.engine.mouseButtons[2] && mapIndex >= 0) { // Click derecho
+	        this.currentMap.map[mapIndex] = 0; // 0 es aire
+	    }
+	    
+	    // Permitir mover la cámara con las flechas en modo editor
+	    if (this.engine.keysPressed['ArrowLeft']) { this.mapOffset.x += 15; }
+	    if (this.engine.keysPressed['ArrowRight']) { this.mapOffset.x -= 15; }
+
+	    // --- 2. DIBUJAR TODO ---
+	    this.drawBackground();
+	    this.drawBlocks();
+	    this.drawForegroundBlocks();
+	    this.drawUI();
+
+	    // Dibujar cursor de selección en el mapa
+	    const cursorScreenPos = this.tileToScreen(worldTile.x, worldTile.y);
+	    this.engine.drawRectangle(
+	        { x: cursorScreenPos.x, y: cursorScreenPos.y, width: this.tileSize, height: this.tileSize },
+	        "rgba(255, 255, 0, 0.5)" // Amarillo semi-transparente
+	    );
+
+	    // --- 3. DIBUJAR PALETA DE TILES (UI) ---
+	    const paletteBox = {
+	        x: 0, y: this.engine.getCanvasHeight() - (this.tileSize + 40),
+	        width: this.engine.getCanvasWidth(), height: this.tileSize + 40
+	    };
+	    this.engine.drawRectangle(paletteBox, "rgba(0, 0, 0, 0.7)");
+	    
+	    const paletteStartX = (this.engine.getCanvasWidth() - this.editorPalette.length * (this.tileSize + 10)) / 2;
+	    const paletteY = this.engine.getCanvasHeight() - this.tileSize - 20;
+
+	    for (let i = 0; i < this.editorPalette.length; i++) {
+	        const blockId = this.editorPalette[i];
+	        const spriteName = BlockType[blockId];
+	        const pos = { x: paletteStartX + i * (this.tileSize + 10), y: paletteY };
+	        
+	        if (this.engine.sprites[spriteName]) {
+	            this.engine.drawSprite(spriteName, 0, pos, this.spriteScale, false, 0, Pivot.Top_Left);
+	        }
+
+	        if (i === this.selectedTileIndex) {
+	        	const selectionPadding = 1;
+	            // Recuadro de selección de tile
+	            const selectionRect = {
+                	x: pos.x - selectionPadding,
+                	y: pos.y - selectionPadding,
+                	width: this.tileSize + selectionPadding * 2,
+                	height: this.tileSize + selectionPadding * 2
+                }
+	            this.engine.drawRectangleLines(selectionRect, selectionPadding * 2, Color.WHITE);
+	        }
+	    }
+
+	    // 1. Obtenemos el ID y el nombre del tile actual
+	    const selectedBlockId = this.editorPalette[this.selectedTileIndex];
+	    const selectedBlockName = BlockType[selectedBlockId];
+	    const displayText = `${selectedBlockName} (${selectedBlockId})`;
+
+	    // 2. Definimos la posición del texto (justo encima de la paleta)
+	    const textPos = {
+	        x: this.engine.getCanvasWidth() / 2,
+	        y: paletteBox.y - (this.textSize * 1.5) // Un poco de espacio sobre la caja de la paleta
+	    };
+
+	    // 3. Dibujamos el texto en pantalla
+	    this.engine.drawTextCustom(font, displayText, this.textSize, Color.WHITE, textPos, "center");
 	}
 }

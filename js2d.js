@@ -51,7 +51,10 @@ class Js2d {
 	audioCtx = null;
 	keysPressed = {};
 	masterVolume = 1.0;
-	mousePos = {x: 0, y: 0};
+
+	mousePos = { x: 0, y: 0 };
+    mouseButtons = [false, false, false]; // [izquierdo, medio, derecho]
+    mouseWheelDelta = 0;
 	
 	// Propiedades para el contador de FPS
 	#lastFrameTime = 0;
@@ -93,23 +96,61 @@ class Js2d {
 		}
 	}
 
-	initListeners() {
-		window.addEventListener('mousedown', () => this.initAudio(), { once: true });
-		window.addEventListener('mousemove', e => {
-			this.mousePos = {
-				x: e.mouseX,
-				y: e.mouseY
-			}
-		});
+	getMousePosition() {
+		return this.mousePos
+	}
 
+	initListeners() {
+		// Mover mouse
+		this.canvas.addEventListener('mousemove', e => {
+	        const rect = this.canvas.getBoundingClientRect();
+	        this.mousePos.x = e.clientX - rect.left;
+	        this.mousePos.y = e.clientY - rect.top;
+	    });
+
+	    // Clics (presionar)
+		window.addEventListener('mousedown', () => this.initAudio(), { once: true });
+	    this.canvas.addEventListener('mousedown', e => {
+	        if (e.button >= 0 && e.button < 3) { // 0: izq, 1: medio, 2: der
+	            this.mouseButtons[e.button] = true;
+	        }
+	    });
+
+	    // Clics (soltar)
+	    this.canvas.addEventListener('mouseup', e => {
+	        if (e.button >= 0 && e.button < 3) {
+	            this.mouseButtons[e.button] = false;
+	        }
+	    });
+
+	    // Rueda del ratón
+	    this.canvas.addEventListener('wheel', e => {
+	        e.preventDefault(); // Evita que la página haga scroll
+	        this.mouseWheelDelta = Math.sign(e.deltaY); // -1/1
+	    });
+
+	    // Clic derecho
+	    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+		// Teclado
 		window.addEventListener('keydown', e => {
 			this.initAudio();
 			this.keysPressed[e.code] = true;
-		}, { once: true });
+		});
+    	window.addEventListener('keyup', e => { delete this.keysPressed[e.code]; });
 
-		window.addEventListener('keydown', e => { this.keysPressed[e.code] = true; });
-		window.addEventListener('keyup', e => { this.keysPressed[e.code] = false; });
 		window.addEventListener('resize', () => this.resizeCanvas());
+	}
+
+	getMousePosition() {
+	    return { ...this.mousePos }; // Copia
+	}
+
+	getMouseWheelDelta() {
+		// No modificar sin saber
+	    const delta = this.mouseWheelDelta;
+	    this.mouseWheelDelta = 0;
+	    return delta;
 	}
 
 	getCanvasRectangle(){
