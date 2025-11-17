@@ -769,32 +769,27 @@ class Js2d {
 	playAudio(audio, loop = false, onEndCallback = null) {
 		if (!audio) return;
 
+		audio.volume = this.masterVolume; // Aplica el volumen maestro siempre
 		audio.loop = loop;
 
-		// Si hay un callback y no es un bucle, lo preparamos.
 		if (onEndCallback && !loop) {
-			// Usamos 'ended' para asegurarnos de que se dispare solo cuando el audio termine.
 			const callbackWrapper = () => {
 				onEndCallback();
-				// Limpiamos el listener para que no se ejecute de nuevo accidentalmente.
 				audio.removeEventListener('ended', callbackWrapper);
 			};
 			audio.addEventListener('ended', callbackWrapper, { once: true });
 		}
 
-		// Intentamos reproducir el audio.
 		const playPromise = audio.play();
 		if (playPromise !== undefined) {
-			playPromise.catch(error => {
-				// El navegador a menudo bloquea la reproducción automática.
-				// No hacemos nada para no llenar la consola de errores.
-			});
+			playPromise.catch(error => {});
 		}
 	}
+
 	playAudioOverlap(audio) {
 		if (audio && audio.src) {
 			const clone = audio.cloneNode();
-			clone.volume = audio.volume;
+			clone.volume = this.masterVolume; // Aplica el volumen maestro a los clones
 			clone.play();
 		}
 	}

@@ -32,8 +32,6 @@ const audio = {
 function update(dt) {
 	if (!smb) return;
 
-	// --- INICIO DEL CAMBIO 1: DISPARADOR PARA PAUSA Y EDITOR ---
-	// Se ha movido el listener del editor aquí y se ha añadido el de pausa.
 	if (js2d.keysPressed['KeyP']) {
 		js2d.keysPressed['KeyP'] = false; // Consumir la tecla
 		smb.togglePause();
@@ -43,7 +41,18 @@ function update(dt) {
 		js2d.keysPressed['KeyE'] = false; // Consumir la tecla
 		smb.toggleEditor();
 	}
-	// --- FIN DEL CAMBIO 1 ---
+
+	if (js2d.keysPressed['Escape']) {
+		js2d.keysPressed['Escape'] = false; // Consumir la tecla
+		if (
+			smb.state === Game_State.Playing ||
+			smb.state === Game_State.Pause ||
+			smb.state === Game_State.Editor
+			) {
+				smb.stopAllMusic();
+				smb.state = Game_State.Title_Menu;
+		}
+	}
 
 	switch(smb.state) {
 		case Game_State.Title_Menu:
