@@ -98,6 +98,7 @@ class Game {
 	player = Player.Mario;
 	playerSize = Player_Size.Small;
 	currentMap = null;
+	savedState = null;
 	
 	volume = 1;
 	savedVolume = 1;
@@ -442,6 +443,95 @@ class Game {
 		} else {
 			console.error(`[SMB] No se pudo encontrar el mapa: ${name}`);
 		}
+	}
+
+	saveGameState() {
+		// Determina el sprite correcto según el tamaño del jugador
+		let currentSpriteName;
+		switch (this.playerSize) {
+			case Player_Size.Small: currentSpriteName = PlayerName[this.player]; break;
+			case Player_Size.Big:   currentSpriteName = PlayerName[this.player] + "_Big"; break;
+			case Player_Size.Fire:  currentSpriteName = PlayerName[this.player] + "_Fire"; break;
+		}
+		const currentPlayerSprite = this.engine.animatedSprites[currentSpriteName];
+
+		this.savedState = {
+			player: this.player,
+			playerSize: this.playerSize,
+			playerPos: { ...currentPlayerSprite.position },
+			playerFlipped: currentPlayerSprite.flipped,
+			playerIsVisible: this.playerIsVisible,
+			velocityY: this.velocityY,
+			
+			mapOffset: { ...this.mapOffset },
+			mapState: JSON.parse(JSON.stringify(this.currentMap)),
+			enemiesState: JSON.parse(JSON.stringify(this.enemies)),
+			specialBlocksState: JSON.parse(JSON.stringify(this.specialBlocks)),
+			activePowerupsState: JSON.parse(JSON.stringify(this.activePowerups)),
+			
+			time: this.time,
+			score: this.score,
+			lives: this.lives,
+			coins: this.coins,
+			isOnGround: this.isOnGround,
+		};
+		console.log("[SMB] Game state saved.");
+	}
+
+	restoreGameState() {
+		if (this.savedState) {
+			console.log("[SMB] Restoring game state.");
+			// Restaura datos simples
+			this.player = this.savedState.player;
+			this.playerSize = this.savedState.playerSize;
+			this.playerIsVisible = this.savedState.playerIsVisible;
+			this.velocityY = this.savedState.velocityY;
+			this.time = this.savedState.time;
+			this.score = this.savedState.score;
+			this.lives = this.savedState.lives;
+			this.coins = this.savedState.coins;
+			this.isOnGround = this.savedState.isOnGround;
+			
+			// Restaura objetos complejos (copias profundas)
+			this.currentMap = JSON.parse(JSON.stringify(this.savedState.mapState));
+			this.enemies = JSON.parse(JSON.stringify(this.savedState.enemiesState));
+			this.specialBlocks = JSON.parse(JSON.stringify(this.savedState.specialBlocksState));
+			this.activePowerups = JSON.parse(JSON.stringify(this.savedState.activePowerupsState));
+			this.mapOffset = { ...this.savedState.mapOffset };
+
+			// Sincroniza la posición de todos los sprites del jugador
+			const smallSprite = this.engine.animatedSprites[PlayerName[this.player]];
+			const bigSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Big"];
+			const fireSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Fire"];
+			
+			if (smallSprite) {
+				smallSprite.position = { ...this.savedState.playerPos };
+				smallSprite.flipped = this.savedState.playerFlipped;
+			}
+			if (bigSprite) {
+				bigSprite.position = { ...this.savedState.playerPos };
+				bigSprite.flipped = this.savedState.playerFlipped;
+			}
+			if (fireSprite) {
+				fireSprite.position = { ...this.savedState.playerPos };
+				fireSprite.flipped = this.savedState.playerFlipped;
+			}
+
+			// Define los sprites del mundo actual
+			this.defineWorldSprites();
+		}
+	}
+
+	continueGame() {
+		this.restoreGameState();
+		this.state = Game_State.Playing;
+	}
+
+	exitGame() {
+		this.saveGameState();
+		this.stopAllMusic();
+		this.state = Game_State.Title_Menu;
+		this.loadMap("0-0");
 	}
 
 	saveGameState() {
@@ -904,6 +994,7 @@ class Game {
 		const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
 		this.engine.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
 
+		// --- CAMBIO CLAVE: Lógica para añadir botón CONTINUE ---
 		const menuButtons = [
 			{ name: "MARIO GAME", action: () => { this.selectPlayer(Player.Mario); }},
 			{ name: "LUIGI GAME", action: () => { this.selectPlayer(Player.Luigi); }},
@@ -911,6 +1002,7 @@ class Game {
 		if(this.savedState != null){
 			menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame() } });
 		}
+		// --- FIN DEL CAMBIO ---
 
 		const numButtons = menuButtons.length;
 		const menuGap = this.engine.canvas.height * 0.1 / numButtons;
@@ -1163,10 +1255,18 @@ class Game {
 			if (fb.state === 'exploding') {
 				const hitSprite = this.engine.animatedSprites["Fireball_Hit"];
 				hitSprite.position = screenPos;
-				this.engine.drawAnimatedSprite("Fireball_Hit", Pivot.Center);
+				
+				// Asegura que la animación de explosión se active y reinicie solo una vez.
+				if (fb.animTimer === 0) {
+					this.engine.setAnimationForSprite("Fireball", "Explode", true); // El 'true' reinicia la animación.
+				}
+				this.engine.drawAnimatedSprite("Fireball", Pivot.Center);
 
 				fb.animTimer++;
-				if (fb.animTimer > 15) { // Duración de la animación de explosión
+				const explosionAnim = hitSprite.animations.Explode;
+				const explosionDuration = explosionAnim.frames.length * explosionAnim.frameSpeed;
+				
+				if (fb.animTimer > explosionDuration) {
 					this.activeFireballs.splice(i, 1);
 				}
 				continue;
@@ -1184,11 +1284,11 @@ class Game {
 				fb.vy = -8; // Velocidad de rebote
 			}
 
-			// Colisión con paredes
+			// Colisión con paredes o salir de la pantalla
 			const wallTile = this.screenToTile(screenPos.x + (fb.vx > 0 ? this.spriteSize : 0), fb.y);
-			if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
+			if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0 || screenPos.x < 0 || screenPos.x > this.engine.getCanvasWidth()) {
 				fb.state = 'exploding';
-				this.engine.playAudioOverlap(audio["Fireball_Hit"]);
+				this.engine.playAudioOverlap(audio["Player_Bump"]); // Usamos un sonido genérico de golpe
 				continue;
 			}
 
@@ -1198,7 +1298,8 @@ class Game {
 				if (enemy.state === 'stomped' || enemy.state === 'shell') continue;
 				
 				const enemyScreenX = enemy.x + this.mapOffset.x;
-				const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: this.tileSize * 1.5 };
+				const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+				const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: enemyHeight };
 				const fbRect = { x: screenPos.x, y: screenPos.y, w: this.spriteSize, h: this.spriteSize };
 
 				if (this.rectsOverlap(fbRect, enemyRect)) {
@@ -1206,16 +1307,16 @@ class Game {
 					this.spawnScorePopup("200", enemyScreenX, enemy.y);
 					this.enemies.splice(j, 1);
 					fb.state = 'exploding';
-					this.engine.playAudioOverlap(audio["Fireball_Hit"]);
-					break;
+					this.engine.playAudioOverlap(audio["Player_Bump"]);
+					break; 
 				}
 			}
 
-			// Dibuja la bola de fuego en movimiento
+			// Dibuja la bola de fuego en movimiento si no ha explotado
 			if (fb.state === 'moving') {
-				const moveSprite = this.engine.animatedSprites["Fireball"];
+				const moveSprite = this.engine.animatedSprites["Fireball_Hit"];
 				moveSprite.position = screenPos;
-				this.engine.drawAnimatedSprite("Fireball", Pivot.Center);
+				this.engine.drawAnimatedSprite("Fireball_Hit", Pivot.Center);
 			}
 		}
 	}
@@ -1529,7 +1630,7 @@ class Game {
 		    if (this.throwTimer > 0) this.throwTimer--; else this.isThrowing = false;
 
 		    // Detectar disparo
-		    const isShooting = this.engine.keysPressed['ControlLeft'] || this.engine.keysPressed['ControlRight'] || this.engine.keysPressed['Enter'];
+		    const isShooting = this.engine.keysPressed['ControlLeft'] || this.engine.keysPressed['ControlRight'] || this.engine.keysPressed['Space'];
 		    if (isShooting && this.playerSize === Player_Size.Fire && !this.isThrowing) {
 		        this.spawnFireball();
 		        // Consumir la tecla para evitar disparos múltiples
@@ -1552,6 +1653,7 @@ class Game {
 
 		    const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 		    if (isCrouching) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Crouch`);
+		    else if (this.isThrowing) { this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Shoot`); } 
 		    else if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
 		    else if (this.velocityY > this.gravity && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Fall`);
 		    else if (this.skidTimer > 0) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Stop`);
@@ -1572,7 +1674,7 @@ class Game {
 		            if (!blocked) { if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX; else this.mapOffset.x -= velocityX; }
 		        }
 		    }
-		    if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW'] || this.engine.keysPressed['Space']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
+		    if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
 		    if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
 		// }
 
@@ -1946,36 +2048,6 @@ class Game {
 			default: return null;
 		}
 	}
-
-	togglePause() {
-		const currentTheme = this.getCurrentThemeAudio();
-
-		if (this.state === Game_State.Playing) {
-			this.state = Game_State.Pause;
-			if (currentTheme) this.engine.pauseAudio(currentTheme);
-			this.engine.playAudio(audio["Pause"], false);
-		} else if (this.state === Game_State.Pause) {
-			this.state = Game_State.Playing;
-			if (currentTheme) this.engine.playAudio(currentTheme, true);
-		}
-	}
-
-	drawPauseScreen() {
-		// Dibuja un rectángulo semi-transparente sobre toda la pantalla
-		this.engine.drawRectangle(
-			this.engine.getCanvasRectangle(),
-			"rgba(0, 0, 0, 0.5)"
-		);
-
-		// Dibuja el texto "PAUSED" en el centro
-		const textPos = {
-			x: this.engine.getCanvasWidth() / 2,
-			y: this.engine.getCanvasHeight() / 2
-		};
-		this.engine.drawTextCustom(font, "PAUSED", this.textSize * 2, Color.WHITE, textPos, "center");
-	}
-
-	// mario.js
 
 	toggleEditor() {
 		if (this.state === Game_State.Playing) {

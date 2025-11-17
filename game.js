@@ -25,16 +25,17 @@ const audio = {
 	"Level_Clear": js2d.loadAudio("assets/audios/level_clear.mp3"),
 	"Shell": js2d.loadAudio("assets/audios/shell.mp3"),
 	"Brick_Break": js2d.loadAudio("assets/audios/break.mp3"),
+	"Player_Fireball": js2d.loadAudio("assets/audios/fireball.mp3")
 };
-
-// game.js
 
 function update(dt) {
 	if (!smb) return;
 
 	if (js2d.keysPressed['KeyP']) {
 		js2d.keysPressed['KeyP'] = false; // Consumir la tecla
-		smb.togglePause();
+		if (smb.state === Game_State.Playing) {
+			smb.exitGame(); // <-- CAMBIO CLAVE: Llama a la nueva función
+		}
 	}
 
 	if (js2d.keysPressed['KeyE']) {
@@ -46,10 +47,12 @@ function update(dt) {
 		js2d.keysPressed['Escape'] = false; // Consumir la tecla
 		if (
 			smb.state === Game_State.Playing ||
-			smb.state === Game_State.Pause ||
 			smb.state === Game_State.Editor
 			) {
 				smb.stopAllMusic();
+				// CAMBIO CLAVE: Salir sin guardar borra el estado
+				smb.savedState = null;
+				smb.loadMap("0-0");
 				smb.state = Game_State.Title_Menu;
 		}
 	}
@@ -66,23 +69,6 @@ function update(dt) {
 				smb.handleBlackScreenEnd();
 			}
 			break;
-
-		// --- INICIO DEL CAMBIO 2: AÑADIR EL CASO PARA EL ESTADO DE PAUSA ---
-		case Game_State.Pause:
-			// Dibujamos todos los elementos del juego de forma estática
-			smb.drawBackground();
-			smb.drawBlocks();
-			smb.drawPowerups();
-			smb.drawCoins();
-			smb.drawBumpingBlocksOverlay();
-			smb.drawEnemies(dt);
-			smb.drawPlayer(PlayerName[smb.player], dt);
-			smb.drawForegroundBlocks();
-			smb.drawUI();
-			// Y encima dibujamos la pantalla de pausa
-			smb.drawPauseScreen();
-			break;
-		// --- FIN DEL CAMBIO 2 ---
 
 		case Game_State.Player_Dying:
 			smb.drawBackground();
@@ -133,13 +119,14 @@ function update(dt) {
 			}
 
 			smb.updateEnemies(dt);
-            smb.updatePowerups();
+			smb.updatePowerups();
 			smb.updateCoins();
-            smb.updateAndDrawScorePopups();
+			smb.updateAndDrawScorePopups();
 			smb.drawBackground();
-            smb.drawPowerups();
-            smb.updateAndDrawBrickParticles();
-            smb.drawCoins();
+			smb.drawPowerups();
+			smb.updateAndDrawFireballs();
+			smb.updateAndDrawBrickParticles();
+			smb.drawCoins();
 			smb.drawBlocks();
 			smb.drawBumpingBlocksOverlay();
 			smb.drawEnemies(dt);
@@ -184,7 +171,15 @@ async function init() {
 	await js2d.loadTileset("Player_Luigi_Fire_Tiles", luigiFireTileset, 16, 32);
 	await js2d.loadTileset("Enemy_Short_Tiles", enemiesShortTileset, 16, 16);
 	await js2d.loadTileset("Enemy_Tall_Tiles", enemiesTallTileset, 16, 24);
+
+	await js2d.loadTileset("Fireball_Hit_Tiles", fireballSpritesheet, 8, 8);
+	await js2d.loadTileset("Fireball_Tiles", fireballHitSpritesheet, 16, 16);
+
 	await js2d.loadTileset("UI_Tiles", uiImage, 8, 8);
+
+	//
+	// ---
+	//
 
 	// Enemigos bajos
     js2d.defineSpriteFromTileset("Enemy_Goomba", "Enemy_Short_Tiles", 0, 0, 3, tileScale);
@@ -206,11 +201,20 @@ async function init() {
     js2d.defineSpriteFromTileset("Player_Luigi", "Player_Luigi_Tiles", 0, 0, 15, tileScale);
     js2d.defineSpriteFromTileset("Player_Mario_Big", "Player_Mario_Big_Tiles", 0, 0, 15, tileScale);
     js2d.defineSpriteFromTileset("Player_Luigi_Big", "Player_Luigi_Big_Tiles", 0, 0, 15, tileScale); // Reutiliza el tileset
-    js2d.defineSpriteFromTileset("Player_Mario_Fire", "Player_Mario_Fire_Tiles", 0, 0, 15, tileScale);
-    js2d.defineSpriteFromTileset("Player_Luigi_Fire", "Player_Luigi_Fire_Tiles", 0, 0, 15, tileScale);
+    js2d.defineSpriteFromTileset("Player_Mario_Fire", "Player_Mario_Fire_Tiles", 0, 0, 16, tileScale);
+    js2d.defineSpriteFromTileset("Player_Luigi_Fire", "Player_Luigi_Fire_Tiles", 0, 0, 16, tileScale);
     
+    // UI
     js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, fontSize / tileScale / 2);
     js2d.defineSpriteFromTileset("Cursor", "UI_Tiles", 1, 0, 1, fontSize / tileScale / 2);
+
+    // Fireball
+    js2d.defineSpriteFromTileset("Object_Fireball", "Fireball_Tiles", 0, 0, 4, tileScale);
+	js2d.defineSpriteFromTileset("Object_Fireball_Hit", "Fireball_Hit_Tiles", 0, 0, 3, tileScale);
+
+	//
+	// ---
+	//
 
 	js2d.createAnimatedSprite("Mario_Grow", "Player_Mario_Grow", playerPos, tileScale);
 	js2d.createAnimatedSprite("Luigi_Grow", "Player_Luigi_Grow", playerPos, tileScale);
@@ -232,6 +236,8 @@ async function init() {
 	js2d.createAnimatedSprite("Pakkun_Red", "Enemy_Pakkun_Red", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Mushroom_Super", "Object_Mushroom_Super", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Fire_Flower", "Object_Fire_Flower", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Fireball", "Object_Fireball", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Fireball_Hit", "Object_Fireball_Hit", {x: 0, y: 0}, tileScale);
 
 	// Animaciones
 	// Small
@@ -281,6 +287,7 @@ async function init() {
 	js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Slide", [8], false, 16);
 	js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Fall", [7, 8], false, 16);
 	js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Swimg", [9, 10, 11, 12, 13, 14], false, 16);
+	js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Shoot", [15], false, 16);
 
 	js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Idle", [0], true, 16);
 	js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Run", [1, 2, 3], true, 16);
@@ -290,7 +297,9 @@ async function init() {
 	js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Slide", [7], false, 16);
 	js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Fall", [7, 8], false, 16);
 	js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Swimg", [9, 10, 11, 12, 13, 14], false, 16);
+	js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Shoot", [15], false, 16);
 
+	// Enemies
 	js2d.addAnimationToSprite("Goomba", "Goomba_Walk", [0, 1], true, 16);
 	js2d.addAnimationToSprite("Goomba", "Goomba_Stomped", [2], false, 16);
 	js2d.addAnimationToSprite("Koopa_Green", "Koopa_Walk", [0, 1], true, 16);
@@ -304,6 +313,11 @@ async function init() {
 	js2d.addAnimationToSprite("Pakkun_Green", "Pakkun_Bite", [0, 1], true, 16);
 	js2d.addAnimationToSprite("Pakkun_Red", "Pakkun_Bite", [0, 1], true, 16);
 
+	//
+	// ---
+	//
+
+	// Default
 	js2d.setAnimationForSprite("Mario", "Mario_Idle");
 	js2d.setAnimationForSprite("Luigi", "Luigi_Idle");
 	js2d.setAnimationForSprite("Mario_Grow", "Mario_Growing");
@@ -321,12 +335,19 @@ async function init() {
 	js2d.setAnimationForSprite("Pakkun_Green", "Pakkun_Bite");
 	js2d.setAnimationForSprite("Koopa_Shell_Green", "Shell_Idle");
 	js2d.setAnimationForSprite("Koopa_Shell_Red", "Shell_Idle");
+	js2d.setAnimationForSprite("Fireball", "Spin");
+	js2d.setAnimationForSprite("Fireball_Hit", "Explode");
+
 
 	// Animaciones adicionales
 	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Idle", [0], true, 16);
 	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Sliding", [0, 1], true, 16);
 	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Idle", [0], true, 16);
 	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Sliding", [0, 1], true, 16);
+
+	// Fireball
+	js2d.addAnimationToSprite("Fireball", "Spin", [0, 1, 2, 3], true, 8);
+	js2d.addAnimationToSprite("Fireball_Hit", "Explode", [0, 1, 2], false, 8);
 
 	js2d.resizeCanvas();
 	smb = new Game(js2d, fontSize);
