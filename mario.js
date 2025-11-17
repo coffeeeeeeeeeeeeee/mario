@@ -891,7 +891,7 @@ class Game {
 		const titleSprite = this.engine.sprites["UI_Title_Image"];
 		const titleImg = titleSprite.image;
 		const titlePosX = this.engine.canvas.width / 2;
-		const titlePosY = this.tileSize;
+		const titlePosY = this.tileSize * 1.5;
 		const titleScale = this.spriteScale * this.engine.getCanvasHeight() / titleMaxY / 1000;
 		const titleWidth = titleImg.width * titleScale;
 		const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
@@ -1342,12 +1342,12 @@ class Game {
 	                        if (this.specialBlocks[idx].coinsLeft === 0) { this.currentMap.map[idx] = 35; }
 	                    }
 	                }
-	                else if (blockId === 2 && isBig) { this.currentMap.map[idx] = 0; this.spawnBrickParticles(blockX, blockY); blockSoundPlayed = true; }
+	                else if (blockId === 2 && blockId === 27 && isBig) { this.currentMap.map[idx] = 0; this.spawnBrickParticles(blockX, blockY); blockSoundPlayed = true; }
 	                else if (blockId === 41) { this.spawnCoin(blockX, blockY); this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true; }
 	                else { if (blockId === 3) { this.currentMap.map[idx] = 35; const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super; this.spawnPowerup(blockX, blockY, powerupType); } }
 	                const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
 	                const justExhausted = (blockId === 34 && this.specialBlocks[idx]?.coinsLeft === 0);
-	                if (!isAlreadyBumping && [2, 3, 34, 41].includes(blockId) && !(blockId === 2 && isBig) && !justExhausted) { this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId }); this.currentMap.map[idx] = 0; }
+	                if (!isAlreadyBumping && [2, 3, 34, 41].includes(blockId) && !(blockId === 2 && blockId === 27 && isBig) && !justExhausted) { this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId }); this.currentMap.map[idx] = 0; }
 	                if (!blockSoundPlayed) this.engine.playAudioOverlap(audio["Player_Bump"]);
 	                this.velocityY = 0; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y; hitCeiling = true;
 	            }
@@ -1711,23 +1711,67 @@ class Game {
 		this.engine.drawTextCustom(font, Math.floor(this.time).toString().padStart(3, "0"), this.textSize, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 3}, "right");
 	}
 
-	// En mario.js, dentro de la clase Game
+	getCurrentThemeAudio() {
+		if (!this.currentMap) return null;
+		switch (this.currentMap.type) {
+			case World_Type.Overworld: return audio["Overworld_Theme"];
+			case World_Type.Underground: return audio["Underground_Theme"];
+			case World_Type.Underwater: return audio["Underwater_Theme"];
+			case World_Type.Castle: return audio["Castle_Theme"];
+			default: return null;
+		}
+	}
+
+	togglePause() {
+		const currentTheme = this.getCurrentThemeAudio();
+
+		if (this.state === Game_State.Playing) {
+			this.state = Game_State.Pause;
+			if (currentTheme) this.engine.pauseAudio(currentTheme);
+			this.engine.playAudio(audio["Pause"], false);
+		} else if (this.state === Game_State.Pause) {
+			this.state = Game_State.Playing;
+			if (currentTheme) this.engine.playAudio(currentTheme, true);
+		}
+	}
+
+	drawPauseScreen() {
+		// Dibuja un rectángulo semi-transparente sobre toda la pantalla
+		this.engine.drawRectangle(
+			this.engine.getCanvasRectangle(),
+			"rgba(0, 0, 0, 0.5)"
+		);
+
+		// Dibuja el texto "PAUSED" en el centro
+		const textPos = {
+			x: this.engine.getCanvasWidth() / 2,
+			y: this.engine.getCanvasHeight() / 2
+		};
+		this.engine.drawTextCustom(font, "PAUSED", this.textSize * 2, Color.WHITE, textPos, "center");
+	}
+
+	// mario.js
 
 	toggleEditor() {
-		// Solo se puede entrar al editor desde el estado de "Jugando".
 		if (this.state === Game_State.Playing) {
 			this.isEditorMode = true;
 			this.state = Game_State.Editor;
-			this.stopAllMusic();
-			 this.currentMap.map = JSON.parse(JSON.stringify(this.pristineMapData));
-	        this.enemies = [];
+			
+			const currentTheme = this.getCurrentThemeAudio();
+			if (currentTheme) this.engine.stopAudio(currentTheme);
+
+			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
+			this.enemies = [];
+			
 			console.log("[EDITOR] Modo editor activado.");
+
 		} else if (this.state === Game_State.Editor) {
 			this.isEditorMode = false;
 			this.state = Game_State.Playing;
+			
 			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
+			
 			console.log("[EDITOR] Saliendo del modo editor. Recargando enemigos.");
-			// Recargamos los enemigos del mapa para que aparezcan los que hemos añadido.
 			this.reloadEnemiesFromMap();
 		}
 	}

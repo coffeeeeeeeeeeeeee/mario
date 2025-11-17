@@ -27,14 +27,23 @@ const audio = {
 	"Brick_Break": js2d.loadAudio("assets/audios/break.mp3"),
 };
 
+// game.js
+
 function update(dt) {
 	if (!smb) return;
 
-	if (js2d.keysPressed['KeyE'] || js2d.keysPressed['E']) {
+	// --- INICIO DEL CAMBIO 1: DISPARADOR PARA PAUSA Y EDITOR ---
+	// Se ha movido el listener del editor aquí y se ha añadido el de pausa.
+	if (js2d.keysPressed['KeyP']) {
+		js2d.keysPressed['KeyP'] = false; // Consumir la tecla
+		smb.togglePause();
+	}
+
+	if (js2d.keysPressed['KeyE']) {
 		js2d.keysPressed['KeyE'] = false; // Consumir la tecla
-		js2d.keysPressed['E'] = false; // Consumir la tecla
 		smb.toggleEditor();
 	}
+	// --- FIN DEL CAMBIO 1 ---
 
 	switch(smb.state) {
 		case Game_State.Title_Menu:
@@ -48,6 +57,23 @@ function update(dt) {
 				smb.handleBlackScreenEnd();
 			}
 			break;
+
+		// --- INICIO DEL CAMBIO 2: AÑADIR EL CASO PARA EL ESTADO DE PAUSA ---
+		case Game_State.Pause:
+			// Dibujamos todos los elementos del juego de forma estática
+			smb.drawBackground();
+			smb.drawBlocks();
+			smb.drawPowerups();
+			smb.drawCoins();
+			smb.drawBumpingBlocksOverlay();
+			smb.drawEnemies(dt);
+			smb.drawPlayer(PlayerName[smb.player], dt);
+			smb.drawForegroundBlocks();
+			smb.drawUI();
+			// Y encima dibujamos la pantalla de pausa
+			smb.drawPauseScreen();
+			break;
+		// --- FIN DEL CAMBIO 2 ---
 
 		case Game_State.Player_Dying:
 			smb.drawBackground();
@@ -78,28 +104,9 @@ function update(dt) {
 			smb.time -= dt / 1000;
 
 			if (smb.currentMap) {
-				switch (smb.currentMap.type) {
-					case World_Type.Overworld:
-						if (audio["Overworld_Theme"].paused && !audio["Overworld_Theme"].ended) {
-							js2d.playAudio(audio["Overworld_Theme"], true);
-						}
-						break;
-					case World_Type.Underground:
-						if (audio["Underground_Theme"].paused && !audio["Underground_Theme"].ended) {
-							js2d.setVolume(audio["Player_Jump"], 0.5);
-							js2d.playAudio(audio["Underground_Theme"], true);
-						}
-						break;
-					case World_Type.Underwater:
-						if (audio["Underwater_Theme"].paused && !audio["Underwater_Theme"].ended) {
-							js2d.playAudio(audio["Underwater_Theme"], true);
-						}
-						break;
-					case World_Type.Castle:
-						if (audio["Castle_Theme"].paused && !audio["Castle_Theme"].ended) {
-							js2d.playAudio(audio["Castle_Theme"], true);
-						}
-						break;
+				const theme = smb.getCurrentThemeAudio();
+				if (theme && theme.paused && !theme.ended) {
+					js2d.playAudio(theme, true);
 				}
 			}
 
