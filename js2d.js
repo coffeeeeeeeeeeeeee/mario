@@ -726,17 +726,28 @@ class Js2d {
 	}
 
 	playAudio(audio, loop = false, onEndCallback = null) {
-		audio.loop = loop;
-		const playPromise = audio.play();
+		if (!audio) return;
 
-		if (playPromise !== undefined) {
-			playPromise.catch((error) => {
-				// La interacción del usuario puede ser necesaria para reproducir audio.
-			});
+		audio.loop = loop;
+
+		// Si hay un callback y no es un bucle, lo preparamos.
+		if (onEndCallback && !loop) {
+			// Usamos 'ended' para asegurarnos de que se dispare solo cuando el audio termine.
+			const callbackWrapper = () => {
+				onEndCallback();
+				// Limpiamos el listener para que no se ejecute de nuevo accidentalmente.
+				audio.removeEventListener('ended', callbackWrapper);
+			};
+			audio.addEventListener('ended', callbackWrapper, { once: true });
 		}
 
-		if (onEndCallback && !loop) {
-			audio.addEventListener('ended', onEndCallback, { once: true });
+		// Intentamos reproducir el audio.
+		const playPromise = audio.play();
+		if (playPromise !== undefined) {
+			playPromise.catch(error => {
+				// El navegador a menudo bloquea la reproducción automática.
+				// No hacemos nada para no llenar la consola de errores.
+			});
 		}
 	}
 	playAudioOverlap(audio) {
@@ -878,7 +889,7 @@ class Js2d {
 				tileWidth: tileWidth,
 				tileHeight: tileHeight
 			};
-			console.log(`[Js2d] Tileset "${name}" cargado correctamente desde "${path}"`);
+			console.log(`[Js2d] Tileset "${name}" cargado correctamente.`);
 			return this.tilesets[name];
 		} catch (error) {
 			console.error(`[Js2d] No se pudo cargar el tileset "${name}".`, error);
@@ -938,9 +949,7 @@ class Js2d {
 			const currentTileIndex = startTileIndex + frame;
 			
 			sx = (currentTileIndex % framesPerRow) * sWidth;
-			sy = Math.floor(currentTileIndex / framesPerRow) * sHeight;
-
-			scale = spriteInfo.scale; // Usamos la escala definida para el sprite
+			sy = Math.floor(currentTileIndex / framesPerRow) * sHeight;			
 		} else {
 			// Imagen suelta
 			if (!image) image = spriteInfo.image; // Aseguramos que tenemos la imagen
