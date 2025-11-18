@@ -59,6 +59,7 @@ function update(dt) {
 
 	switch(smb.state) {
 		case Game_State.Title_Menu:
+			// smb.loadMap("0-0");
 			smb.drawMenu();
 			break;
 
@@ -122,6 +123,9 @@ function update(dt) {
 			smb.updatePowerups();
 			smb.updateCoins();
 			smb.updateAndDrawScorePopups();
+
+			Object.values(js2d.animatedSprites).forEach(sprite => sprite.frameCounter++);
+
 			smb.drawBackground();
 			smb.drawPowerups();
 			smb.updateAndDrawFireballs();
@@ -169,6 +173,7 @@ async function init() {
 	await js2d.loadTileset("Player_Luigi_Tiles", luigiSmallTileset, 16, 32);
 	await js2d.loadTileset("Player_Luigi_Big_Tiles", luigiBigTileset, 16, 32);
 	await js2d.loadTileset("Player_Luigi_Fire_Tiles", luigiFireTileset, 16, 32);
+	
 	await js2d.loadTileset("Enemy_Short_Tiles", enemiesShortTileset, 16, 16);
 	await js2d.loadTileset("Enemy_Tall_Tiles", enemiesTallTileset, 16, 24);
 
@@ -234,8 +239,8 @@ async function init() {
 	js2d.createAnimatedSprite("Koopa_Shell_Green", "Koopa_Shell_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Pakkun_Green", "Enemy_Pakkun_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Pakkun_Red", "Enemy_Pakkun_Red", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Mushroom_Super", "Object_Mushroom_Super", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Fire_Flower", "Object_Fire_Flower", {x: 0, y: 0}, tileScale);
+	// js2d.createAnimatedSprite("Mushroom_Super", "Object_Mushroom_Super", {x: 0, y: 0}, tileScale);
+	// js2d.createAnimatedSprite("Fire_Flower", "Object_Fire_Flower", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Fireball", "Object_Fireball", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Fireball_Hit", "Object_Fireball_Hit", {x: 0, y: 0}, tileScale);
 
@@ -313,6 +318,16 @@ async function init() {
 	js2d.addAnimationToSprite("Pakkun_Green", "Pakkun_Bite", [0, 1], true, 16);
 	js2d.addAnimationToSprite("Pakkun_Red", "Pakkun_Bite", [0, 1], true, 16);
 
+	// Fireball
+	js2d.addAnimationToSprite("Fireball", "Spin", [0, 1, 2, 3], true, 8);
+	js2d.addAnimationToSprite("Fireball_Hit", "Explode", [0, 1, 2], false, 8);
+
+	// Animaciones adicionales
+	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Idle", [0], true, 16);
+	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Sliding", [0, 1], true, 16);
+	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Idle", [0], true, 16);
+	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Sliding", [0, 1], true, 16);
+
 	//
 	// ---
 	//
@@ -337,17 +352,6 @@ async function init() {
 	js2d.setAnimationForSprite("Koopa_Shell_Red", "Shell_Idle");
 	js2d.setAnimationForSprite("Fireball", "Spin");
 	js2d.setAnimationForSprite("Fireball_Hit", "Explode");
-
-
-	// Animaciones adicionales
-	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Idle", [0], true, 16);
-	js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Sliding", [0, 1], true, 16);
-	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Idle", [0], true, 16);
-	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Sliding", [0, 1], true, 16);
-
-	// Fireball
-	js2d.addAnimationToSprite("Fireball", "Spin", [0, 1, 2, 3], true, 8);
-	js2d.addAnimationToSprite("Fireball_Hit", "Explode", [0, 1, 2], false, 8);
 
 	js2d.resizeCanvas();
 	smb = new Game(js2d, fontSize);
