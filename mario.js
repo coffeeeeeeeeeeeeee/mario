@@ -1,5 +1,7 @@
 const DEFAULT_LIVES = 1;
 const COIN_SPIN_VELOCITY = 15;
+const SPRITE_SIZE = 16;
+const SPRITE_SCALE = 4;
 
 const Game_State = {
 	Title_Menu: 0,
@@ -118,9 +120,7 @@ class Game {
 	currentSelection = 0;
 	currentWorldIndex = 0;
 	mapOffset = {x: 0, y: 0};
-	spriteSize = 16;
-	spriteScale = 4;
-	tileSize = this.spriteSize * this.spriteScale;
+	tileSize = SPRITE_SIZE * SPRITE_SCALE;
 	velocityY = 0;
 	jumpPower = -22;
 	gravity = 0.8;
@@ -148,11 +148,9 @@ class Game {
 
 	fireballCooldown = 0;
 
-	// Black screens
 	screenDuration = 0
 	screenType = Black_Screen_Type.Start_Level;
 
-	// Editor
 	isEditorMode = false;
 	editorCursorPos = { x: 0, y: 0 };
 	selectedTileIndex = 0;
@@ -165,9 +163,9 @@ class Game {
 	UNDERWATER_COLOR = "#5C94FC";
 	CASTLE_COLOR = "#000000";
 
-	velocityXGround = (this.spriteSize * 9.10 / 16) * 60;
-	velocityXTurbo  = (this.spriteSize * 14.4 / 16) * 60;
-	velocityXSwim   = (this.spriteSize * 17.6 / 16) * 60;
+	velocityXGround = (SPRITE_SIZE * 9.10 / 16) * 60;
+	velocityXTurbo  = (SPRITE_SIZE * 14.4 / 16) * 60;
+	velocityXSwim   = (SPRITE_SIZE * 17.6 / 16) * 60;
 
 	constructor(engine, textSize) {
 		this.engine = engine;
@@ -221,7 +219,7 @@ class Game {
 
 	defineWorldSprites() {
 		let tilesetName = "Overworld_Tiles";
-		const tileScale = this.spriteScale;
+		const tileScale = SPRITE_SCALE;
 
 		switch (this.currentMap.type) {
 			case World_Type.Underground:
@@ -233,7 +231,6 @@ class Game {
 				break;
 		}
 
-		// Bloques Comunes
 		js2d.defineSpriteFromTileset("Block_Black", tilesetName, 0, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Ground", tilesetName, 1, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Stairs", tilesetName, 2, 0, 1, tileScale);
@@ -245,7 +242,6 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Brick_Break", tilesetName, 8, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Cut", tilesetName, 9, 0, 1, tileScale);
 
-		// Objetos Interactivos
 		js2d.defineSpriteFromTileset("Object_Question",				tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coinbox_Multiple",	tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Question_Used",		tilesetName, 1, 1, 1, tileScale);
@@ -256,15 +252,13 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Invisible",	tilesetName, 15, 15, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Empty",		tilesetName, 15, 15, 1, tileScale);
 
-		// Tuberías
 		js2d.defineSpriteFromTileset("Block_Pipe_Top_Left", tilesetName, 0, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", tilesetName, 1, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
-		
-		// Escenario (Nubes, Arbustos, etc.) - Usamos Overworld por defecto
+
 		const sceneryTileset = "Overworld_Tiles";
-		// Nubes
+
 		js2d.defineSpriteFromTileset("Block_Cloud_Top_Left", sceneryTileset, 0, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cloud_Top_Middle", sceneryTileset, 1, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cloud_Top_Right", sceneryTileset, 2, 4, 1, tileScale);
@@ -272,12 +266,10 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Middle", sceneryTileset, 4, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Right", sceneryTileset, 5, 4, 1, tileScale);
 
-		// Arbustos
 		js2d.defineSpriteFromTileset("Block_Bush_Left", sceneryTileset, 12, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bush_Middle", sceneryTileset, 13, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bush_Right", sceneryTileset, 14, 4, 1, tileScale);
-		
-		// Colinas
+
 		js2d.defineSpriteFromTileset("Block_Hill_Left", sceneryTileset, 6, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_1", sceneryTileset, 7, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Hill_Middle", sceneryTileset, 8, 4, 1, tileScale);
@@ -285,39 +277,31 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Hill_Right", sceneryTileset, 10, 4, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Hill_Top", sceneryTileset, 11, 4, 1, tileScale);
 
-		// Bandera
 		js2d.defineSpriteFromTileset("Block_Flagpole_Top", sceneryTileset, 0, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Flagpole", sceneryTileset, 1, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Flag", sceneryTileset, 2, 3, 1, tileScale);
 
-		// Power-ups
 		js2d.defineSpriteFromTileset("Object_Mushroom_Super", sceneryTileset, 0, 6, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Mushroom_1UP", sceneryTileset, 1, 6, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Fire_Flower", sceneryTileset, 0, 7, 4, tileScale);
 
-		// Power-ups y Objetos
 		js2d.createAnimatedSprite("Mushroom_Super", "Object_Mushroom_Super", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Fire_Flower", "Object_Fire_Flower", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
-		
-		// UI (estos usan tilesets cargados globalmente, pero los movemos aquí por consistencia)
+
 		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, this.textSize / this.tileSize);
 		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, this.textSize / this.tileSize);
 
-		// Animaciones de Objetos
 		js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
 		js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
-		
-		// Animaciones por defecto de Objetos
+
 		js2d.setAnimationForSprite("Coin", "Coin_Shine");
 		js2d.setAnimationForSprite("UICoin", "Coin_Score");
 
-		// ---
 
-		// js2d.createAnimatedSprite("Mushroom_Grow", "Object_Mushroom_Grow", {x: 0, y: 0}, tileScale);
-		// js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
-		// js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
+
+
 		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, this.textSize / this.tileSize);
 		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, this.textSize / this.tileSize);
 
@@ -344,7 +328,6 @@ class Game {
 		const bigSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Big"];
 		const fireSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Fire"];
 
-		// Si pasamos de pequeño a grande
 		if (this.playerSize > Player_Size.Small) {
 			if (smallSprite && bigSprite) {
 				bigSprite.position.x = smallSprite.position.x;
@@ -366,7 +349,7 @@ class Game {
 	}
 
 	loadMap(name) {
-		// Encuentra el mapa por el nombre del mundo en el array de mapas
+
 		const mapData = map.find(m => m.world === name);
 
 		if (mapData) {
@@ -376,18 +359,17 @@ class Game {
 
 			this.defineWorldSprites();
 
-			// Centrar el mapa si es más pequeño que la pantalla
 			const mapPixelWidth = this.currentMap.dimensions.width * this.tileSize;
 			const screenWidth = this.engine.getCanvasWidth();
 
 			if (mapPixelWidth < screenWidth) {
-				// El offset es la mitad del espacio vacío que queda a los lados
+
 				this.mapOffset.x = (screenWidth - mapPixelWidth) / 2;
 			} else {
-				// Si el mapa es más grande, empieza desde el borde izquierdo como siempre
+
 				this.mapOffset.x = 0;
 			}
-			// También nos aseguramos de que el offset vertical se reinicie
+
 			this.mapOffset.y = 0;
 
 			this.enemies = [];
@@ -433,15 +415,15 @@ class Game {
 					let screenPos = this.tileToScreen(coords.x, coords.y);
 
 					if (enemyType.includes("Pakkun")) {
-					    // La posición 'y' del Pakkun es la parte de arriba del tile donde se define.
+
 					    const worldY = coords.y * this.tileSize + this.tileSize * 2;
 					    const screenPosX = this.tileToScreen(coords.x, coords.y).x + this.tileSize / 2;
 
 					    this.enemies.push({
 					        type: 'Pakkun', 
 					        color: enemyColor,
-					        x: (screenPosX - this.mapOffset.x), // <-- Alineado a la izquierda del tile
-					        y: worldY,                          // <-- Posición superior del tile de la cabeza
+					        x: (screenPosX - this.mapOffset.x),
+					        y: worldY,                         
 					        initialY: worldY,
 					        maxHeight: this.tileSize * 2,
 					        state: 'hiding',
@@ -469,95 +451,6 @@ class Game {
 		} else {
 			console.error(`[SMB] No se pudo encontrar el mapa: ${name}`);
 		}
-	}
-
-	saveGameState() {
-		// Determina el sprite correcto según el tamaño del jugador
-		let currentSpriteName;
-		switch (this.playerSize) {
-			case Player_Size.Small: currentSpriteName = PlayerName[this.player]; break;
-			case Player_Size.Big:   currentSpriteName = PlayerName[this.player] + "_Big"; break;
-			case Player_Size.Fire:  currentSpriteName = PlayerName[this.player] + "_Fire"; break;
-		}
-		const currentPlayerSprite = this.engine.animatedSprites[currentSpriteName];
-
-		this.savedState = {
-			player: this.player,
-			playerSize: this.playerSize,
-			playerPos: { ...currentPlayerSprite.position },
-			playerFlipped: currentPlayerSprite.flipped,
-			playerIsVisible: this.playerIsVisible,
-			velocityY: this.velocityY,
-			
-			mapOffset: { ...this.mapOffset },
-			mapState: JSON.parse(JSON.stringify(this.currentMap)),
-			enemiesState: JSON.parse(JSON.stringify(this.enemies)),
-			specialBlocksState: JSON.parse(JSON.stringify(this.specialBlocks)),
-			activePowerupsState: JSON.parse(JSON.stringify(this.activePowerups)),
-			
-			time: this.time,
-			score: this.score,
-			lives: this.lives,
-			coins: this.coins,
-			isOnGround: this.isOnGround,
-		};
-		console.log("[SMB] Game state saved.");
-	}
-
-	restoreGameState() {
-		if (this.savedState) {
-			console.log("[SMB] Restoring game state.");
-			// Restaura datos simples
-			this.player = this.savedState.player;
-			this.playerSize = this.savedState.playerSize;
-			this.playerIsVisible = this.savedState.playerIsVisible;
-			this.velocityY = this.savedState.velocityY;
-			this.time = this.savedState.time;
-			this.score = this.savedState.score;
-			this.lives = this.savedState.lives;
-			this.coins = this.savedState.coins;
-			this.isOnGround = this.savedState.isOnGround;
-			
-			// Restaura objetos complejos (copias profundas)
-			this.currentMap = JSON.parse(JSON.stringify(this.savedState.mapState));
-			this.enemies = JSON.parse(JSON.stringify(this.savedState.enemiesState));
-			this.specialBlocks = JSON.parse(JSON.stringify(this.savedState.specialBlocksState));
-			this.activePowerups = JSON.parse(JSON.stringify(this.savedState.activePowerupsState));
-			this.mapOffset = { ...this.savedState.mapOffset };
-
-			// Sincroniza la posición de todos los sprites del jugador
-			const smallSprite = this.engine.animatedSprites[PlayerName[this.player]];
-			const bigSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Big"];
-			const fireSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Fire"];
-			
-			if (smallSprite) {
-				smallSprite.position = { ...this.savedState.playerPos };
-				smallSprite.flipped = this.savedState.playerFlipped;
-			}
-			if (bigSprite) {
-				bigSprite.position = { ...this.savedState.playerPos };
-				bigSprite.flipped = this.savedState.playerFlipped;
-			}
-			if (fireSprite) {
-				fireSprite.position = { ...this.savedState.playerPos };
-				fireSprite.flipped = this.savedState.playerFlipped;
-			}
-
-			// Define los sprites del mundo actual
-			this.defineWorldSprites();
-		}
-	}
-
-	continueGame() {
-		this.restoreGameState();
-		this.state = Game_State.Playing;
-	}
-
-	exitGame() {
-		this.saveGameState();
-		this.stopAllMusic();
-		this.state = Game_State.Title_Menu;
-		this.loadMap("0-0");
 	}
 
 	saveGameState() {
@@ -608,13 +501,13 @@ class Game {
 	}
 
 	damagePlayer() {
-		if (this.isInvincible) return; // Si es invencible, no puede ser dañado
+		if (this.isInvincible) return;
 
 		if (this.playerSize > Player_Size.Small) {
 			this.playerSize = Player_Size.Small;
 			this.isInvincible = true;
-			this.invincibleTimer = 1500; // 1.5 segundos de invencibilidad
-			this.engine.playAudio(audio["Player_Pipe"], false); // Sonido de transformación
+			this.invincibleTimer = 1500;
+			this.engine.playAudio(audio["Player_Pipe"], false);
 		} else {
 			this.killPlayer();
 		}
@@ -638,11 +531,10 @@ class Game {
 
 			this.stopAllMusic();
 
-			// Preparamos la función que se ejecutará CUANDO el sonido de muerte TERMINE.
 			const onDeathSoundEnd = () => {
-				// Si después de que el sonido termina, al jugador no le quedan vidas...
+
 				if (this.lives <= 0) {
-					// ...entonces reproducimos la melodía de Game Over.
+
 					this.engine.playAudio(audio["Game_Over_Theme"], false);
 				}
 			};
@@ -671,7 +563,7 @@ class Game {
 	
 	handleBlackScreenEnd() {
 		if (this.screenType === Black_Screen_Type.Game_Over) {
-			// this.engine.stopAudio(audio["Game_Over_Theme"]);
+
 			this.state = Game_State.Title_Menu;
 		} else {
 			this.state = Game_State.Playing;
@@ -738,10 +630,9 @@ class Game {
 			const enemy = this.enemies[i];
 			const enemyScreenX = enemy.x + this.mapOffset.x;
 
-			// --- LÓGICA DE MOVIMIENTO Y FÍSICA DE CADA ENEMIGO ---
 
 			if (enemy.type === 'Pakkun') {
-				// La lógica de Pakkun ya incluye su propio movimiento vertical, así que podemos saltar el resto.
+
 				const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
 				const isPlayerNear = Math.abs(playerRect.x - enemyScreenX) < this.tileSize * 1.5;
 				switch (enemy.state) {
@@ -763,11 +654,11 @@ class Game {
 						break;
 				}
 			} else if (enemy.type === 'Goomba' && enemy.state === 'stomped') {
-				// Goomba aplastado solo necesita un temporizador, sin física.
+
 				enemy.stompTimer++;
 				if (enemy.stompTimer > 30) { this.enemies.splice(i, 1); continue; }
 			} else if (enemy.type.includes('Koopa')) {
-				// LÓGICA COMPLEJA DE KOOPAS (NORMALES, ALADOS, CAPARAZONES)
+
 				if (enemy.state === 'shell') {
 					if (enemy.vx !== 0) {
 						enemy.x += enemy.vx;
@@ -826,7 +717,7 @@ class Game {
 					}
 				}
 			} else {
-				// Goombas y otros
+
 				const enemyHeight = this.tileSize;
 				enemy.vy += this.gravity;
 				enemy.y += enemy.vy;
@@ -848,17 +739,15 @@ class Game {
 				}
 			}
 
-			// Colisión con el jugador			
 			const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
 			const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: enemyHeight };
-			
-			// 1. Obtenemos la altura correcta del jugador
+
 			const isBig = this.playerSize > Player_Size.Small;
 			const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
 			const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: playerHeight };
 
 			if (this.rectsOverlap(playerRect, enemyRect)) {
-				// 2. Usamos la altura correcta para detectar el pisotón
+
 				const isStomping = this.velocityY > 0 && (player.position.y + playerHeight) < (enemy.y + enemyHeight / 1.5);
 
 				if (isStomping) {
@@ -880,7 +769,7 @@ class Game {
 							}
 						}
 					}
-				} else { // Colisión lateral
+				} else {
 					if (enemy.type === 'Pakkun' || (enemy.state === 'walking' && this.velocityY >= 0) || (enemy.state === 'shell' && enemy.vx !== 0)) {
 						this.damagePlayer();
 					} else if (enemy.state === 'shell' && enemy.vx === 0) {
@@ -903,29 +792,26 @@ class Game {
 		if (pakkunGreenAnim.frameCounter % biteAnim.frameSpeed === 0) {
 			const nextFrame = (pakkunGreenAnim.currentFrame + 1) % biteAnim.frames.length;
 			pakkunGreenAnim.currentFrame = nextFrame;
-			pakkunRedAnim.currentFrame = nextFrame; // Sincroniza la animación
+			pakkunRedAnim.currentFrame = nextFrame;
 		}
 
-		// Ahora, recorre y dibuja todos los enemigos.
 		for (const enemy of this.enemies) {
 			const screenX = enemy.x + this.mapOffset.x;
 			if (screenX < -this.tileSize || screenX > this.engine.canvas.width) continue;
 
 			let spriteNameToDraw = enemy.type;
-			// Construye el nombre del sprite si tiene un color (Goomba no tiene)
+
 			if (enemy.color) {
 				spriteNameToDraw = `${enemy.type}_${enemy.color}`;
 			}
 
-			// Si es un Koopa que ha perdido sus alas, su tipo cambia a 'Koopa'
-			// y esta lógica lo dibujará correctamente con su color original.
+
 			if (enemy.type === 'Koopa' && enemy.isWinged) {
 				 spriteNameToDraw = `Koopa_Winged_${enemy.color}`;
 			}
-			
-			// Dibujado
+
 			if (enemy.type === 'Pakkun') {
-			    // La conversión a pantalla sigue siendo necesaria
+
 			    const mapHeight = this.currentMap.dimensions.height;
 			    const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
 			    const screenY = enemy.y + this.mapOffset.y - offsetY;
@@ -934,15 +820,15 @@ class Game {
 			    this.engine.drawSprite(
 			        baseSpriteName,
 			        pakkunGreenAnim.animations.Pakkun_Bite.frames[pakkunGreenAnim.currentFrame],
-			        // La posición de anclaje ahora es la parte SUPERIOR de la tubería
+
 			        { x: screenX, y: screenY + this.tileSize },
-			        this.spriteScale, 
+			        SPRITE_SCALE, 
 			        false, 0, 
 			        Pivot.Bottom_Left
 			    );
 			} else {
 				const animSprite = this.engine.animatedSprites[spriteNameToDraw];
-				if (!animSprite) continue; // Si el sprite no existe, no lo dibujes
+				if (!animSprite) continue;
 
 				if (enemy.state === 'stomped') {
 					this.engine.setAnimationForSprite(spriteNameToDraw, `${enemy.type}_Stomped`);
@@ -958,7 +844,6 @@ class Game {
 					 this.engine.setAnimationForSprite(spriteNameToDraw, `${enemy.type.includes("Winged") ? `${enemy.type}_Walk` : `${enemy.type}_Walk`}`);
 				}
 
-				// Actualiza posición y dibujado (excepto para caparazones ya dibujados)
 				if (enemy.state !== 'shell') {
 					animSprite.position = { x: screenX, y: enemy.y };
 					animSprite.flipped = enemy.vx > 0;
@@ -986,7 +871,7 @@ class Game {
 				const spriteName = "Player_" + PlayerName[this.player];
 				const playerSprite = this.engine.sprites[spriteName];
 				if(playerSprite) {
-					this.engine.drawSprite(spriteName, 0, playerImagePos, this.spriteScale, false, 0, Pivot.Top_Left);
+					this.engine.drawSprite(spriteName, 0, playerImagePos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
 				}
 				break;
 
@@ -1017,38 +902,35 @@ class Game {
 		const titleImg = titleSprite.image;
 		const titlePosX = this.engine.canvas.width / 2;
 		const titlePosY = this.tileSize * 1.5;
-		const titleScale = this.spriteScale * this.engine.getCanvasHeight() * titleMaxY * 0.002;
+		const titleScale = SPRITE_SCALE * this.engine.getCanvasHeight() * titleMaxY * 0.002;
 		const titleWidth = titleImg.width * titleScale;
 		const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
 		this.engine.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
 
-		// --- CAMBIO CLAVE: Lógica para añadir botón CONTINUE ---
 		const menuButtons = [
 			{ name: "MARIO GAME", action: () => { this.selectPlayer(Player.Mario); }},
 			{ name: "LUIGI GAME", action: () => { this.selectPlayer(Player.Luigi); }},
 		];
-		if(this.savedState != null){
+		if(this.savedState){
 			menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame() } });
 		}
-		// --- FIN DEL CAMBIO ---
 
 		const numButtons = menuButtons.length;
 		const menuGap = this.engine.canvas.height * 0.1 / numButtons;
 		if(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']){ this.engine.keysPressed = []; this.currentSelection--; }
 		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){ this.engine.keysPressed = []; this.currentSelection++; }
 
-		// Lógica de control de volumen
-		if (this.engine.keysPressed['KeyN']) { // Subir volumen
+		if (this.engine.keysPressed['KeyN']) {
 			this.engine.keysPressed['KeyN'] = false;
 			this.volume = Math.min(1, this.volume + 0.1);
 			this.engine.setMasterVolume(this.volume);
 		}
-		if (this.engine.keysPressed['KeyB']) { // Bajar volumen
+		if (this.engine.keysPressed['KeyB']) {
 			this.engine.keysPressed['KeyB'] = false;
 			this.volume = Math.max(0, this.volume - 0.1);
 			this.engine.setMasterVolume(this.volume);
 		}
-		if (this.engine.keysPressed['KeyM']) { // Mute / Unmute
+		if (this.engine.keysPressed['KeyM']) {
 			this.engine.keysPressed['KeyM'] = false;
 			if (this.volume > 0) {
 				this.savedVolume = this.volume;
@@ -1072,7 +954,7 @@ class Game {
 			const menuPosY = this.engine.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + this.textSize;
 			const textPos = { x: this.engine.getCanvasWidth() / 2, y: menuPosY };
 			if(this.currentSelection == i){
-				const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - this.spriteSize * 1.1 };
+				const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - SPRITE_SIZE * 1.1 };
 				if(this.engine.sprites["Cursor"]) {
 					this.engine.drawSprite("Cursor", 0, cursorPos, this.engine.sprites["Cursor"].scale, false, 0, Pivot.Top_Left);
 				}
@@ -1107,7 +989,7 @@ class Game {
 						x: objPos.x + x * this.tileSize, 
 						y: objPos.y + y * this.tileSize 
 					};
-					this.engine.drawSprite(spriteName, 0, drawPos, this.spriteScale, false, 0, Pivot.Top_Left);
+					this.engine.drawSprite(spriteName, 0, drawPos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
 				}
 			}
 		}
@@ -1126,7 +1008,6 @@ class Game {
 				const numObjects = Math.ceil(this.currentMap.dimensions.width * 0.35);
 				const groundY = this.engine.canvas.height - this.tileSize * 2;
 
-				// Nubes
 				const cloudY = 80;
 				for (let i = 0; i < numObjects; i++) {
 					const cloudWidth = 2 + (i % 2);
@@ -1144,8 +1025,7 @@ class Game {
 
 					this.drawCompositeObject(cloudPos, cloudPattern, this.CLOUD_SPRITE_MAP);
 				}
-				
-				// --- Dibujar Colinas (usando patrones estáticos) ---
+
 				for (let i = 0; i < numObjects; i++) {
 					const isLargeHill = (i % 2 === 0);
 					const pattern = isLargeHill ? this.HILL_LARGE_PATTERN : this.HILL_SMALL_PATTERN;
@@ -1161,7 +1041,6 @@ class Game {
 					this.drawCompositeObject(hillPos, pattern, this.HILL_SPRITE_MAP);
 				}
 
-				// --- Dibujar Arbustos (usando el nuevo sistema) ---
 				for (let i = 0; i < numObjects; i++) {
 					const bushWidth = 2 + (i % 3);
 					 const bushPos = {
@@ -1244,34 +1123,31 @@ class Game {
 	}
 
 	spawnFireball() {
-		// No disparar si el cooldown está activo
+
 		if (this.fireballCooldown > 0) return;
 
-		// Añadir un cooldown para evitar spam
-		this.fireballCooldown = 30; // 30 frames (0.5 segundos aprox.)
+		this.fireballCooldown = 30;
 
 		const fireSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Fire"];
 		if (!fireSprite) return;
 
-		// La bola de fuego aparece delante del jugador
 		const startX = fireSprite.position.x + (fireSprite.flipped ? -this.tileSize / 2 : this.tileSize);
 		const startY = fireSprite.position.y + this.tileSize / 2;
 
 		const fireball = {
-			x: startX - this.mapOffset.x, // Posición en el mundo del juego
+			x: startX - this.mapOffset.x,
 			y: startY,
-			vx: 10 * (fireSprite.flipped ? -1 : 1), // Velocidad y dirección
+			vx: 10 * (fireSprite.flipped ? -1 : 1),
 			vy: 0,
-			state: 'moving', // Estados: 'moving', 'exploding'
+			state: 'moving',
 			animTimer: 0
 		};
 
 		this.activeFireballs.push(fireball);
 		this.engine.playAudioOverlap(audio["Player_Fireball"]);
 
-		// Activar la animación de lanzar
 		this.isThrowing = true;
-		this.throwTimer = 15; // Duración de la animación de lanzar en frames
+		this.throwTimer = 15;
 	}
 
 	updateAndDrawFireballs() {
@@ -1279,28 +1155,27 @@ class Game {
 			const fb = this.activeFireballs[i];
 			const screenPos = { x: fb.x + this.mapOffset.x, y: fb.y };
 
-			// Si está explotando, dibuja la explosión y la elimina
 			if (fb.state === 'exploding') {
 				const hitSprite = this.engine.animatedSprites["Fireball"];
 				hitSprite.position = screenPos;
 				
 				if (fb.animTimer === 0) {
-					// CORRECCIÓN 1: Asegúrate de poner la animación en el sprite "Fireball"
+
 					this.engine.setAnimationForSprite("Fireball", "Explode", true);
 				}
-				// CORRECCIÓN 2: Asegúrate de dibujar el sprite "Fireball"
+
 				this.engine.drawAnimatedSprite("Fireball", Pivot.Center);
 
 				fb.animTimer++;
 				const explosionAnim = hitSprite.animations.Explode;
-				// Evita errores si la animación no se encuentra
+
 				if (explosionAnim) {
 					const explosionDuration = explosionAnim.frames.length * explosionAnim.frameSpeed;
 					if (fb.animTimer > explosionDuration) {
 						this.activeFireballs.splice(i, 1);
 					}
 				} else {
-					// Si no hay animación, elimina la explosión después de unos fotogramas
+
 					if (fb.animTimer > 15) {
 						this.activeFireballs.splice(i, 1);
 					}
@@ -1308,18 +1183,17 @@ class Game {
 				continue;
 			}
 
-			// --- FÍSICA Y COLISIONES (Sin cambios aquí) ---
 			fb.vy += this.gravity * 0.8;
 			fb.x += fb.vx;
 			fb.y += fb.vy;
 
-			const groundTile = this.screenToTile(screenPos.x, fb.y + this.spriteSize / 2);
+			const groundTile = this.screenToTile(screenPos.x, fb.y + SPRITE_SIZE / 2);
 			if (this.currentMap.map[this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width)] > 0) {
-				fb.y = this.tileToScreen(groundTile.x, groundTile.y).y - this.spriteSize / 2;
+				fb.y = this.tileToScreen(groundTile.x, groundTile.y).y - SPRITE_SIZE / 2;
 				fb.vy = -8;
 			}
 
-			const wallTile = this.screenToTile(screenPos.x + (fb.vx > 0 ? this.spriteSize : 0), fb.y);
+			const wallTile = this.screenToTile(screenPos.x + (fb.vx > 0 ? SPRITE_SIZE : 0), fb.y);
 			if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0 || screenPos.x < 0 || screenPos.x > this.engine.getCanvasWidth()) {
 				fb.state = 'exploding';
 				this.engine.playAudioOverlap(audio["Player_Bump"]);
@@ -1333,7 +1207,7 @@ class Game {
 				const enemyScreenX = enemy.x + this.mapOffset.x;
 				const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
 				const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: enemyHeight };
-				const fbRect = { x: screenPos.x, y: screenPos.y, w: this.spriteSize, h: this.spriteSize };
+				const fbRect = { x: screenPos.x, y: screenPos.y, w: SPRITE_SIZE, h: SPRITE_SIZE };
 
 				if (this.rectsOverlap(fbRect, enemyRect)) {
 					this.score += 200;
@@ -1345,9 +1219,8 @@ class Game {
 				}
 			}
 
-			// Dibuja la bola de fuego en movimiento si no ha explotado
 			if (fb.state === 'moving') {
-				// CORRECCIÓN 3: Asegúrate de obtener y dibujar el sprite "Fireball"
+
 				const moveSprite = this.engine.animatedSprites["Fireball_Hit"];
 				moveSprite.position = screenPos;
 				this.engine.drawAnimatedSprite("Fireball_Hit", Pivot.Center);
@@ -1358,7 +1231,7 @@ class Game {
 	spawnCoin(x, y) {
 		const coin = {
 			x: (x - this.mapOffset.x) + (this.tileSize / 4),
-			// <<< FIN DE LA CORRECCIÓN >>>
+
 			y: y,
 			vY: -10,
 			timer: 0,
@@ -1371,19 +1244,16 @@ class Game {
 	updateCoins() {
 		for (let i = this.activeCoins.length - 1; i >= 0; i--) {
 			const coin = this.activeCoins[i];
-			
-			// Actualiza la física y el temporizador
+
 			coin.y += coin.vY;
-			coin.vY += 0.8; // Gravedad
+			coin.vY += 0.8;
 			coin.timer++;
 
-			// Si el tiempo de vida de la moneda ha terminado, la elimina
 			if (coin.timer > 30) {
 				this.activeCoins.splice(i, 1);
 			}
 		}
 
-		// Lógica de animación del sprite de la moneda (se puede quedar aquí)
 		const coinSprite = this.engine.animatedSprites["Coin"];
 		const coinAnim = coinSprite.animations["Coin_Shine"];
 		coinSprite.frameCounter++;
@@ -1396,17 +1266,16 @@ class Game {
 		const coinSprite = this.engine.animatedSprites["Coin"];
 
 		for (const coin of this.activeCoins) {
-			// Calculamos la posición en pantalla teniendo en cuenta la cámara
+
 			const screenX = coin.x + this.mapOffset.x;
 
-			// La rotación se puede seguir calculando aquí para el efecto visual
 			coin.rotation = (coin.rotation + COIN_SPIN_VELOCITY) % 360;
 
 			this.engine.drawSprite(
 				"Object_Coin", 
 				coinSprite.currentFrame, 
 				{ x: screenX, y: coin.y }, 
-				this.spriteScale, 
+				SPRITE_SCALE, 
 				false,
 				coin.rotation,
 				Pivot.Center
@@ -1422,10 +1291,10 @@ class Game {
 			if (block.y >= block.originalY) {
 				let finalId = block.originalId;
 				if (block.originalId === 3 || block.originalId === 41) {
-					finalId = 4; // 'Object_Question_Used'
+					finalId = 4;
 				} else if (block.originalId === 34) {
-					// Si se acabaron las monedas, se convierte en 'Used' (ID 4).
-					// Si no, vuelve a ser un bloque multi-moneda (ID 34).
+
+
 					finalId = (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) ? 4 : 34;
 				}
 
@@ -1449,21 +1318,21 @@ class Game {
 	}
 
 	spawnBrickParticles(x, y) {
-		// Velocidades iniciales para las 4 partículas para que salgan disparadas
+
 		const velocities = [
-			{ vx: -4, vy: -15 }, // Arriba-izquierda
-			{ vx: 4, vy: -15 },  // Arriba-derecha
-			{ vx: -3, vy: -8 },   // Abajo-izquierda (menos fuerza)
-			{ vx: 3, vy: -8 }    // Abajo-derecha (menos fuerza)
+			{ vx: -4, vy: -15 },
+			{ vx: 4, vy: -15 }, 
+			{ vx: -3, vy: -8 },  
+			{ vx: 3, vy: -8 }   
 		];
 
 		velocities.forEach(vel => {
 			this.brickParticles.push({
-				x: x + this.tileSize / 2, // Empiezan en el centro del bloque
+				x: x + this.tileSize / 2,
 				y: y + this.tileSize / 2,
 				vx: vel.vx,
 				vy: vel.vy,
-				lifespan: 60 // Durarán 60 frames (1 segundo aprox.)
+				lifespan: 60
 			});
 		});
 
@@ -1471,24 +1340,21 @@ class Game {
 	}
 
 	updateAndDrawBrickParticles() {
-	// Recorremos el array hacia atrás para poder eliminar elementos de forma segura
+
 		for (let i = this.brickParticles.length - 1; i >= 0; i--) {
 			const p = this.brickParticles[i];
 
-			// Aplicamos física
-			p.vy += this.gravity * 1.5; // Una gravedad un poco más fuerte para que caigan rápido
+			p.vy += this.gravity * 1.5;
 			p.x += p.vx;
 			p.y += p.vy;
 			p.lifespan--;
 
-			// Dibujamos la partícula como un pequeño cuadrado marrón
 			const particleSize = this.tileSize / 4;
 			this.engine.drawRectangle(
 				{ x: p.x, y: p.y, width: particleSize, height: particleSize }, 
-				"#D99B59" // Un color parecido al ladrillo
+				"#D99B59"
 			);
 
-			// Si la vida de la partícula ha terminado, la eliminamos
 			if (p.lifespan <= 0) {
 				this.brickParticles.splice(i, 1);
 			}
@@ -1496,7 +1362,7 @@ class Game {
 	}
 
 	drawPlayer(name, dt) {
-		// --- 1. Determinar el estado y las variables del jugador ---
+
 		let currentSpriteName;
 		const isBig = this.playerSize > Player_Size.Small;
 
@@ -1520,9 +1386,8 @@ class Game {
 
 		const playerPos = player.position;
 		const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
-		
-		// if (this.state === Game_State.Playing) {
-			// Lógica de agacharse
+
+
 			let isCrouching = false;
 			const oldPlayerHeight = isBig ? (this.wasCrouching ? this.tileSize : this.tileSize * 2) : this.tileSize;
 
@@ -1538,12 +1403,11 @@ class Game {
 			
 			let playerHeight = isBig ? (isCrouching ? this.tileSize : this.tileSize * 2) : this.tileSize;
 
-			// Si el jugador acaba de dejar de agacharse, ajustamos su posición Y hacia arriba
-			// para evitar que se hunda en el suelo.
+
 			if (oldPlayerHeight < playerHeight) {
 				playerPos.y -= (playerHeight - oldPlayerHeight);
 			}
-			this.wasCrouching = isCrouching; // Guardamos el estado para el próximo fotograma
+			this.wasCrouching = isCrouching;
 
 			const dt_sec = dt / 1000;
 
@@ -1554,13 +1418,13 @@ class Game {
 			const shouldDrawPlayer = !this.isInvincible || Math.floor(this.invincibleTimer / 100) % 2 === 0;
 
 			if (this.state === Game_State.Player_Dying) {
-				// ... (sin cambios aquí)
+
 				this.deathTimer += dt;
 				const deathAnimDuration = 400;
 				const maxScaleMultiplier = 1.5;
 				const progress = Math.min(1, this.deathTimer / deathAnimDuration);
-				const newScale = this.spriteScale + (this.spriteScale * (maxScaleMultiplier - 1) * progress);
-				const newWidth = this.spriteSize * newScale;
+				const newScale = SPRITE_SCALE + (SPRITE_SCALE * (maxScaleMultiplier - 1) * progress);
+				const newWidth = SPRITE_SIZE * newScale;
 				const offset = (newWidth - this.tileSize) / 2;
 				const drawPos = { x: playerPos.x - offset, y: playerPos.y - offset };
 				this.velocityY += this.gravity * 60 * dt_sec;
@@ -1573,15 +1437,14 @@ class Game {
 				return;
 			}
 
-			// --- 3. Lógica de Físicas y Colisiones ---
 			const mapWidth = this.currentMap.dimensions.width;
 			const inBounds = (x, y) => x >= 0 && x < mapWidth;
 			
 			this.velocityY += this.gravity;
 			const newY = playerPos.y + this.velocityY;
 
-			if (this.velocityY < 0) { // Saltando
-				// ... (sin cambios aquí)
+			if (this.velocityY < 0) {
+
 				const headCenterTile = this.screenToTile(playerPos.x + this.tileSize / 2, newY);
 				let hitCeiling = false;
 				if (inBounds(headCenterTile.x, headCenterTile.y)) {
@@ -1594,42 +1457,38 @@ class Game {
 						const isBreakableBrick = (blockId === 2 || blockId === 27);
 						const canPlayerBreakBrick = this.playerSize > Player_Size.Small;
 
-						// CASO 1: El jugador es grande y rompe un ladrillo.
 						if (isBreakableBrick && canPlayerBreakBrick) {
-							this.currentMap.map[idx] = 0; // Se elimina el bloque permanentemente.
-							this.spawnBrickParticles(blockX, blockY); // Se activa el efecto y sonido de rotura.
+							this.currentMap.map[idx] = 0;
+							this.spawnBrickParticles(blockX, blockY);
 							this.score += 50;
 							this.spawnScorePopup("50", blockX + this.tileSize / 2, blockY);
-							// IMPORTANTE: No se añade a "bumpingBlocks", por lo que no se redibuja.
-						
-						// CASO 2: Cualquier otro bloque que deba "saltar" (no se rompe).
+
+
 						} else {
 							let blockSoundPlayed = false;
-							// Lógica para generar contenido del bloque (monedas, power-ups).
-							if (blockId === 34) { // Multi-coin box
+
+							if (blockId === 34) {
 								if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { coinsLeft: 10, revealed: true }; }
 								if (this.specialBlocks[idx].coinsLeft > 0) {
 									this.specialBlocks[idx].coinsLeft--; this.coins++; this.spawnCoin(blockX, blockY);
 									this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
 								}
-							} else if (blockId === 41) { // Moneda de caja ?
+							} else if (blockId === 41) {
 								this.spawnCoin(blockX, blockY);
 								this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
-							} else if (blockId === 3) { // Power-up de caja ?
+							} else if (blockId === 3) {
 								const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
 								this.spawnPowerup(blockX, blockY, powerupType);
 							}
 
-							// Lógica para la animación de "salto" del bloque.
 							const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
 							const justExhausted = (blockId === 34 && this.specialBlocks[idx]?.coinsLeft === 0);
 
 							if (!isAlreadyBumping && !justExhausted) {
 								this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId });
-								this.currentMap.map[idx] = 0; // Oculta el bloque original mientras salta.
+								this.currentMap.map[idx] = 0;
 							}
 
-							// Si no se reprodujo un sonido de moneda, reproduce el de "golpe".
 							if (!blockSoundPlayed) {
 								this.engine.playAudioOverlap(audio["Player_Bump"]);
 							}
@@ -1640,8 +1499,8 @@ class Game {
 				}
 				if (!hitCeiling) playerPos.y = newY;
 			}
-			else { // Cayendo o en el suelo
-				// ... (sin cambios aquí)
+			else {
+
 				const bottomLeft = this.screenToTile(playerPos.x + 4, newY + playerHeight);
 				const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 4, newY + playerHeight);
 				let foundGround = false;
@@ -1657,17 +1516,14 @@ class Game {
 				if (!foundGround) { this.isOnGround = false; playerPos.y = newY; }
 			}
 
-			// --- 4. Lógica de Movimiento y Animación ---
 
-			// Gestionar cooldowns y temporizadores
 			if (this.fireballCooldown > 0) this.fireballCooldown--;
 			if (this.throwTimer > 0) this.throwTimer--; else this.isThrowing = false;
 
-			// Detectar disparo
 			const isShooting = this.engine.keysPressed['ControlLeft'] || this.engine.keysPressed['ControlRight'] || this.engine.keysPressed['Space'];
 			if (isShooting && this.playerSize === Player_Size.Fire && !this.isThrowing) {
 				this.spawnFireball();
-				// Consumir la tecla para evitar disparos múltiples
+
 				this.engine.keysPressed['ControlLeft'] = false;
 				this.engine.keysPressed['ControlRight'] = false;
 			}
@@ -1680,7 +1536,7 @@ class Game {
 			const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
 			
 			if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) { 
-				this.skidTimer = 10; // Duración del derrape en fotogramas
+				this.skidTimer = 10;
 				this.engine.playAudioOverlap(audio["Player_Skid"]); 
 			}
 			this.wasMovingTurbo = isMoving && isTurbo;
@@ -1710,33 +1566,30 @@ class Game {
 			}
 			if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
 			if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
-		// }
+
 
 		if (shouldDrawPlayer) {
 			const allPlayerSprites = [ this.engine.animatedSprites[PlayerName[this.player]], this.engine.animatedSprites[PlayerName[this.player] + "_Big"], this.engine.animatedSprites[PlayerName[this.player] + "_Fire"] ];
 			allPlayerSprites.forEach(spriteToSync => {
 				if (spriteToSync && spriteToSync !== player) {
 					spriteToSync.position.x = player.position.x;
-					spriteToSync.position.y = player.position.y; // Sincronización simple
+					spriteToSync.position.y = player.position.y;
 					spriteToSync.flipped = player.flipped;
 				}
 			});
 
-			// --- INICIO DEL CAMBIO 2: CORRECCIÓN VISUAL AL DIBUJAR ---
-			// Guardamos la posición física original
+
 			const originalY = player.position.y;
-			
-			// Si es grande y está agachado, lo dibujamos un bloque más arriba
-			// para compensar el espacio vacío en el marco de su sprite.
+
+
 			if (isBig && isCrouching) {
 				player.position.y -= this.tileSize;
 			}
 
 			this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
 
-			// Restauramos la posición física para que no afecte los cálculos del próximo fotograma.
 			player.position.y = originalY;
-			// --- FIN DEL CAMBIO 2 ---
+
 		}
 	}
 
@@ -1757,7 +1610,7 @@ class Game {
 	}
 
 	updateAndDrawLevelComplete(dt) {
-		// Añadimos la misma lógica que en drawPlayer para obtener el nombre del sprite correcto.
+
 		let currentSpriteName;
 		const isBig = this.playerSize > Player_Size.Small;
 
@@ -1772,8 +1625,7 @@ class Game {
 				currentSpriteName = PlayerName[this.player] + "_Fire";
 				break;
 		}
-		
-		// Usamos el nombre del sprite correcto para obtener el objeto del jugador.
+
 		const player = this.engine.animatedSprites[currentSpriteName];
 
 		const playerPos = player.position;
@@ -1824,8 +1676,7 @@ class Game {
 					playerPos.y = this.flagpoleInfo.groundY;
 					player.flipped = false;
 					playerPos.x += this.tileSize / 2;
-					
-					// CORRECCIÓN: Usar el prefijo de animación correcto aquí también.
+
 					const runAnimPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 					this.engine.setAnimationForSprite(currentSpriteName, `${runAnimPrefix}_Run`);
 					this.engine.playAudio(audio["Level_Clear"], false);
@@ -1856,50 +1707,45 @@ class Game {
 		}
 
 		if (this.playerIsVisible) {
-			// CORRECCIÓN: Dibujar el sprite correcto (grande, fuego, etc.).
+
 			this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
 		}
 	}
 
 	updateAndDrawGrowingPlayer(dt) {
-		const GROW_DURATION = 800; // Duración total de la animación en milisegundos
-		const NUM_FLASHES = 6;     // Número de veces que parpadeará entre pequeño y grande
+		const GROW_DURATION = 800;
+		const NUM_FLASHES = 6;    
 		this.growTimer += dt;
 
-		// Obtenemos los sprites involucrados
 		const smallSprite = this.engine.animatedSprites[PlayerName[this.player]];
 		const bigSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Big"];
-		if (!smallSprite || !bigSprite) return; // Salida segura si los sprites no existen
+		if (!smallSprite || !bigSprite) return;
 
-		// Calculamos en qué "parpadeo" de la animación nos encontramos
 		const flashDuration = GROW_DURATION / NUM_FLASHES;
 		const currentFlash = Math.floor(this.growTimer / flashDuration);
 
-		// Sincronizamos la dirección del sprite grande con la del pequeño
 		bigSprite.flipped = smallSprite.flipped;
 
-		// Alternamos el dibujo entre el sprite pequeño y el grande
-		// Si el número de "parpadeo" es par, dibujamos el sprite pequeño.
-		// Si es impar, dibujamos el grande, ajustando su posición Y para que crezca hacia arriba.
+
+
 		if (currentFlash % 2 === 0) {
-			// Dibujamos el sprite pequeño en su posición normal
+
 			this.engine.drawAnimatedSprite(PlayerName[this.player], Pivot.Top_Left);
 		} else {
-			// Calculamos la posición del sprite grande para que los pies coincidan
+
 			const bigSpritePos = {
 				x: smallSprite.position.x,
-				y: smallSprite.position.y - this.tileSize // Lo subimos un tile
+				y: smallSprite.position.y - this.tileSize
 			};
-			// Dibujamos el sprite grande en la posición calculada
+
 			this.engine.drawSprite(bigSprite.spriteName, 0, bigSpritePos, bigSprite.scale, bigSprite.flipped, 0, Pivot.Top_Left);
 		}
 
-		// Cuando la animación termina, establecemos el tamaño final y volvemos al juego
 		if (this.growTimer >= GROW_DURATION) {
 			this.playerSize = Player_Size.Big;
-			this.syncPlayerSpritesOnPowerup(); // Sincroniza la posición final del sprite grande
+			this.syncPlayerSpritesOnPowerup();
 			this.state = Game_State.Playing;
-			// La música se reiniciará automáticamente en el bucle del estado "Playing"
+
 		}
 	}
 
@@ -1907,14 +1753,13 @@ class Game {
 		let powerup = {
 			x: x - this.mapOffset.x,
 			y: y,
-			vx: type === Powerup_Type.Mushroom_Super ? 2.5 : 0, // Los hongos se mueven, las flores no
+			vx: type === Powerup_Type.Mushroom_Super ? 2.5 : 0,
 			vy: 0,
 			type: type,
 			state: "emerging",
 			emergeCounter: this.tileSize
 		};
 
-		// Si el powerup es una flor, necesita un contador para su animación
 		if (type === Powerup_Type.Fire_Flower) {
 			powerup.animTimer = 0;
 		}
@@ -1924,13 +1769,12 @@ class Game {
 	}
 
 	updatePowerups() {
-		// Helper para no repetir código de colisión
+
 		const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
 		
 		for (let i = this.activePowerups.length - 1; i >= 0; i--) {
 			const p = this.activePowerups[i];
-			
-			// --- 1. LÓGICA DE ESTADO (Salir del bloque) ---
+
 			if (p.state === "emerging") {
 				p.y -= 1;
 				p.emergeCounter--;
@@ -1938,14 +1782,12 @@ class Game {
 					p.state = "moving";
 				}
 			} 
-			// --- 2. FÍSICA Y MOVIMIENTO (Solo para el champiñón) ---
+
 			else if (p.type === Powerup_Type.Mushroom_Super) {
-				
-				// A. Movimiento Vertical y Colisión con el Suelo
+
 				p.vy += this.gravity;
 				p.y += p.vy;
 
-				// Convertir la coordenada X del mundo a la pantalla antes de la comprobación
 				const groundScreenX = (p.x + this.tileSize / 2) + this.mapOffset.x;
 				const groundTile = this.screenToTile(groundScreenX, p.y + this.tileSize);
 				const groundIndex = this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width);
@@ -1955,21 +1797,18 @@ class Game {
 					p.vy = 0;
 				}
 
-				// B. Movimiento Horizontal y Colisión con Paredes
 				p.x += p.vx;
 				const wallCheckX = p.vx > 0 ? p.x + this.tileSize : p.x;
-				
-				// CORRECCIÓN: Convertir la coordenada X del mundo a la pantalla antes de la comprobación
+
 				const wallCheckScreenX = wallCheckX + this.mapOffset.x;
 				const wallTile = this.screenToTile(wallCheckScreenX, p.y + this.tileSize / 2);
 				const wallIndex = this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width);
 				
 				if (isSolid(this.currentMap.map[wallIndex])) {
-					p.vx *= -1; // Rebotar
+					p.vx *= -1;
 				}
 			}
 
-			// --- 3. LÓGICA DE COLISIÓN CON EL JUGADOR ---
 			const player = this.engine.animatedSprites[PlayerName[this.player]];
 			const playerHeight = this.playerSize > Player_Size.Small ? this.tileSize * 2 : this.tileSize;
 			const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: playerHeight };
@@ -1993,12 +1832,12 @@ class Game {
 							}
 							this.engine.playAudio(audio["Player_Pipe"], false);
 						} else {
-							// Si ya es grande, solo damos puntos (y sonido)
+
 							this.score += 1000;
 							this.engine.playAudio(audio["Life"], false);
 						}
-						this.activePowerups.splice(i, 1); // <-- Mueve esta línea aquí
-						continue; // <-- Mueve esta línea aquí
+						this.activePowerups.splice(i, 1);
+						continue;
 					case Powerup_Type.Fire_Flower:
 						if (this.playerSize >= Player_Size.Big) {
 							this.playerSize = Player_Size.Fire;
@@ -2017,12 +1856,11 @@ class Game {
 
 	drawPowerups() {
 		for (const p of this.activePowerups) {
-			// Calculamos la posición X correcta en la pantalla.
+
 			const screenX = p.x + this.mapOffset.x;
 
 			let spriteToDraw = '';
 
-			// Lógica de Dibujado
 			switch (p.type) {
 				case Powerup_Type.Mushroom_1UP: 
 					spriteToDraw = 'Object_Mushroom_1UP'; 
@@ -2033,13 +1871,13 @@ class Game {
 				case Powerup_Type.Fire_Flower:
 					p.animTimer = (p.animTimer + 1) % 16;
 					const frame = Math.floor(p.animTimer / 8);
-					// <<< CAMBIO: Usamos screenX en lugar de p.x >>>
-					this.engine.drawSprite('Object_Fire_Flower', frame, { x: screenX, y: p.y }, this.spriteScale, false, 0, Pivot.Top_Left);
+
+					this.engine.drawSprite('Object_Fire_Flower', frame, { x: screenX, y: p.y }, SPRITE_SCALE, false, 0, Pivot.Top_Left);
 					continue;
 			}
 			
 			if (spriteToDraw) {
-				this.engine.drawSprite(spriteToDraw, 0, { x: screenX, y: p.y }, this.spriteScale, false, 0, Pivot.Top_Left);
+				this.engine.drawSprite(spriteToDraw, 0, { x: screenX, y: p.y }, SPRITE_SCALE, false, 0, Pivot.Top_Left);
 			}
 		}
 	}
@@ -2055,7 +1893,7 @@ class Game {
 		const coinSprite = this.engine.sprites["UI_Coin"];
 		if (coinSprite) {
 			const coinPos = { x: colWidth + paddingX + paddingX * 0.15, y: paddingY * 3 - this.textSize + paddingY * 0.15 };
-			this.engine.drawSprite("UI_Coin", 0, coinPos, this.spriteScale / 1.8, false, 0, Pivot.Top_Left);
+			this.engine.drawSprite("UI_Coin", 0, coinPos, SPRITE_SCALE / 1.8, false, 0, Pivot.Top_Left);
 		}
 
 		const coinText = String.fromCharCode('0x00D7') + this.coins.toString().padStart(2, "0");
@@ -2108,10 +1946,9 @@ class Game {
 	}
 
 	reloadEnemiesFromMap() {
-		this.enemies = []; // Limpiamos la lista de enemigos existentes.
+		this.enemies = [];
 		const map_w = this.currentMap.dimensions.width;
 
-		// Este bucle es una adaptación del que existe en `loadMap`.
 		for (var i = 0; i < this.currentMap.map.length; i++) {
 			const blockId = this.currentMap.map[i];
 			let enemyType = null;
@@ -2145,19 +1982,18 @@ class Game {
 						isWinged: enemyType.includes("Winged"), canFly: enemyType.includes("Winged"), flyTimer: 0,
 					});
 				}
-				// IMPORTANTE: Reemplazamos el tile del enemigo por aire para no generarlo dos veces.
+
 				this.currentMap.map[i] = 0;
 			}
 		}
 	}
 
 	updateAndDrawEditor() {
-		// --- 1. ACTUALIZAR ESTADO ---
+
 		const mousePos = this.engine.getMousePosition();
 		const worldTile = this.screenToTile(mousePos.x, mousePos.y);
 		const mapIndex = this.engine.coordsToIndex(worldTile, this.currentMap.dimensions.width);
 
-		// Cambiar tile seleccionado con la rueda del ratón
 		const wheelDelta = this.engine.getMouseWheelDelta();
 		if (wheelDelta < 0) { this.selectedTileIndex++; }
 		if (wheelDelta > 0) { this.selectedTileIndex--; }
@@ -2165,32 +2001,27 @@ class Game {
 		const len = this.editorPalette.length;
 		this.selectedTileIndex = ((this.selectedTileIndex % len) + len) % len;
 
-		// Colocar o borrar tiles con los botones del ratón
-		if (this.engine.mouseButtons[0] && mapIndex >= 0) { // Click izquierdo
+		if (this.engine.mouseButtons[0] && mapIndex >= 0) {
 			this.currentMap.map[mapIndex] = this.editorPalette[this.selectedTileIndex];
 		}
-		if (this.engine.mouseButtons[2] && mapIndex >= 0) { // Click derecho
-			this.currentMap.map[mapIndex] = 0; // 0 es aire
+		if (this.engine.mouseButtons[2] && mapIndex >= 0) {
+			this.currentMap.map[mapIndex] = 0;
 		}
-		
-		// Permitir mover la cámara con las flechas en modo editor
+
 		if (this.engine.keysPressed['ArrowLeft']) { this.mapOffset.x += 15; }
 		if (this.engine.keysPressed['ArrowRight']) { this.mapOffset.x -= 15; }
 
-		// --- 2. DIBUJAR TODO ---
 		this.drawBackground();
 		this.drawBlocks();
 		this.drawForegroundBlocks();
 		this.drawUI();
 
-		// Dibujar cursor de selección en el mapa
 		const cursorScreenPos = this.tileToScreen(worldTile.x, worldTile.y);
 		this.engine.drawRectangle(
 			{ x: cursorScreenPos.x, y: cursorScreenPos.y, width: this.tileSize, height: this.tileSize },
-			"rgba(255, 255, 0, 0.5)" // Amarillo semi-transparente
+			"rgba(255, 255, 0, 0.5)"
 		);
 
-		// --- 3. DIBUJAR PALETA DE TILES (UI) ---
 		const paletteBox = {
 			x: 0, y: this.engine.getCanvasHeight() - (this.tileSize + 40),
 			width: this.engine.getCanvasWidth(), height: this.tileSize + 40
@@ -2206,12 +2037,12 @@ class Game {
 			const pos = { x: paletteStartX + i * (this.tileSize + 10), y: paletteY };
 			
 			if (this.engine.sprites[spriteName]) {
-				this.engine.drawSprite(spriteName, 0, pos, this.spriteScale, false, 0, Pivot.Top_Left);
+				this.engine.drawSprite(spriteName, 0, pos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
 			}
 
 			if (i === this.selectedTileIndex) {
 				const selectionPadding = 1;
-				// Recuadro de selección de tile
+
 				const selectionRect = {
 					x: pos.x - selectionPadding,
 					y: pos.y - selectionPadding,
@@ -2222,18 +2053,15 @@ class Game {
 			}
 		}
 
-		// 1. Obtenemos el ID y el nombre del tile actual
 		const selectedBlockId = this.editorPalette[this.selectedTileIndex];
 		const selectedBlockName = BlockType[selectedBlockId];
 		const displayText = `${selectedBlockName} (${selectedBlockId})`;
 
-		// 2. Definimos la posición del texto (justo encima de la paleta)
 		const textPos = {
 			x: this.engine.getCanvasWidth() / 2,
-			y: paletteBox.y - (this.textSize * 1.5) // Un poco de espacio sobre la caja de la paleta
+			y: paletteBox.y - (this.textSize * 1.5)
 		};
 
-		// 3. Dibujamos el texto en pantalla
 		this.engine.drawTextCustom(font, displayText, this.textSize, Color.WHITE, textPos, "center");
 	}
 }
