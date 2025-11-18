@@ -2,6 +2,9 @@ const DEFAULT_LIVES = 1;
 const COIN_SPIN_VELOCITY = 15;
 const SPRITE_SIZE = 16;
 const SPRITE_SCALE = 4;
+const TEXT_SIZE = 16;
+
+const BLACK_SCREEN_DURATION = 2000;
 
 const Game_State = {
 	Title_Menu: 0,
@@ -124,7 +127,7 @@ class Game {
 	velocityY = 0;
 	jumpPower = -22;
 	gravity = 0.8;
-	textSize = 16;
+	slideVelocityX = 0;
 	
 	isInvincible = false;
 	isOnGround = true;
@@ -132,6 +135,7 @@ class Game {
 	wasMovingTurbo = false;
 	isThrowing = false;
 	playerIsVisible = true;
+	isSliding = false;
 
 	levelCompleteState = 'none';
 	flagpoleFlag = null;
@@ -169,13 +173,10 @@ class Game {
 
 	constructor(engine, textSize) {
 		this.engine = engine;
-		this.textSize = textSize;
 		this.specialBlocks = {};
 		this.foregroundBlocks = [5, 6, 7, 8];
 		
-		this.availableWorlds = [
-			'0-0', '1-1', '1-1b', '1-2'
-		]; 
+		this.availableWorlds = [...new Set(map.map(m => m.world))].sort();
 		this.currentWorldIndex = 0;
 
 		const savedHighscore = this.engine.getCookie("smb_highscore");
@@ -290,8 +291,8 @@ class Game {
 		js2d.createAnimatedSprite("Fire_Flower", "Object_Fire_Flower", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
 
-		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, this.textSize / this.tileSize);
-		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, this.textSize / this.tileSize);
+		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
+		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
 
 		js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
 		js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
@@ -302,8 +303,8 @@ class Game {
 
 
 
-		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, this.textSize / this.tileSize);
-		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, this.textSize / this.tileSize);
+		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
+		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
 
 		js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
 		js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
@@ -497,7 +498,7 @@ class Game {
 		this.coins = 0;
 		this.savedState = null;
 		this.resetLevelState();
-		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, 3000);
+		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
 	}
 
 	damagePlayer() {
@@ -548,7 +549,7 @@ class Game {
 		this.lives--;
 		if (this.lives > 0) {
 			this.resetLevelState();
-			this.transitionToBlackScreen(Black_Screen_Type.Start_Level, 3000);
+			this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
 		} else {
 			this.transitionToBlackScreen(Black_Screen_Type.Game_Over, 6500);
 		}
@@ -617,7 +618,7 @@ class Game {
 		
 		this.resetLevelState();
 		
-		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, 3000);
+		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
 	}
 
 	rectsOverlap(r1, r2) {
@@ -862,10 +863,10 @@ class Game {
 		switch (this.screenType) {
 			case Black_Screen_Type.Start_Level:
 				const worldPos = { x: centerX, y: centerY - this.tileSize * 2 };
-				this.engine.drawTextCustom(font, `WORLD ${this.currentMap.world}`, this.textSize, Color.WHITE, worldPos, "center");
+				this.engine.drawTextCustom(font, `WORLD ${this.currentMap.world}`, TEXT_SIZE, Color.WHITE, worldPos, "center");
 				
 				const livesPos = { x: centerX + this.tileSize, y: centerY };
-				this.engine.drawTextCustom(font, `${String.fromCharCode('0x00D7')} ${this.lives}`, this.textSize, Color.WHITE, livesPos, "center");
+				this.engine.drawTextCustom(font, `${String.fromCharCode('0x00D7')} ${this.lives}`, TEXT_SIZE, Color.WHITE, livesPos, "center");
 				
 				const playerImagePos = { x: centerX - this.tileSize * 2, y: centerY - this.tileSize / 2 };
 				const spriteName = "Player_" + PlayerName[this.player];
@@ -877,14 +878,14 @@ class Game {
 
 			case Black_Screen_Type.Game_Over:
 				const gameOverPlayerPos = { x: centerX, y: centerY - this.tileSize };
-				this.engine.drawTextCustom(font, PlayerName[this.player], this.textSize, Color.WHITE, gameOverPlayerPos, "center");
+				this.engine.drawTextCustom(font, PlayerName[this.player], TEXT_SIZE, Color.WHITE, gameOverPlayerPos, "center");
 				const gameOverPos = { x: centerX, y: centerY };
-				this.engine.drawTextCustom(font, "GAME OVER", this.textSize, Color.WHITE, gameOverPos, "center");
+				this.engine.drawTextCustom(font, "GAME OVER", TEXT_SIZE, Color.WHITE, gameOverPos, "center");
 				break;
 				
 			case Black_Screen_Type.Time_Up:
 				const timeUpPos = { x: centerX, y: centerY };
-				this.engine.drawTextCustom(font, "TIME UP", this.textSize, Color.WHITE, timeUpPos, "center");
+				this.engine.drawTextCustom(font, "TIME UP", TEXT_SIZE, Color.WHITE, timeUpPos, "center");
 				break;
 		}
 	}
@@ -920,6 +921,19 @@ class Game {
 		if(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']){ this.engine.keysPressed = []; this.currentSelection--; }
 		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){ this.engine.keysPressed = []; this.currentSelection++; }
 
+		if(this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA']){
+			this.engine.keysPressed['ArrowLeft'] = false; this.engine.keysPressed['KeyA'] = false;
+			this.currentWorldIndex--;
+		}
+		if(this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD']){
+			this.engine.keysPressed['ArrowRight'] = false; this.engine.keysPressed['KeyD'] = false;
+			this.currentWorldIndex++;
+		}
+
+		// Asegurarse de que el índice del mundo siempre esté dentro de los límites (da la vuelta)
+		const worldCount = this.availableWorlds.length;
+		this.currentWorldIndex = ((this.currentWorldIndex % worldCount) + worldCount) % worldCount;
+
 		if (this.engine.keysPressed['KeyN']) {
 			this.engine.keysPressed['KeyN'] = false;
 			this.volume = Math.min(1, this.volume + 0.1);
@@ -951,7 +965,7 @@ class Game {
 
 		this.currentSelection = ((this.currentSelection % numButtons) + numButtons) % numButtons;
 		for(let i = 0; i < numButtons; i++){
-			const menuPosY = this.engine.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + this.textSize;
+			const menuPosY = this.engine.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + TEXT_SIZE;
 			const textPos = { x: this.engine.getCanvasWidth() / 2, y: menuPosY };
 			if(this.currentSelection == i){
 				const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - SPRITE_SIZE * 1.1 };
@@ -959,23 +973,23 @@ class Game {
 					this.engine.drawSprite("Cursor", 0, cursorPos, this.engine.sprites["Cursor"].scale, false, 0, Pivot.Top_Left);
 				}
 			}
-			this.engine.drawTextCustom(font, menuButtons[i].name, this.textSize, "#ffffff", textPos, "center");
+			this.engine.drawTextCustom(font, menuButtons[i].name, TEXT_SIZE, "#ffffff", textPos, "center");
 		}
 
 		const topScore = "TOP - " + this.highscore.toString().padStart(6, "0");
 		const topScorePos = {
 			x: this.engine.getCanvasWidth() / 2,
-			y: this.engine.canvas.height * 0.65 + menuGap * numButtons + menuGap / 2 + this.textSize
+			y: this.engine.canvas.height * 0.65 + menuGap * numButtons + menuGap / 2 + TEXT_SIZE
 		};
-		this.engine.drawTextCustom(font, topScore, this.textSize, "#ffffff", topScorePos, "center");
+		this.engine.drawTextCustom(font, topScore, TEXT_SIZE, "#ffffff", topScorePos, "center");
 
 		const volumePercentage = Math.round(this.volume * 100);
-		const volumeText = `VOLUME: ${volumePercentage}% (N/B) - MUTE (M)`;
+		const volumeText = `VOL ${volumePercentage}%`;
 		const volumePos = {
 			x: 20,
 			y: this.engine.getCanvasHeight() - 20
 		};
-		this.engine.drawTextCustom(font, volumeText, this.textSize, Color.WHITE, volumePos, "left");
+		this.engine.drawTextCustom(font, volumeText, TEXT_SIZE, Color.WHITE, volumePos, "left");
 	}
 
 	drawCompositeObject(objPos, pattern, spriteMap) {
@@ -1529,17 +1543,58 @@ class Game {
 			}
 
 			if (this.skidTimer > 0) this.skidTimer--;
-			const isTurbo = this.engine.keysPressed['ShiftLeft'] || this.engine.keysPressed['ShiftRight'];
-			const isTryingToMoveLeft = this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA'];
-			const isTryingToMoveRight = this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD'];
-			const isMoving = isTryingToMoveLeft || isTryingToMoveRight;
-			const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
-			
-			if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) { 
-				this.skidTimer = 10;
-				this.engine.playAudioOverlap(audio["Player_Skid"]); 
+				const isTurbo = this.engine.keysPressed['ShiftLeft'] || this.engine.keysPressed['ShiftRight'];
+				const isTryingToMoveLeft = this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA'];
+				const isTryingToMoveRight = this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD'];
+				const isMoving = isTryingToMoveLeft || isTryingToMoveRight;
+				const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
+				
+				if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) { 
+					this.skidTimer = 10;
+					this.engine.playAudioOverlap(audio["Player_Skid"]); 
+				}
+				this.wasMovingTurbo = isMoving && isTurbo;
+
+				if (isBig && isCrouching && isMoving && this.isOnGround && !this.isSliding) {
+				this.isSliding = true;
+				// Usamos la velocidad turbo como base para un deslizamiento más satisfactorio
+				const initialSpeed = this.velocityXTurbo * dt_sec; 
+				this.slideVelocityX = player.flipped ? -initialSpeed : initialSpeed;
+				this.engine.playAudioOverlap(audio["Player_Skid"]);
 			}
-			this.wasMovingTurbo = isMoving && isTurbo;
+
+			// 2. Lógica de físicas MIENTRAS se está deslizando
+			if (this.isSliding) {
+				// Aplicar fricción para frenar
+				this.slideVelocityX *= 0.96; 
+				const newX = playerPos.x + this.slideVelocityX;
+
+				// Comprobar colisión con paredes
+				const checkTileX = this.slideVelocityX > 0 ? newX + this.tileSize - 4 : newX + 4;
+				const wallTile = this.screenToTile(checkTileX, playerPos.y + playerHeight / 2);
+				if (inBounds(wallTile.x, wallTile.y) && isSolid(this.currentMap.map[this.engine.coordsToIndex(wallTile, mapWidth)])) {
+					this.slideVelocityX = 0; // Detenerse en seco si choca
+				} else {
+					// Mover al jugador (replicando la lógica de la cámara)
+					if (this.slideVelocityX > 0) { // Deslizando a la derecha
+						if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX;
+						else this.mapOffset.x -= this.slideVelocityX;
+					} else { // Deslizando a la izquierda
+						playerPos.x = newX;
+					}
+				}
+				
+				// Condiciones para DETENER el deslizamiento
+				const ceilingCheckPos = { x: playerPos.x + this.tileSize / 2, y: playerPos.y - 1 };
+				const tileAbove = this.screenToTile(ceilingCheckPos.x, ceilingCheckPos.y);
+				const isBlockedByCeiling = isSolid(this.currentMap.map[this.engine.coordsToIndex(tileAbove, mapWidth)]);
+				
+				// Se detiene si la velocidad es muy baja, si deja de estar en el suelo, o si suelta la tecla y no hay un techo
+				if (Math.abs(this.slideVelocityX) < 1 || !this.isOnGround || (!isCrouching && !isBlockedByCeiling)) {
+					this.isSliding = false;
+					this.slideVelocityX = 0;
+				}
+			}
 
 			const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 			if (isCrouching) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Crouch`);
@@ -1602,7 +1657,7 @@ class Game {
 			const popup = this.scorePopups[i];
 			popup.y -= 0.5;
 			popup.timer--;
-			this.engine.drawTextCustom(font, popup.text, this.textSize, Color.WHITE, {x: popup.x, y: popup.y}, "center");
+			this.engine.drawTextCustom(font, popup.text, TEXT_SIZE, Color.WHITE, {x: popup.x, y: popup.y}, "center");
 			if (popup.timer <= 0) {
 				this.scorePopups.splice(i, 1);
 			}
@@ -1884,30 +1939,30 @@ class Game {
 
 	drawUI(){
 		const cols = 4;
-		const paddingX = this.textSize * 4;
-		const paddingY = this.textSize;
+		const paddingX = TEXT_SIZE * 4;
+		const paddingY = TEXT_SIZE;
 		const colWidth = (this.engine.getCanvasWidth() - paddingX * 2) / cols;
-		this.engine.drawTextCustom(font, PlayerName[this.player], this.textSize, "#ffffff", {x: paddingX, y: paddingY * 2}, "left");
-		this.engine.drawTextCustom(font, this.score.toString().padStart(6, "0"), this.textSize, "#ffffff", {x: paddingX, y: paddingY * 3}, "left");
+		this.engine.drawTextCustom(font, PlayerName[this.player], TEXT_SIZE, "#ffffff", {x: paddingX, y: paddingY * 2}, "left");
+		this.engine.drawTextCustom(font, this.score.toString().padStart(6, "0"), TEXT_SIZE, "#ffffff", {x: paddingX, y: paddingY * 3}, "left");
 		
 		const coinSprite = this.engine.sprites["UI_Coin"];
 		if (coinSprite) {
-			const coinPos = { x: colWidth + paddingX + paddingX * 0.15, y: paddingY * 3 - this.textSize + paddingY * 0.15 };
+			const coinPos = { x: colWidth + paddingX + paddingX * 0.15, y: paddingY * 3 - TEXT_SIZE + paddingY * 0.15 };
 			this.engine.drawSprite("UI_Coin", 0, coinPos, SPRITE_SCALE / 1.8, false, 0, Pivot.Top_Left);
 		}
 
 		const coinText = String.fromCharCode('0x00D7') + this.coins.toString().padStart(2, "0");
-		this.engine.drawTextCustom(font, coinText, this.textSize, "#ffffff", {x: colWidth + paddingX + 32, y: paddingY * 3}, "left");
-		this.engine.drawTextCustom(font, "WORLD", this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2, y: paddingY * 2}, "center");
+		this.engine.drawTextCustom(font, coinText, TEXT_SIZE, "#ffffff", {x: colWidth + paddingX + 32, y: paddingY * 3}, "left");
+		this.engine.drawTextCustom(font, "WORLD", TEXT_SIZE, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2, y: paddingY * 2}, "center");
 
 		if (this.currentMap && this.currentMap.world) {
-			this.engine.drawTextCustom(font, ' ' + this.availableWorlds[this.currentWorldIndex], this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2 - this.textSize / 2, y: paddingY * 3}, "center");
+			this.engine.drawTextCustom(font, ' ' + this.availableWorlds[this.currentWorldIndex], TEXT_SIZE, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2 - TEXT_SIZE / 2, y: paddingY * 3}, "center");
 		} else {
-			this.engine.drawTextCustom(font, ' ' + this.currentMap.world, this.textSize, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2 - this.textSize / 2, y: paddingY * 3}, "center");
+			this.engine.drawTextCustom(font, ' ' + this.currentMap.world, TEXT_SIZE, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2 - TEXT_SIZE / 2, y: paddingY * 3}, "center");
 		}
 
-		this.engine.drawTextCustom(font, "TIME", this.textSize, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 2}, "right");
-		this.engine.drawTextCustom(font, Math.floor(this.time).toString().padStart(3, "0"), this.textSize, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 3}, "right");
+		this.engine.drawTextCustom(font, "TIME", TEXT_SIZE, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 2}, "right");
+		this.engine.drawTextCustom(font, Math.floor(this.time).toString().padStart(3, "0"), TEXT_SIZE, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 3}, "right");
 	}
 
 	getCurrentThemeAudio() {
@@ -2059,9 +2114,9 @@ class Game {
 
 		const textPos = {
 			x: this.engine.getCanvasWidth() / 2,
-			y: paletteBox.y - (this.textSize * 1.5)
+			y: paletteBox.y - (TEXT_SIZE * 1.5)
 		};
 
-		this.engine.drawTextCustom(font, displayText, this.textSize, Color.WHITE, textPos, "center");
+		this.engine.drawTextCustom(font, displayText, TEXT_SIZE, Color.WHITE, textPos, "center");
 	}
 }
