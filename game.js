@@ -179,7 +179,6 @@ async function init() {
 	await js2d.loadTileset("Fireball_Tiles", fireballHitSpritesheet, 16, 16);
 
 	await js2d.loadTileset("UI_Tiles", uiImage, 8, 8);
-	await js2d.loadTileset("Object_Coin_Tiles", coinSpriteSheet, 16, 16);
 
 	//
 	// ---
@@ -211,7 +210,7 @@ async function init() {
     // UI
     js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, fontSize / tileScale / 2);
     js2d.defineSpriteFromTileset("Cursor", "UI_Tiles", 1, 0, 1, fontSize / tileScale / 2);
-    js2d.defineSpriteFromTileset("Object_Coin", "Object_Coin_Tiles", 0, 0, 4, tileScale);
+    js2d.defineSpriteFromTileset("Object_Coin", "Overworld_Tiles", 0, 9, 5, tileScale);
 
     // Fireball
     js2d.defineSpriteFromTileset("Object_Fireball", "Fireball_Tiles", 0, 0, 4, tileScale);
