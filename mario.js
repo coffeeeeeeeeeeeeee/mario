@@ -58,15 +58,15 @@ const BlockType = [
 	'Block_Empty',					// 	0
 	'Block_Ground',					// 	1
 	'Block_Brick',					// 	2
-	'Object_Question',				// 	3
-	'Object_Question_Used',			// 	4
+	'Block_Question',				// 	3
+	'Block_Question_Used',			// 	4
 	'Block_Pipe_Top_Left',			// 	5
 	'Block_Pipe_Top_Right',			// 	6
 	'Block_Pipe_Body_Left',			// 	7
 	'Block_Pipe_Body_Right',		// 	8
 	'Object_Coin',					// 	9
 	'Enemy_Goomba',					// 10
-	'Enemy_Koopa',					// 11
+	'Enemy_Koopa_Green',			// 11
 	'Enemy_Pakkun_Green',			// 12
 	'Block_Flagpole',				// 13
 	'Block_Cloud_Left',				// 14
@@ -96,12 +96,13 @@ const BlockType = [
 	'Enemy_Koopa_Winged_Green',		// 38
 	'Enemy_Koopa_Red',				// 39
 	'Enemy_Pakkun_Red',				// 40
-	'Object_Question',				// 41
-
-	'Block_Pipe_Left_Top',			// 42
-	'Block_Pipe_Right_Top',			// 43
-	'Block_Pipe_Left_Body',			// 44
-	'Block_Pipe_Right_Body',		// 45
+	'Block_Question',				// 41 (Coin version)
+	'Block_Pipe_Start_Top',			// 42
+	'Block_Pipe_Start_Bottom',		// 43
+	'Block_Pipe_Body_Top',			// 44
+	'Block_Pipe_Body_Bottom',		// 45
+	'Block_Pipe_End_Top',			// 46
+	'Block_Pipe_End_Bottom',		// 47
 ];
 
 class Game {
@@ -165,10 +166,24 @@ class Game {
 	isEditorMode = false;
 	editorCursorPos = { x: 0, y: 0 };
 	selectedTileIndex = 0;
-	// editorPalette = [
-	// 	1, 2, 3, 24, 25, 41, 34, 5, 6, 7, 8, 13, 26, 10, 11, 39, 12
-	// ];
-	editorPalette = BlockType;
+	editorPalette = [
+        1,  // Suelo
+        2,  // Ladrillo
+        24, // Escalera (Piedra)
+        3,  // ? (Powerup)
+        41, // ? (Moneda)
+        34, // ? (Multi Monedas)
+        5, 6, 7, 8, // Tuberías Vertical
+        13, // Bandera
+        25, // Bloque Invisible
+        10, // Goomba
+        11, // Koopa Rojo
+        12, // Koopa Verde
+        12, // Planta Piraña
+        42, 43, 44, 45, 46, 47, // Tuberías Horizontal
+
+    ];
+	// editorPalette = BlockType;
 
 	OVERWORLD_COLOR = "#5C94FC";
 	UNDERGROUND_COLOR = "#000000";
@@ -191,8 +206,8 @@ class Game {
 		this.highscore = savedHighscore ? parseInt(savedHighscore, 10) : 0;
 
 		const savedVolume = this.engine.getCookie("smb_volume");
-        this.volume = savedVolume !== null ? parseFloat(savedVolume) : DEFAULT_VOLUME;
-        this.updateMusicVolume();
+		this.volume = savedVolume !== null ? parseFloat(savedVolume) : DEFAULT_VOLUME;
+		this.updateMusicVolume();
 
 		this.HILL_SMALL_PATTERN = [
 			[' ', 'T', ' '],
@@ -255,15 +270,22 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Brick_Break", tilesetName, 8, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Cut", tilesetName, 9, 0, 1, tileScale);
 
-		js2d.defineSpriteFromTileset("Object_Question",				tilesetName, 0, 1, 3, tileScale);
+		js2d.defineSpriteFromTileset("Block_Question",				tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coinbox_Multiple",	tilesetName, 0, 1, 3, tileScale);
-		js2d.defineSpriteFromTileset("Object_Question_Used",		tilesetName, 1, 1, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Question_Used",		tilesetName, 1, 1, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Twentyfive",			tilesetName, 2, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coin",					tilesetName, 7, 1, 3, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Used",		tilesetName, 3, 1, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Invisible",	tilesetName, 15, 15, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Empty",		tilesetName, 15, 15, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Pipe_Start_Top", tilesetName, 4, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Start_Bottom", tilesetName, 5, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 8, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 9, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_End_Top", tilesetName, 6, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", tilesetName, 7, 2, 1, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Pipe_Top_Left", tilesetName, 0, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", tilesetName, 1, 2, 1, tileScale);
@@ -362,13 +384,12 @@ class Game {
 	}
 
 	loadMap(name) {
-
 		const mapData = map.find(m => m.world === name);
 
 		if (mapData) {
 			this.currentMap = JSON.parse(JSON.stringify(mapData));
 			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
-			console.info(`[SMB] Mapa cargado: ${name}`);
+			console.info(`[GAME] Mapa cargado: ${name}`);
 
 			this.defineWorldSprites();
 
@@ -384,6 +405,9 @@ class Game {
 			}
 
 			this.mapOffset.y = 0;
+
+			// No borrar!
+			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
 
 			this.enemies = [];
 			const map_w = this.currentMap.dimensions.width;
@@ -462,7 +486,7 @@ class Game {
 				}
 			}
 		} else {
-			console.error(`[SMB] No se pudo encontrar el mapa: ${name}`);
+			console.error(`[GAME] No se pudo encontrar el mapa: ${name}`);
 		}
 	}
 
@@ -535,7 +559,7 @@ class Game {
 			if (this.score > this.highscore) {
 				this.highscore = this.score;
 				this.engine.setCookie("smb_highscore", this.highscore, 365);
-				console.log(`[SMB] Nuevo highscore guardado: ${this.highscore}`);
+				console.log(`[GAME] Nuevo highscore guardado: ${this.highscore}`);
 			}
 
 			if (this.score > this.highscore) {
@@ -620,7 +644,7 @@ class Game {
 		const nextWorldIndex = this.availableWorlds.indexOf(nextWorldName);
 
 		if (nextWorldIndex === -1) {
-			console.error(`[SMB] El siguiente mundo "${nextWorldName}" no se encontró en la lista 'availableWorlds'.`);
+			console.error(`[GAME] El siguiente mundo "${nextWorldName}" no se encontró en la lista 'availableWorlds'.`);
 			this.state = Game_State.Title_Menu;
 			return;
 		}
@@ -638,17 +662,17 @@ class Game {
 	}
 
 	updateMusicVolume() {
-        this.engine.setMasterVolume(this.volume);
-        this.engine.setCookie("smb_volume", this.volume, 365);
+		this.engine.setMasterVolume(this.volume);
+		this.engine.setCookie("smb_volume", this.volume, 365);
 
-        if (typeof audio !== 'undefined') {
-            Object.values(audio).forEach(sound => {
-                if (sound) {
-                    sound.volume = this.volume;
-                }
-            });
-        }
-    }
+		if (typeof audio !== 'undefined') {
+			Object.values(audio).forEach(sound => {
+				if (sound) {
+					sound.volume = this.volume;
+				}
+			});
+		}
+	}
 
 	updateEnemies(dt) {
 		const player = this.engine.animatedSprites[PlayerName[this.player]];
@@ -766,7 +790,16 @@ class Game {
 			}
 
 			const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
-			const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: enemyHeight };
+
+			let enemyScreenY = enemy.y;
+			if (enemy.type === 'Pakkun') {
+				 const mapHeight = this.currentMap.dimensions.height;
+				 const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+				 // Aplicamos el offset para convertir coordenadas de mundo a pantalla
+				 enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
+			}
+
+			const enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
 
 			const isBig = this.playerSize > Player_Size.Small;
 			const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
@@ -774,7 +807,11 @@ class Game {
 
 			if (this.rectsOverlap(playerRect, enemyRect)) {
 
-				const isStomping = this.velocityY > 0 && (player.position.y + playerHeight) < (enemy.y + enemyHeight / 1.5);
+				let isStomping = this.velocityY > 0 && (player.position.y + playerHeight) < (enemyRect.y + enemyHeight / 1.5);
+
+				if (enemy.type === 'Pakkun') {
+					isStomping = false;
+				}
 
 				if (isStomping) {
 					this.velocityY = -10;
@@ -1127,10 +1164,10 @@ class Game {
 			if (blockId === 34) {
 				switch (this.currentMap.type) {
 					case World_Type.Overworld:
-						spriteName = this.specialBlocks[i]?.revealed ? 'Object_Question' : 'Block_Brick';
+						spriteName = this.specialBlocks[i]?.revealed ? 'Block_Question' : 'Block_Brick';
 						break;
 					case World_Type.Underground:
-						spriteName = this.specialBlocks[i]?.revealed ? 'Object_Question_Underground' : 'Block_Brick_Underground';
+						spriteName = this.specialBlocks[i]?.revealed ? 'Block_Question' : 'Block_Brick_Underground';
 						break;
 					default:
 						break;
@@ -1244,8 +1281,17 @@ class Game {
 				if (enemy.state === 'stomped' || enemy.state === 'shell') continue;
 				
 				const enemyScreenX = enemy.x + this.mapOffset.x;
-				const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
-				const enemyRect = { x: enemyScreenX, y: enemy.y, w: this.tileSize, h: enemyHeight };
+    			const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+    			let enemyScreenY = enemy.y;
+    
+			    if (enemy.type === 'Pakkun') {
+			        const mapHeight = this.currentMap.dimensions.height;
+			        const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+			        // Convertir coordenada de mundo a pantalla
+			        enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
+			    }
+
+				const enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
 				const fbRect = { x: screenPos.x, y: screenPos.y, w: SPRITE_SIZE, h: SPRITE_SIZE };
 
 				if (this.rectsOverlap(fbRect, enemyRect)) {
@@ -1344,9 +1390,9 @@ class Game {
 			let spriteNameToDraw = BlockType[block.originalId];
 			if (block.originalId === 34) {
 				if (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) {
-					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Object_Question_Used' : 'Object_Question_Used_Underground';
+					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Block_Question_Used' : 'Block_Question_Used';
 				} else {
-					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Object_Question' : 'Object_Question_Underground';
+					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Block_Question' : 'Block_Question';
 				}
 			}
 			const spriteData = this.engine.sprites[spriteNameToDraw];
@@ -2071,28 +2117,31 @@ class Game {
 	}
 
 	toggleEditor() {
-		if (this.state === Game_State.Playing) {
-			this.isEditorMode = true;
-			this.state = Game_State.Editor;
-			
-			const currentTheme = this.getCurrentThemeAudio();
-			if (currentTheme) this.engine.stopAudio(currentTheme);
+        if (this.state === Game_State.Playing) {
+            this.isEditorMode = true;
+            this.state = Game_State.Editor;
+            
+            const currentTheme = this.getCurrentThemeAudio();
+            if (currentTheme) this.engine.stopAudio(currentTheme);
 
-			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
-			this.enemies = [];
-			
-			console.log("[EDITOR] Modo editor activado.");
+            if (this.pristineMapData) {
+                this.currentMap.map = JSON.parse(JSON.stringify(this.pristineMapData));
+            }
+            
+            this.enemies = [];
+            
+            console.log("[GAME] Modo editor activado. Mapa restaurado.");
 
-		} else if (this.state === Game_State.Editor) {
-			this.isEditorMode = false;
-			this.state = Game_State.Playing;
-			
-			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
-			
-			console.log("[EDITOR] Saliendo del modo editor. Recargando enemigos.");
-			this.reloadEnemiesFromMap();
-		}
-	}
+        } else if (this.state === Game_State.Editor) {
+            this.isEditorMode = false;
+            this.state = Game_State.Playing;
+            
+            this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
+            
+            console.log("[GAME] Saliendo. Generando enemigos...");
+            this.reloadEnemiesFromMap();
+        }
+    }
 
 	reloadEnemiesFromMap() {
 		this.enemies = [];
@@ -2115,102 +2164,200 @@ class Game {
 
 			if (enemyType) {
 				let coords = this.engine.indexToCoords(i, map_w);
-				let screenPos = this.tileToScreen(coords.x, coords.y);
 
-				if (enemyType.includes("Pakkun")) {
-					this.enemies.push({
-						type: 'Pakkun', color: enemyColor,
-						x: (screenPos.x - this.mapOffset.x) + (this.tileSize / 2), y: screenPos.y + this.tileSize,
-						initialY: screenPos.y + this.tileSize, maxHeight: this.tileSize * 1.5, state: 'hiding', timer: 120
-					});
-				} else {
-					this.enemies.push({
-						id: this.enemies.length, type: enemyType, color: enemyColor,
-						x: screenPos.x - this.mapOffset.x, y: screenPos.y,
-						vx: -2, vy: 0, state: "walking", stompTimer: 0,
-						isWinged: enemyType.includes("Winged"), canFly: enemyType.includes("Winged"), flyTimer: 0,
-					});
-				}
+				let worldX = coords.x * this.tileSize;
+                let worldY = coords.y * this.tileSize;
 
-				this.currentMap.map[i] = 0;
+                if (enemyType.includes("Pakkun")) {
+                    // La planta se coloca en el tile de la "boca" de la tubería.
+                    // Su posición inicial (escondida) debe ser un tile más abajo (+ this.tileSize).
+                    this.enemies.push({
+                        type: 'Pakkun', 
+                        color: enemyColor,
+                        x: worldX + (this.tileSize / 2), // Centrado horizontalmente
+                        y: worldY + this.tileSize * 1.5,       // Posición Y inicial (escondida en el tubo)
+                        initialY: worldY + this.tileSize,// Referencia para saber dónde volver
+                        maxHeight: this.tileSize * 1.5,  // Cuánto sube
+                        state: 'hiding', 
+                        timer: 120
+                    });
+                } else {
+                    // Enemigos normales
+                    this.enemies.push({
+                        id: this.enemies.length, 
+                        type: enemyType, 
+                        color: enemyColor,
+                        x: worldX, 
+                        y: worldY,
+                        vx: -2, 
+                        vy: 0, 
+                        state: "walking", 
+                        stompTimer: 0,
+                        isWinged: enemyType.includes("Winged"), 
+                        canFly: enemyType.includes("Winged"), 
+                        flyTimer: 0,
+                    });
+                }
+
+                // Importante: Borrar el bloque del mapa para que no sea un obstáculo sólido estático
+                this.currentMap.map[i] = 0;
 			}
 		}
 	}
 
-	updateAndDrawEditor() {
+    updateAndDrawEditor() {
+        // 1. GESTIÓN DE CÁMARA
+        if (this.engine.keysPressed['ArrowLeft']) { this.mapOffset.x += 15; }
+        if (this.engine.keysPressed['ArrowRight']) { this.mapOffset.x -= 15; }
 
-		const mousePos = this.engine.getMousePosition();
-		const worldTile = this.screenToTile(mousePos.x, mousePos.y);
-		const mapIndex = this.engine.coordsToIndex(worldTile, this.currentMap.dimensions.width);
+        // 2. COORDENADAS DEL MOUSE
+        const mousePos = this.engine.getMousePosition();
+        const worldTile = this.screenToTile(mousePos.x, mousePos.y);
+        const mapWidth = this.currentMap.dimensions.width;
+        const mapHeight = this.currentMap.dimensions.height;
+        
+        // Validar si el cursor está dentro del mundo
+        let mapIndex = -1;
+        let isInsideMap = false;
+        
+        if (worldTile.x >= 0 && worldTile.x < mapWidth && worldTile.y >= 0 && worldTile.y < mapHeight) {
+            mapIndex = this.engine.coordsToIndex(worldTile, mapWidth);
+            isInsideMap = true;
+        }
 
-		const wheelDelta = this.engine.getMouseWheelDelta();
-		if (wheelDelta < 0) { this.selectedTileIndex++; }
-		if (wheelDelta > 0) { this.selectedTileIndex--; }
-		
-		const len = this.editorPalette.length;
-		this.selectedTileIndex = ((this.selectedTileIndex % len) + len) % len;
+        // 3. SELECCIÓN DE PALETA (Rueda del ratón)
+        const wheelDelta = this.engine.getMouseWheelDelta();
+        const len = this.editorPalette.length;
+        if (len > 0) {
+            if (wheelDelta < 0) { this.selectedTileIndex++; }
+            if (wheelDelta > 0) { this.selectedTileIndex--; }
+            // Ajuste circular seguro
+            this.selectedTileIndex = ((this.selectedTileIndex % len) + len) % len;
+        }
 
-		if (this.engine.mouseButtons[0] && mapIndex >= 0) {
-			this.currentMap.map[mapIndex] = this.editorPalette[this.selectedTileIndex];
-		}
-		if (this.engine.mouseButtons[2] && mapIndex >= 0) {
-			this.currentMap.map[mapIndex] = 0;
-		}
+        // 4. ACCIÓN DE DIBUJAR / BORRAR
+        const tileToPlace = this.editorPalette[this.selectedTileIndex];
+        
+        if (isInsideMap && mapIndex >= 0 && mapIndex < this.currentMap.map.length) {
+            // Click Izquierdo: Colocar
+            if (this.engine.mouseButtons[0]) { 
+                if (tileToPlace !== undefined) {
+                    this.currentMap.map[mapIndex] = tileToPlace;
+                }
+            }
+            // Click Derecho: Borrar
+            if (this.engine.mouseButtons[2]) { 
+                this.currentMap.map[mapIndex] = 0;
+            }
+        }
 
-		if (this.engine.keysPressed['ArrowLeft']) { this.mapOffset.x += 15; }
-		if (this.engine.keysPressed['ArrowRight']) { this.mapOffset.x -= 15; }
+        // 5. DIBUJAR EL JUEGO
+        this.drawBackground();
+        this.drawBlocks();
+        this.drawForegroundBlocks();
 
-		this.drawBackground();
-		this.drawBlocks();
-		this.drawForegroundBlocks();
-		this.drawUI();
+        // Dibujar enemigos estáticos (para ver dónde están en el editor)
+        for (let i = 0; i < this.currentMap.map.length; i++) {
+            const bid = this.currentMap.map[i];
+            // IDs de enemigos conocidos
+            if ([10, 11, 12, 37, 38, 40, 43, 44, 45].includes(bid)) {
+                 const coords = this.engine.indexToCoords(i, mapWidth);
+                 const pos = this.tileToScreen(coords.x, coords.y);
+                 if (BlockType[bid] && this.engine.sprites[BlockType[bid]]) {
+                    this.engine.drawSprite(BlockType[bid], 0, pos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+                 }
+            }
+        }
+        this.drawUI();
 
-		const cursorScreenPos = this.tileToScreen(worldTile.x, worldTile.y);
-		this.engine.drawRectangle(
-			{ x: cursorScreenPos.x, y: cursorScreenPos.y, width: this.tileSize, height: this.tileSize },
-			"rgba(255, 255, 0, 0.5)"
-		);
+        // 6. DIBUJAR CURSOR Y BLOQUE FANTASMA
+        const cursorScreenPos = this.tileToScreen(worldTile.x, worldTile.y);
+        
+        // Solo dibujar si está visible en pantalla
+        if (cursorScreenPos.x > -this.tileSize && cursorScreenPos.x < this.engine.getCanvasWidth()) {
+            
+            // A) Cuadro indicador amarillo
+            const cursorColor = isInsideMap ? "rgba(255, 255, 0, 0.5)" : "rgba(255, 0, 0, 0.5)";
+            this.engine.drawRectangle(
+                { x: cursorScreenPos.x, y: cursorScreenPos.y, width: this.tileSize, height: this.tileSize },
+                cursorColor
+            );
 
-		const paletteBox = {
-			x: 0, y: this.engine.getCanvasHeight() - (this.tileSize + 40),
-			width: this.engine.getCanvasWidth(), height: this.tileSize + 40
-		};
-		this.engine.drawRectangle(paletteBox, "rgba(0, 0, 0, 0.7)");
-		
-		const paletteStartX = (this.engine.getCanvasWidth() - this.editorPalette.length * (this.tileSize + 10)) / 2;
-		const paletteY = this.engine.getCanvasHeight() - this.tileSize - 20;
+            // B) Bloque Fantasma (Ghost): Previsualiza qué vas a poner
+            if (isInsideMap && tileToPlace) {
+                const ghostSpriteName = BlockType[tileToPlace];
+                if (ghostSpriteName && this.engine.sprites[ghostSpriteName]) {
+                    this.engine.ctx.save();
+                    this.engine.ctx.globalAlpha = 0.6; // Semitransparente
+                    this.engine.drawSprite(ghostSpriteName, 0, cursorScreenPos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+                    this.engine.ctx.restore();
+                }
+            }
+        }
 
-		for (let i = 0; i < this.editorPalette.length; i++) {
-			const blockId = this.editorPalette[i];
-			const spriteName = BlockType[blockId];
-			const pos = { x: paletteStartX + i * (this.tileSize + 10), y: paletteY };
-			
-			if (this.engine.sprites[spriteName]) {
-				this.engine.drawSprite(spriteName, 0, pos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
-			}
+        // 7. DIBUJAR PALETA (Carrete)
+        const paletteHeight = this.tileSize + 80;
+        const paletteY = this.engine.getCanvasHeight() - paletteHeight;
+        
+        // Fondo paleta
+        this.engine.drawRectangle({
+            x: 0, y: paletteY,
+            width: this.engine.getCanvasWidth(), height: paletteHeight
+        }, "rgba(0, 0, 0, 0.8)");
+        
+        const centerX = this.engine.getCanvasWidth() / 2;
+        const itemSpacing = this.tileSize + 30; 
+        const numVisibleItems = Math.ceil(centerX / itemSpacing) + 2; 
 
-			if (i === this.selectedTileIndex) {
-				const selectionPadding = 1;
+        for (let offset = -numVisibleItems; offset <= numVisibleItems; offset++) {
+            let paletteIndex = (this.selectedTileIndex + offset) % len;
+            if (paletteIndex < 0) paletteIndex += len;
 
-				const selectionRect = {
-					x: pos.x - selectionPadding,
-					y: pos.y - selectionPadding,
-					width: this.tileSize + selectionPadding * 2,
-					height: this.tileSize + selectionPadding * 2
-				}
-				this.engine.drawRectangleLines(selectionRect, selectionPadding * 2, Color.WHITE);
-			}
-		}
+            const blockId = this.editorPalette[paletteIndex];
+            let spriteName = (BlockType && BlockType[blockId]) ? BlockType[blockId] : "Unknown";
+            
+            const drawPos = {
+                x: centerX + (offset * itemSpacing) - (this.tileSize / 2),
+                y: paletteY + 30
+            };
 
-		const selectedBlockId = this.editorPalette[this.selectedTileIndex];
-		const selectedBlockName = BlockType[selectedBlockId];
-		const displayText = `${selectedBlockName} (${selectedBlockId})`;
+            const alpha = offset === 0 ? 1.0 : 0.4;
+            const scale = offset === 0 ? SPRITE_SCALE * 1.2 : SPRITE_SCALE;
+            
+            // Ajuste de centro por escala
+            const adjustedPos = {
+                x: drawPos.x - (scale - SPRITE_SCALE) * (SPRITE_SIZE / 2),
+                y: drawPos.y - (scale - SPRITE_SCALE) * (SPRITE_SIZE / 2)
+            };
 
-		const textPos = {
-			x: this.engine.getCanvasWidth() / 2,
-			y: paletteBox.y - (TEXT_SIZE * 1.5)
-		};
+            if (spriteName !== "Unknown" && this.engine.sprites[spriteName]) {
+                this.engine.ctx.save();
+                this.engine.ctx.globalAlpha = alpha;
+                this.engine.drawSprite(spriteName, 0, adjustedPos, scale, false, 0, Pivot.Top_Left);
+                this.engine.ctx.restore();
+            } else {
+                // Fallback visual si falta imagen
+                this.engine.ctx.save();
+                this.engine.ctx.globalAlpha = alpha;
+                this.engine.drawRectangle({
+                    x: adjustedPos.x, y: adjustedPos.y, 
+                    width: this.tileSize * (scale/SPRITE_SCALE), 
+                    height: this.tileSize * (scale/SPRITE_SCALE)
+                }, "#FF00FF");
+                this.engine.ctx.restore();
+            }
 
-		this.engine.drawTextCustom(font, displayText, TEXT_SIZE, Color.WHITE, textPos, "center");
-	}
+            if (offset === 0) {
+                this.engine.drawRectangleLines({
+                    x: adjustedPos.x - 5, y: adjustedPos.y - 5,
+                    width: (this.tileSize * 1.2) + 10, height: (this.tileSize * 1.2) + 10
+                }, 4, Color.WHITE);
+
+                let displayName = spriteName !== "Unknown" ? spriteName.replace(/_/g, " ") : `ID ${blockId}`;
+                this.engine.drawTextCustom(font, displayName, TEXT_SIZE * 0.8, Color.YELLOW, {
+                    x: this.engine.getCanvasWidth() / 2, y: paletteY + 15
+                }, "center");
+            }
+        }
+    }
 }
