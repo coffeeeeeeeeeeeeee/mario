@@ -1,9 +1,11 @@
-const DEFAULT_LIVES = 1;
-const COIN_SPIN_VELOCITY = 15;
 const SPRITE_SIZE = 16;
 const SPRITE_SCALE = 4;
 const TEXT_SIZE = 16;
 
+const DEFAULT_LIVES = 1;
+const DEFAULT_VOLUME = 0.2;
+
+const COIN_SPIN_VELOCITY = 15;
 const BLACK_SCREEN_DURATION = 2000;
 
 const Game_State = {
@@ -95,6 +97,11 @@ const BlockType = [
 	'Enemy_Koopa_Red',				// 39
 	'Enemy_Pakkun_Red',				// 40
 	'Object_Question',				// 41
+
+	'Block_Pipe_Left_Top',			// 42
+	'Block_Pipe_Right_Top',			// 43
+	'Block_Pipe_Left_Body',			// 44
+	'Block_Pipe_Right_Body',		// 45
 ];
 
 class Game {
@@ -105,8 +112,8 @@ class Game {
 	currentMap = null;
 	savedState = null;
 	
-	volume = 1;
-	savedVolume = 1;
+	volume = DEFAULT_VOLUME;
+	savedVolume = DEFAULT_VOLUME;
 	
 	score = 0;
 	time = 0;
@@ -158,9 +165,10 @@ class Game {
 	isEditorMode = false;
 	editorCursorPos = { x: 0, y: 0 };
 	selectedTileIndex = 0;
-	editorPalette = [
-		1, 2, 24, 3, 41, 34, 5, 6, 7, 8, 13, 26, 10, 11, 39, 12
-	];
+	// editorPalette = [
+	// 	1, 2, 3, 24, 25, 41, 34, 5, 6, 7, 8, 13, 26, 10, 11, 39, 12
+	// ];
+	editorPalette = BlockType;
 
 	OVERWORLD_COLOR = "#5C94FC";
 	UNDERGROUND_COLOR = "#000000";
@@ -181,6 +189,10 @@ class Game {
 
 		const savedHighscore = this.engine.getCookie("smb_highscore");
 		this.highscore = savedHighscore ? parseInt(savedHighscore, 10) : 0;
+
+		const savedVolume = this.engine.getCookie("smb_volume");
+        this.volume = savedVolume !== null ? parseFloat(savedVolume) : DEFAULT_VOLUME;
+        this.updateMusicVolume();
 
 		this.HILL_SMALL_PATTERN = [
 			[' ', 'T', ' '],
@@ -417,19 +429,19 @@ class Game {
 
 					if (enemyType.includes("Pakkun")) {
 
-					    const worldY = coords.y * this.tileSize + this.tileSize * 2;
-					    const screenPosX = this.tileToScreen(coords.x, coords.y).x + this.tileSize / 2;
+						const worldY = coords.y * this.tileSize + this.tileSize * 2;
+						const screenPosX = this.tileToScreen(coords.x, coords.y).x + this.tileSize / 2;
 
-					    this.enemies.push({
-					        type: 'Pakkun', 
-					        color: enemyColor,
-					        x: (screenPosX - this.mapOffset.x),
-					        y: worldY,                         
-					        initialY: worldY,
-					        maxHeight: this.tileSize * 2,
-					        state: 'hiding',
-					        timer: 120
-					    });
+						this.enemies.push({
+							type: 'Pakkun', 
+							color: enemyColor,
+							x: (screenPosX - this.mapOffset.x),
+							y: worldY,                         
+							initialY: worldY,
+							maxHeight: this.tileSize * 2,
+							state: 'hiding',
+							timer: 120
+						});
 					} else {
 						this.enemies.push({
 							id: this.enemies.length,
@@ -625,6 +637,19 @@ class Game {
 		return !(r1.x + r1.w < r2.x || r1.y + r1.h < r2.y || r1.x > r2.x + r2.w || r1.y > r2.y + r2.h);
 	}
 
+	updateMusicVolume() {
+        this.engine.setMasterVolume(this.volume);
+        this.engine.setCookie("smb_volume", this.volume, 365);
+
+        if (typeof audio !== 'undefined') {
+            Object.values(audio).forEach(sound => {
+                if (sound) {
+                    sound.volume = this.volume;
+                }
+            });
+        }
+    }
+
 	updateEnemies(dt) {
 		const player = this.engine.animatedSprites[PlayerName[this.player]];
 		for (let i = this.enemies.length - 1; i >= 0; i--) {
@@ -813,20 +838,20 @@ class Game {
 
 			if (enemy.type === 'Pakkun') {
 
-			    const mapHeight = this.currentMap.dimensions.height;
-			    const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
-			    const screenY = enemy.y + this.mapOffset.y - offsetY;
+				const mapHeight = this.currentMap.dimensions.height;
+				const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+				const screenY = enemy.y + this.mapOffset.y - offsetY;
 
-			    const baseSpriteName = `Enemy_Pakkun_${enemy.color}`;
-			    this.engine.drawSprite(
-			        baseSpriteName,
-			        pakkunGreenAnim.animations.Pakkun_Bite.frames[pakkunGreenAnim.currentFrame],
+				const baseSpriteName = `Enemy_Pakkun_${enemy.color}`;
+				this.engine.drawSprite(
+					baseSpriteName,
+					pakkunGreenAnim.animations.Pakkun_Bite.frames[pakkunGreenAnim.currentFrame],
 
-			        { x: screenX, y: screenY + this.tileSize },
-			        SPRITE_SCALE, 
-			        false, 0, 
-			        Pivot.Bottom_Left
-			    );
+					{ x: screenX, y: screenY + this.tileSize },
+					SPRITE_SCALE, 
+					false, 0, 
+					Pivot.Bottom_Left
+				);
 			} else {
 				const animSprite = this.engine.animatedSprites[spriteNameToDraw];
 				if (!animSprite) continue;
@@ -952,7 +977,7 @@ class Game {
 			} else {
 				this.volume = this.savedVolume;
 			}
-			this.engine.setMasterVolume(this.volume);
+			this.updateMusicVolume();
 		}
 		
 		if(this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']){
@@ -1305,11 +1330,11 @@ class Game {
 			if (block.y >= block.originalY) {
 				let finalId = block.originalId;
 				if (block.originalId === 3 || block.originalId === 41) {
-					finalId = 4;
-				} else if (block.originalId === 34) {
-
-
+					finalId = 4; // Block_Used
+				} else if (block.originalId === 34) { // Super
 					finalId = (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) ? 4 : 34;
+				} else if (block.originalId === 25) { // 1UP
+					finalId = 35; // Question_Used
 				}
 
 				this.currentMap.map[block.mapIndex] = finalId;
@@ -1457,16 +1482,31 @@ class Game {
 			this.velocityY += this.gravity;
 			const newY = playerPos.y + this.velocityY;
 
+			// Colisión con techo
 			if (this.velocityY < 0) {
 
 				const headCenterTile = this.screenToTile(playerPos.x + this.tileSize / 2, newY);
 				let hitCeiling = false;
 				if (inBounds(headCenterTile.x, headCenterTile.y)) {
 					const idx = this.engine.coordsToIndex(headCenterTile, mapWidth);
+					this.handleCoinCollision(idx); 
 					const blockId = this.currentMap.map[idx] || 0;
-					if (isSolid(blockId)) {
+					if (isSolid(blockId) || blockId === 25) {
 						const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 						let blockSoundPlayed = false;
+
+						if (blockId === 2 || blockId === 27) { // Brick / Brick_Middle
+							const idxAbove = idx - mapWidth;
+							if (this.currentMap.map[idxAbove] === 9) { // Moneda
+								this.currentMap.map[idxAbove] = 0;
+
+								this.coins++;
+								this.score += 200;
+
+								this.spawnCoin(blockX, blockY - this.tileSize); 
+								this.engine.playAudioOverlap(audio["Coin"]);
+							}
+						}
 
 						const isBreakableBrick = (blockId === 2 || blockId === 27);
 						const canPlayerBreakBrick = this.playerSize > Player_Size.Small;
@@ -1493,6 +1533,8 @@ class Game {
 							} else if (blockId === 3) {
 								const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
 								this.spawnPowerup(blockX, blockY, powerupType);
+							} else if (blockId === 25) {
+								this.spawnPowerup(blockX, blockY, Powerup_Type.Mushroom_1UP);
 							}
 
 							const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
@@ -1521,6 +1563,7 @@ class Game {
 				for (let tx = bottomLeft.x; tx <= bottomRight.x; tx++) {
 					if (inBounds(tx, bottomLeft.y)) {
 						const idx = this.engine.coordsToIndex({x: tx, y: bottomLeft.y}, mapWidth);
+						this.handleCoinCollision(idx);
 						if (isSolid(this.currentMap.map[idx])) {
 							playerPos.y = this.tileToScreen(tx, bottomLeft.y).y - playerHeight;
 							this.isOnGround = true; this.velocityY = 0; foundGround = true; break;
@@ -1607,14 +1650,45 @@ class Game {
 			const velocityX = (isTurbo ? this.velocityXTurbo : this.velocityXGround) * dt_sec;
 			if (!isCrouching) {
 				if (isTryingToMoveLeft) {
-					player.flipped = true; const newX = playerPos.x - velocityX; const leftTop = this.screenToTile(newX + 4, playerPos.y); const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
-					let blocked = false; for (let ty = leftTop.y; ty <= leftBottom.y; ty++) { if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) { blocked = true; break; } }
+					player.flipped = true;
+					const newX = playerPos.x - velocityX;
+					const leftTop = this.screenToTile(newX + 4, playerPos.y);
+					const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
+					let blocked = false;
+					for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
+						if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
+							blocked = true; break;
+						}
+					}
 					if (!blocked) playerPos.x = newX;
 				} else if (isTryingToMoveRight) {
-					player.flipped = false; const newX = playerPos.x + velocityX; const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y); const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
-					let blocked = false; for (let ty = rightTop.y; ty <= rightBottom.y; ty++) { const tileCoords = { x: rightTop.x, y: ty }; const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth); const blockId = this.currentMap.map[mapIndex];
-						if (blockId === 13) { const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y); playerPos.x = poleCoords.x - this.tileSize / 2; let groundYTile = ty; while (this.currentMap.map[this.engine.coordsToIndex({ x: tileCoords.x, y: groundYTile + 1 }, mapWidth)] === 13) { groundYTile++; } const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize; this.flagpoleInfo = { topY: poleCoords.y, groundY: finalLandingY, castleDoorX: poleCoords.x + this.tileSize * 5 }; this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y }; this.state = Game_State.Level_Complete; this.levelCompleteState = 'none'; return; }
-						if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) { blocked = true; break; }
+					player.flipped = false;
+					const newX = playerPos.x + velocityX;
+					const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
+					const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
+					let blocked = false;
+					for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
+						const tileCoords = { x: rightTop.x, y: ty };
+						const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
+						const blockId = this.currentMap.map[mapIndex];
+						this.handleCoinCollision(mapIndex);
+						if (blockId === 13) {
+							const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
+							playerPos.x = poleCoords.x - this.tileSize / 2;
+							let groundYTile = ty;
+							while (this.currentMap.map[this.engine.coordsToIndex({x: tileCoords.x, y: groundYTile + 1}, mapWidth)] === 13) {
+								groundYTile++;
+							}
+							const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize;
+							this.flagpoleInfo = { topY: poleCoords.y, groundY: finalLandingY, castleDoorX: poleCoords.x + this.tileSize * 5 };
+							this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y };
+							this.state = Game_State.Level_Complete; this.levelCompleteState = 'none'; 
+							return;
+						}
+						if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
+							blocked = true;
+							break;
+						}
 					}
 					if (!blocked) { if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX; else this.mapOffset.x -= velocityX; }
 				}
@@ -1808,7 +1882,7 @@ class Game {
 		let powerup = {
 			x: x - this.mapOffset.x,
 			y: y,
-			vx: type === Powerup_Type.Mushroom_Super ? 2.5 : 0,
+			vx: (type === Powerup_Type.Mushroom_Super || type === Powerup_Type.Mushroom_1UP) ? 2.5 : 0,
 			vy: 0,
 			type: type,
 			state: "emerging",
@@ -1823,8 +1897,18 @@ class Game {
 		this.engine.playAudio(audio["Powerup_Appears"], false);
 	}
 
-	updatePowerups() {
+	handleCoinCollision = (idx) => {
+		if (this.currentMap.map[idx] === 9) {
+			this.currentMap.map[idx] = 0;
+			this.coins++;
+			this.score += 200;
+			this.engine.playAudioOverlap(audio["Coin"]);
+			return true;
+		}
+		return false;
+	};
 
+	updatePowerups() {
 		const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
 		
 		for (let i = this.activePowerups.length - 1; i >= 0; i--) {
@@ -1838,7 +1922,7 @@ class Game {
 				}
 			} 
 
-			else if (p.type === Powerup_Type.Mushroom_Super) {
+			else if (p.type === Powerup_Type.Mushroom_Super || p.type === Powerup_Type.Mushroom_1UP) {
 
 				p.vy += this.gravity;
 				p.y += p.vy;
@@ -1871,12 +1955,15 @@ class Game {
 			const screenX = p.x + this.mapOffset.x;
 			const powerupRect = { x: screenX, y: p.y, w: this.tileSize, h: this.tileSize };
 
+			// Colisión con el hongo
 			if (this.rectsOverlap(playerRect, powerupRect)) {
 				switch (p.type) {
+					// 1UP
 					case Powerup_Type.Mushroom_1UP:
 						this.lives++;
 						this.engine.playAudio(audio["Life"], false);
 						break;
+					// Super
 					case Powerup_Type.Mushroom_Super:
 						if (this.playerSize === Player_Size.Small) {
 							this.state = Game_State.Player_Growing;
@@ -1893,6 +1980,7 @@ class Game {
 						}
 						this.activePowerups.splice(i, 1);
 						continue;
+					// Fire
 					case Powerup_Type.Fire_Flower:
 						if (this.playerSize >= Player_Size.Big) {
 							this.playerSize = Player_Size.Fire;
@@ -1942,7 +2030,13 @@ class Game {
 		const paddingX = TEXT_SIZE * 4;
 		const paddingY = TEXT_SIZE;
 		const colWidth = (this.engine.getCanvasWidth() - paddingX * 2) / cols;
-		this.engine.drawTextCustom(font, PlayerName[this.player], TEXT_SIZE, "#ffffff", {x: paddingX, y: paddingY * 2}, "left");
+		const multChar = String.fromCharCode('0x00D7');
+
+		let nameText = PlayerName[this.player];
+		if (this.lives > 1) {
+			nameText = `${PlayerName[this.player]} ${multChar}${this.lives}`;
+		}
+		this.engine.drawTextCustom(font, nameText, TEXT_SIZE, "#ffffff", {x: paddingX, y: paddingY * 2}, "left");
 		this.engine.drawTextCustom(font, this.score.toString().padStart(6, "0"), TEXT_SIZE, "#ffffff", {x: paddingX, y: paddingY * 3}, "left");
 		
 		const coinSprite = this.engine.sprites["UI_Coin"];
@@ -1951,7 +2045,7 @@ class Game {
 			this.engine.drawSprite("UI_Coin", 0, coinPos, SPRITE_SCALE / 1.8, false, 0, Pivot.Top_Left);
 		}
 
-		const coinText = String.fromCharCode('0x00D7') + this.coins.toString().padStart(2, "0");
+		const coinText = multChar + this.coins.toString().padStart(2, "0");
 		this.engine.drawTextCustom(font, coinText, TEXT_SIZE, "#ffffff", {x: colWidth + paddingX + 32, y: paddingY * 3}, "left");
 		this.engine.drawTextCustom(font, "WORLD", TEXT_SIZE, "#ffffff", {x: colWidth * 2 + paddingX + colWidth / 2, y: paddingY * 2}, "center");
 
