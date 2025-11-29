@@ -96,10 +96,6 @@ class Js2d {
 		}
 	}
 
-	getMousePosition() {
-		return this.mousePos
-	}
-
 	initListeners() {
 		// Mover mouse
 		this.canvas.addEventListener('mousemove', e => {
@@ -136,6 +132,10 @@ class Js2d {
 		window.addEventListener('keydown', e => {
 			this.initAudio();
 			this.keysPressed[e.code] = true;
+			
+			if (e.code === 'Tab') {
+				e.preventDefault();
+			}
 		});
     	window.addEventListener('keyup', e => { delete this.keysPressed[e.code]; });
 
@@ -283,10 +283,11 @@ class Js2d {
 
 		this.ctx.restore()
 	}
-	drawRectangleRoundedLines(rect, cornerRadius, color = Color.BLACK) {
+	drawRectangleRoundedLines(rect, cornerRadius, thickness = 1, color = Color.BLACK) {
 		this.ctx.save()
 
 		this.ctx.strokeStyle = color
+		this.ctx.lineWidth = thickness
 
 		this.ctx.beginPath()
 		this.ctx.roundRect(rect.x, rect.y, rect.width, rect.height, cornerRadius)
@@ -430,6 +431,17 @@ class Js2d {
 		this.ctx.restore()
 	}
 
+	drawDonut(center, outerRadius, innerRadius, startAngle = 0, endAngle = 2 * Math.PI, color = Color.BLACK) {
+		this.ctx.save()
+		this.ctx.fillStyle = color
+		this.ctx.beginPath()
+		this.ctx.arc(center.x, center.y, outerRadius, startAngle, endAngle)
+		this.ctx.arc(center.x, center.y, innerRadius, endAngle, startAngle, true)
+		this.ctx.closePath()
+		this.ctx.fill()
+		this.ctx.restore()
+	}
+
 	drawLine(p1, p2, thickness, color = Color.BLACK, cap = Line_Cap.Butt) {
 		this.ctx.save()
 		this.ctx.lineWidth = thickness
@@ -452,22 +464,48 @@ class Js2d {
 		this.ctx.stroke()
 		this.ctx.restore()
 	}
+
+	beginClippingRect(rect) {
+		this.ctx.save();
+		this.ctx.beginPath();
+		this.ctx.rect(rect.x, rect.y, rect.width, rect.height);
+		this.ctx.clip();
+	}
+	endClipping(){
+		this.ctx.restore();
+	}
 	drawTextCustom(font, text, size, color, pos, alignment = "left") {
 		this.ctx.save();
 
-		if (!font || !font.family) {
+		if (!font || !font.fontFamily) {
 			if (!font) {
 				console.warn("[Js2d] Intento de usar una fuente nula. Se usará la fuente por defecto.");
 			}
 			this.ctx.font = `${size}px monospace`;
 		} else {
-			this.ctx.font = `${size}px "${font.family}"`;
+			this.ctx.font = `${size}px "${font.fontFamily}"`;
 		}
 
 		this.ctx.textAlign = alignment;
 		this.ctx.fillStyle = color;
 		this.ctx.fillText(text, pos.x, pos.y);
 		this.ctx.restore();
+	}
+	measureTextCustom(font, text, size) {
+		this.ctx.save();
+
+		if (!font || !font.fontFamily) {
+			if (!font) {
+				console.warn("[Js2d] Intento de usar una fuente nula. Se usará la fuente por defecto.");
+			}
+			this.ctx.font = `${size}px monospace`;
+		} else {
+			this.ctx.font = `${size}px "${font.fontFamily}"`;
+		}
+
+		const metrics = this.ctx.measureText(text);
+		this.ctx.restore();
+		return metrics.width;
 	}
 	loadFont(name, path) {
 		const customFont = new FontFace(name, `url(${path})`)
@@ -476,7 +514,7 @@ class Js2d {
 			.then((font) => {
 				document.fonts.add(font)
 				console.log(`[Js2d] Fuente "${name}" cargada correctamente desde "${path}"`)
-				return customFont
+				return { fontFamily: name }
 			})
 			.catch((error) => {
 				console.error(`[Js2d] La fuente "${name}" no se pudo cargar:`, error)
@@ -567,8 +605,8 @@ class Js2d {
 				break;
 		}
 		
-		if (font && font.family) {
-			this.ctx.font = `${lineHeight}px "${font.family}"`;
+		if (font && font.fontFamily) {
+			this.ctx.font = `${lineHeight}px "${font.fontFamily}"`;
 		} else {
 			// Fallback
 			this.ctx.font = `${lineHeight}px monospace`;
@@ -576,6 +614,7 @@ class Js2d {
 
 		const words = text.split(' ');
 		let line = '';
+		let lineCount = 1;
 
 		for (let n = 0; n < words.length; n++) {
 			const testLine = line + words[n] + ' ';
@@ -587,12 +626,14 @@ class Js2d {
 				
 				line = words[n] + ' ';
 				y += lineSpacing;
+				lineCount++;
 			} else {
 				line = testLine;
 			}
 		}
 
 		this.drawTextCustom(font, line.trim(), lineHeight, color, { x: drawX, y: y }, alignment);
+		return lineCount;
 	}
 
 	countWrappedLines(font, text, maxWidth, fontSize, lineSpacing) {
@@ -602,7 +643,7 @@ class Js2d {
 		// Guarda el estado actual de la fuente
 		const originalFont = ctx.font; 
 
-		ctx.font = `${fontSize}px ${font.fontFamily}`; // Establece la fuente para medir
+		ctx.font = `${fontSize}px "${font.fontFamily}"`;
 
 		const words = text.split(' ');
 		let currentLine = '';
@@ -711,7 +752,7 @@ class Js2d {
 		}
 
 		if (!imageElement || !imageElement._loaded) {
-			console.warn("[Js2d] drawImage: La imagen no está cargada o es inválida.", imageElement);
+			console.warn("[Js2d] drawImage: La imagen no está cargada o es inválida.");
 			return;
 		}
 
@@ -760,6 +801,93 @@ class Js2d {
 	endAlpha() {
 		this.ctx.globalAlpha = 1
 		this.ctx.restore()
+	}
+
+	npatches = {}
+
+	loadNPatch(name, image, left, top, right, bottom) {
+		if (!image || !image._loaded) {
+			console.warn(`[Js2d] loadNPatch: Imagen no válida o no cargada para NPatch "${name}".`);
+			return;
+		}
+
+		this.npatches[name] = {
+			image: image,
+			left: left,
+			top: top,
+			right: right,
+			bottom: bottom,
+			width: image._w,
+			height: image._h
+		};
+	}
+
+	drawNPatch(npatchNameOrData, pos, size, options = {}) {
+		let npatchData;
+
+		if (typeof npatchNameOrData === 'string') {
+			npatchData = this.npatches[npatchNameOrData];
+			if (!npatchData) {
+				console.warn(`[Js2d] drawNPatch: NPatch "${npatchNameOrData}" no encontrado.`);
+				return;
+			}
+		} else if (npatchNameOrData && npatchNameOrData.image) {
+			npatchData = npatchNameOrData;
+		} else {
+			console.warn("[Js2d] drawNPatch: Datos de NPatch inválidos.");
+			return;
+		}
+
+		const image = npatchData.image;
+		const srcLeft = npatchData.left;
+		const srcTop = npatchData.top;
+		const srcRight = npatchData.right;
+		const srcBottom = npatchData.bottom;
+		const srcWidth = npatchData.width;
+		const srcHeight = npatchData.height;
+		const scale = options.scale || 1;
+
+		const centerWidth = srcWidth - srcLeft - srcRight;
+		const centerHeight = srcHeight - srcTop - srcBottom;
+
+		const dstWidth = size.width;
+		const dstHeight = size.height;
+
+		const dstLeft = Math.round((options.left || srcLeft) * scale);
+		const dstTop = Math.round((options.top || srcTop) * scale);
+		const dstRight = Math.round((options.right || srcRight) * scale);
+		const dstBottom = Math.round((options.bottom || srcBottom) * scale);
+
+		const dstCenterWidth = dstWidth - dstLeft - dstRight;
+		const dstCenterHeight = dstHeight - dstTop - dstBottom;
+
+		this.ctx.imageSmoothingEnabled = false;
+		this.ctx.save();
+
+		const x = Math.round(pos.x);
+		const y = Math.round(pos.y);
+
+		const parts = [
+			{ sx: 0, sy: 0, sw: srcLeft, sh: srcTop, dx: x, dy: y, dw: dstLeft, dh: dstTop },
+			{ sx: srcLeft, sy: 0, sw: centerWidth, sh: srcTop, dx: Math.round(x + dstLeft), dy: y, dw: dstCenterWidth, dh: dstTop },
+			{ sx: srcWidth - srcRight, sy: 0, sw: srcRight, sh: srcTop, dx: Math.round(x + dstLeft + dstCenterWidth), dy: y, dw: dstRight, dh: dstTop },
+
+			{ sx: 0, sy: srcTop, sw: srcLeft, sh: centerHeight, dx: x, dy: Math.round(y + dstTop), dw: dstLeft, dh: dstCenterHeight },
+			{ sx: srcLeft, sy: srcTop, sw: centerWidth, sh: centerHeight, dx: Math.round(x + dstLeft), dy: Math.round(y + dstTop), dw: dstCenterWidth, dh: dstCenterHeight },
+			{ sx: srcWidth - srcRight, sy: srcTop, sw: srcRight, sh: centerHeight, dx: Math.round(x + dstLeft + dstCenterWidth), dy: Math.round(y + dstTop), dw: dstRight, dh: dstCenterHeight },
+
+			{ sx: 0, sy: srcHeight - srcBottom, sw: srcLeft, sh: srcBottom, dx: x, dy: Math.round(y + dstTop + dstCenterHeight), dw: dstLeft, dh: dstBottom },
+			{ sx: srcLeft, sy: srcHeight - srcBottom, sw: centerWidth, sh: srcBottom, dx: Math.round(x + dstLeft), dy: Math.round(y + dstTop + dstCenterHeight), dw: dstCenterWidth, dh: dstBottom },
+			{ sx: srcWidth - srcRight, sy: srcHeight - srcBottom, sw: srcRight, sh: srcBottom, dx: Math.round(x + dstLeft + dstCenterWidth), dy: Math.round(y + dstTop + dstCenterHeight), dw: dstRight, dh: dstBottom }
+		];
+
+		for (const part of parts) {
+			if (part.sw > 0 && part.sh > 0 && part.dw > 0 && part.dh > 0) {
+				this.ctx.drawImage(image, part.sx, part.sy, part.sw, part.sh, Math.round(part.dx), Math.round(part.dy), Math.round(part.dw), Math.round(part.dh));
+			}
+		}
+
+		this.ctx.restore();
 	}
 
 	loadAudio(path) {
@@ -812,10 +940,7 @@ class Js2d {
 	}
 
 	playSoundEffect({ frequency = 440, duration = 0.1, volume = 0.5, type = 'sine', attack = 0.01, release = 0.1 }) {
-		if (!this.audioCtx) {
-			console.warn("[Js2d] El AudioContext no está listo. No se puede reproducir el sonido.");
-			return;
-		}
+		if (!this.audioCtx) return;
 
 		const now = this.audioCtx.currentTime;
 		const gainNode = this.audioCtx.createGain();
@@ -1463,6 +1588,27 @@ class Js2d {
 			g: Math.round(g * 255),
 			b: Math.round(b * 255)
 		};
+	}
+
+	lerpColor(color1, color2, t) {
+		const parseColor = (color) => {
+			if (color.startsWith('#')) {
+				const hex = color.slice(1);
+				return {
+					r: parseInt(hex.substr(0, 2), 16),
+					g: parseInt(hex.substr(2, 2), 16),
+					b: parseInt(hex.substr(4, 2), 16)
+				};
+			}
+			if (color === 'white') return { r: 255, g: 255, b: 255 };
+			return { r: 255, g: 255, b: 255 };
+		};
+		const c1 = parseColor(color1);
+		const c2 = parseColor(color2);
+		const r = Math.round(c1.r + (c2.r - c1.r) * t);
+		const g = Math.round(c1.g + (c2.g - c1.g) * t);
+		const b = Math.round(c1.b + (c2.b - c1.b) * t);
+		return `rgb(${r}, ${g}, ${b})`;
 	}
 
 	noise2D(xin, yin) {

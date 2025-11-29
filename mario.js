@@ -1803,47 +1803,44 @@ class Game {
 
 		const player = this.engine.animatedSprites[currentSpriteName];
 
-		const playerPos = player.position;
-		const slideSpeed = 5;
-		const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
+                const playerPos = player.position;
+                const slideSpeed = 5;
+                const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
 
-		switch(this.levelCompleteState) {
-			switch(this.levelCompleteState) {
-            case 'none':
-                this.stopAllMusic();
-                this.engine.playAudio(audio["Flagpole"], false);
+                switch(this.levelCompleteState) {
+                    case 'none':
+                        this.stopAllMusic();
+                        this.engine.playAudio(audio["Flagpole"], false);
 
-                const poleHeight = this.flagpoleInfo.groundY - this.flagpoleInfo.topY + playerHeight;
-                const playerHeightOnPole = this.flagpoleInfo.groundY - playerPos.y + playerHeight;
-                
-                // Porcentaje de altura (0.0 abajo, 1.0 arriba)
-                const heightPercentage = Math.max(0, Math.min(1, playerHeightOnPole / poleHeight));
+                        const poleHeight = this.flagpoleInfo.groundY - this.flagpoleInfo.topY + playerHeight;
+                        const playerHeightOnPole = this.flagpoleInfo.groundY - playerPos.y + playerHeight;
+                        
+                        const heightPercentage = Math.max(0, Math.min(1, playerHeightOnPole / poleHeight));
 
-                let points = 100;
+				let points = 100;
 
-                // CAMBIO DE PUNTAJES AQUÍ:
-                if (heightPercentage >= 0.95) {
-                    points = 5000; // The very top
-                } else if (heightPercentage >= 0.80) {
-                    points = 2000; // Top side
-                } else if (heightPercentage >= 0.50) {
-                    points = 800;  // Halfway
-                } else if (heightPercentage >= 0.25) {
-                    points = 400;  // Jumping a bit higher
-                } else {
-                    points = 100;  // Very bottom
-                }
+				if (heightPercentage >= 0.95) {
+					points = 5000;
+				} else if (heightPercentage >= 0.80) {
+					points = 2000;
+				} else if (heightPercentage >= 0.50) {
+					points = 800;
+				} else if (heightPercentage >= 0.25) {
+					points = 400;
+				} else {
+					points = 100;
+				}
 
-                this.score += points;
-                this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
-                
-                player.flipped = true;
-                
-                const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
-                this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Slide`);
+				this.score += points;
+				this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
+				
+				player.flipped = true;
+				
+				const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
+				this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Slide`);
 
-                this.levelCompleteState = 'sliding';
-                break;
+				this.levelCompleteState = 'sliding';
+				break;
 
 			case 'sliding':
 				playerPos.y += slideSpeed;
