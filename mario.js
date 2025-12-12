@@ -998,8 +998,34 @@ class Game {
 			menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame() } });
 		}
 
+		const executeMenuSelection = () => {
+			const selection = menuButtons[this.currentSelection];
+			if (selection?.action) {
+				selection.action();
+			}
+		};
+
 		const numButtons = menuButtons.length;
 		const menuGap = this.engine.canvas.height * 0.1 / numButtons;
+		const getMenuSelectionFromPointer = () => {
+			const mousePos = this.engine.getMousePosition();
+			if (!mousePos) return this.currentSelection;
+			let closestIndex = this.currentSelection;
+			let closestDistance = Infinity;
+			for (let i = 0; i < numButtons; i++) {
+				const menuPosY = this.engine.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + TEXT_SIZE;
+				const distance = Math.abs(mousePos.y - menuPosY);
+				if (distance < closestDistance) {
+					closestDistance = distance;
+					closestIndex = i;
+				}
+			}
+			return closestIndex;
+		};
+		const handlePrimaryPress = () => {
+			this.currentSelection = getMenuSelectionFromPointer();
+			executeMenuSelection();
+		};
 		if(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']){ this.engine.keysPressed = []; this.currentSelection--; }
 		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){ this.engine.keysPressed = []; this.currentSelection++; }
 
@@ -1038,11 +1064,14 @@ class Game {
 		}
 		
 		if(this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']){
-			if (menuButtons[this.currentSelection].action) {
-				menuButtons[this.currentSelection].action();
-			}
+			handlePrimaryPress();
 			delete this.engine.keysPressed['Enter'];
 			delete this.engine.keysPressed['Space'];
+		}
+
+		if (this.engine.mouseButtons[0]) {
+			handlePrimaryPress();
+			this.engine.mouseButtons[0] = false;
 		}
 
 		this.currentSelection = ((this.currentSelection % numButtons) + numButtons) % numButtons;
