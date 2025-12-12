@@ -2161,11 +2161,6 @@ class Game {
 		if (this.state !== Game_State.Playing && this.state !== Game_State.Editor) return;
 		const pad = this.touchControls.pad;
 		const padColor = pad.touchId !== null ? TOUCH_CONTROLS.COLOR_ACTIVE : TOUCH_CONTROLS.COLOR_BASE;
-		this.engine.drawCircle(pad.center, pad.radius, padColor);
-		this.engine.drawCircle(pad.center, pad.innerRadius, 'rgba(255,255,255,0.15)');
-		this.engine.drawCircle(pad.knob, pad.innerRadius, TOUCH_CONTROLS.COLOR_ACTIVE);
-		const buttons = this.touchControls.buttons;
-		Object.values(buttons).forEach(button => {
 			const color = button.pressed ? TOUCH_CONTROLS.COLOR_ACTIVE : TOUCH_CONTROLS.COLOR_BASE;
 			this.engine.drawCircle(button.center, button.radius, color);
 			this.engine.drawTextCustom(font, button.label, TEXT_SIZE * 1.2, "#ffffff", { x: button.center.x, y: button.center.y + TEXT_SIZE * 0.4 }, "center");
