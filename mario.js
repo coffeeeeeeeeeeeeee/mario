@@ -5,6 +5,19 @@ const TEXT_SIZE = 16;
 const DEFAULT_LIVES = 1;
 const DEFAULT_VOLUME = 0.2;
 
+const TOUCH_CONTROLS = {
+	PAD_RADIUS: 90,
+	BUTTON_RADIUS: 60,
+	PAD_INNER_RADIUS: 35,
+	MARGIN: 50,
+	BUTTON_SPACING: 30,
+	PAD_THRESHOLD: 0.25,
+	ALPHA_INACTIVE: 0.25,
+	ALPHA_ACTIVE: 0.55,
+	COLOR_BASE: 'rgba(255,255,255,0.35)',
+	COLOR_ACTIVE: 'rgba(255,255,255,0.65)'
+};
+
 const COIN_SPIN_VELOCITY = 15;
 const BLACK_SCREEN_DURATION = 2000;
 
@@ -157,6 +170,15 @@ class Game {
 	scorePopups = [];
 	brickParticles = [];
 	activeFireballs = [];
+	touchControls = null;
+	virtualKeysState = {};
+	virtualKeysDown = new Set();
+	hardwareKeysDown = new Set();
+	touchListenerDisposers = [];
+	boundUpdateTouchLayout = null;
+	boundResetTouchInput = null;
+	boundHardwareKeyDown = null;
+	boundHardwareKeyUp = null;
 
 	fireballCooldown = 0;
 
@@ -243,6 +265,16 @@ class Game {
 			'M': 'Block_Bush_Middle',
 			'R': 'Block_Bush_Right'
 		};
+
+		if (typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator?.maxTouchPoints > 0))) {
+			this.initializeTouchControls();
+		}
+		if (typeof window !== 'undefined') {
+			this.boundHardwareKeyDown = e => this.hardwareKeysDown.add(e.code);
+			this.boundHardwareKeyUp = e => this.hardwareKeysDown.delete(e.code);
+			window.addEventListener('keydown', this.boundHardwareKeyDown);
+			window.addEventListener('keyup', this.boundHardwareKeyUp);
+		}
 	}
 
 	defineWorldSprites() {
@@ -324,18 +356,6 @@ class Game {
 		js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Fire_Flower", "Object_Fire_Flower", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
-
-		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
-		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
-
-		js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
-		js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
-
-		js2d.setAnimationForSprite("Coin", "Coin_Shine");
-		js2d.setAnimationForSprite("UICoin", "Coin_Score");
-
-
-
 
 		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
 		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
@@ -2104,6 +2124,23 @@ class Game {
 
 		this.engine.drawTextCustom(font, "TIME", TEXT_SIZE, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 2}, "right");
 		this.engine.drawTextCustom(font, Math.floor(this.time).toString().padStart(3, "0"), TEXT_SIZE, "#ffffff", {x: this.engine.getCanvasWidth() - paddingX, y: paddingY * 3}, "right");
+		this.drawTouchControls();
+	}
+
+	drawTouchControls() {
+		if (!this.touchControls?.enabled) return;
+		if (this.state !== Game_State.Playing && this.state !== Game_State.Editor) return;
+		const pad = this.touchControls.pad;
+		const padColor = pad.touchId !== null ? TOUCH_CONTROLS.COLOR_ACTIVE : TOUCH_CONTROLS.COLOR_BASE;
+		this.engine.drawCircle(pad.center, pad.radius, padColor);
+		this.engine.drawCircle(pad.center, pad.innerRadius, 'rgba(255,255,255,0.15)');
+		this.engine.drawCircle(pad.knob, pad.innerRadius, TOUCH_CONTROLS.COLOR_ACTIVE);
+		const buttons = this.touchControls.buttons;
+		Object.values(buttons).forEach(button => {
+			const color = button.pressed ? TOUCH_CONTROLS.COLOR_ACTIVE : TOUCH_CONTROLS.COLOR_BASE;
+			this.engine.drawCircle(button.center, button.radius, color);
+			this.engine.drawTextCustom(font, button.label, TEXT_SIZE * 1.2, "#ffffff", { x: button.center.x, y: button.center.y + TEXT_SIZE * 0.4 }, "center");
+		});
 	}
 
 	getCurrentThemeAudio() {

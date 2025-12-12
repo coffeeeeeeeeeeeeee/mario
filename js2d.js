@@ -13,6 +13,109 @@ Color = {
 
 	Black:			'rgba(0, 0, 0, 1)',
 	Transparent:	'rgba(255, 255, 255, 0)',
+
+	rgbToHsl(r, g, b) {
+		r /= 255; g /= 255; b /= 255;
+		const max = Math.max(r, g, b), min = Math.min(r, g, b);
+		let h, s, l = (max + min) / 2;
+
+		if (max === min) {
+			h = s = 0;
+		} else {
+			const d = max - min;
+			s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+			switch (max) {
+				case r: h = ((g - b) / d + (g < b ? 6 : 0)) / 6; break;
+				case g: h = ((b - r) / d + 2) / 6; break;
+				case b: h = ((r - g) / d + 4) / 6; break;
+			}
+		}
+		return { h: Math.round(h * 360), s: Math.round(s * 100), l: Math.round(l * 100) };
+	},
+
+	hslToRgb(h, s, l) {
+		h /= 360; s /= 100; l /= 100;
+		let r, g, b;
+
+		if (s === 0) {
+			r = g = b = l;
+		} else {
+			const hue2rgb = (p, q, t) => {
+				if (t < 0) t += 1;
+				if (t > 1) t -= 1;
+				if (t < 1/6) return p + (q - p) * 6 * t;
+				if (t < 1/2) return q;
+				if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+				return p;
+			};
+			const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+			const p = 2 * l - q;
+			r = hue2rgb(p, q, h + 1/3);
+			g = hue2rgb(p, q, h);
+			b = hue2rgb(p, q, h - 1/3);
+		}
+		return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+	},
+
+	hexToRgb(hex) {
+		const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(hex);
+		if (!result) return null;
+		return {
+			r: parseInt(result[1], 16),
+			g: parseInt(result[2], 16),
+			b: parseInt(result[3], 16),
+			a: result[4] ? parseInt(result[4], 16) : 255
+		};
+	},
+
+	rgbToHex(r, g, b, a) {
+		const toHex = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+		return a !== undefined ? `#${toHex(r)}${toHex(g)}${toHex(b)}${toHex(a)}` : `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+	},
+
+	toRGBAString(r, g, b, a = 255) {
+		return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(2)})`;
+	},
+
+	toHSLString(h, s, l) {
+		return `hsl(${h}, ${s}%, ${l}%)`;
+	},
+
+	blend(color1, color2, t) {
+		const c1 = this.hexToRgb(color1);
+		const c2 = this.hexToRgb(color2);
+		if (!c1 || !c2) return color1;
+		
+		const r = Math.round(c1.r + (c2.r - c1.r) * t);
+		const g = Math.round(c1.g + (c2.g - c1.g) * t);
+		const b = Math.round(c1.b + (c2.b - c1.b) * t);
+		
+		return this.rgbToHex(r, g, b);
+	},
+
+	lighten(hex, amount) {
+		const rgb = this.hexToRgb(hex);
+		if (!rgb) return hex;
+		const hsl = this.rgbToHsl(rgb.r, rgb.g, rgb.b);
+		hsl.l = Math.min(100, hsl.l + amount);
+		const result = this.hslToRgb(hsl.h, hsl.s, hsl.l);
+		return this.rgbToHex(result.r, result.g, result.b);
+	},
+
+	darken(hex, amount) {
+		const rgb = this.hexToRgb(hex);
+		if (!rgb) return hex;
+		const hsl = this.rgbToHsl(rgb.r, rgb.g, rgb.b);
+		hsl.l = Math.max(0, hsl.l - amount);
+		const result = this.hslToRgb(hsl.h, hsl.s, hsl.l);
+		return this.rgbToHex(result.r, result.g, result.b);
+	},
+
+	withAlpha(hex, alpha) {
+		const rgb = this.hexToRgb(hex);
+		if (!rgb) return hex;
+		return this.toRGBAString(rgb.r, rgb.g, rgb.b, Math.round(alpha * 255));
+	}
 }
 
 Line_Cap = {
@@ -51,6 +154,90 @@ class Js2d {
 	audioCtx = null;
 	keysPressed = {};
 	masterVolume = 1.0;
+
+	static clamp(value, min, max) {
+		return Math.max(min, Math.min(max, value));
+	}
+	
+	static lerp(a, b, t) {
+		return a + (b - a) * t;
+	}
+	
+	static inverseLerp(a, b, value) {
+		return (value - a) / (b - a);
+	}
+	
+	static map(value, inMin, inMax, outMin, outMax) {
+		return outMin + (outMax - outMin) * ((value - inMin) / (inMax - inMin));
+	}
+	
+	static distance(x1, y1, x2, y2) {
+		const dx = x2 - x1;
+		const dy = y2 - y1;
+		return Math.sqrt(dx * dx + dy * dy);
+	}
+	
+	static randomRange(min, max) {
+		return min + Math.random() * (max - min);
+	}
+	
+	static randomInt(min, max) {
+		return Math.floor(min + Math.random() * (max - min + 1));
+	}
+
+	lerpColor(color1, color2, t) {
+		const clampT = Math.max(0, Math.min(1, t));
+		const parseHex = color => {
+			if (typeof color !== 'string') return { r: 255, g: 255, b: 255 };
+			if (color.startsWith('#')) {
+				const hex = color.slice(1);
+				if (hex.length === 3) {
+					const r = parseInt(hex[0] + hex[0], 16);
+					const g = parseInt(hex[1] + hex[1], 16);
+					const b = parseInt(hex[2] + hex[2], 16);
+					return { r, g, b };
+				}
+				return {
+					r: parseInt(hex.substring(0, 2), 16),
+					g: parseInt(hex.substring(2, 4), 16),
+					b: parseInt(hex.substring(4, 6), 16)
+				};
+			}
+			switch (color.toLowerCase()) {
+				case 'white': return { r: 255, g: 255, b: 255 };
+				case 'black': return { r: 0, g: 0, b: 0 };
+				case 'red': return { r: 255, g: 0, b: 0 };
+				case 'green': return { r: 0, g: 255, b: 0 };
+				case 'blue': return { r: 0, g: 0, b: 255 };
+				default: return { r: 255, g: 255, b: 255 };
+			}
+		};
+
+		const c1 = parseHex(color1);
+		const c2 = parseHex(color2);
+		const r = Math.round(c1.r + (c2.r - c1.r) * clampT);
+		const g = Math.round(c1.g + (c2.g - c1.g) * clampT);
+		const b = Math.round(c1.b + (c2.b - c1.b) * clampT);
+		return `rgb(${r}, ${g}, ${b})`;
+	}
+
+	truncateText(text, maxWidth, fontSize, fontFamily = 'monospace', ellipsis = '...') {
+		this.ctx.save();
+		this.ctx.font = `${fontSize}px ${fontFamily}`;
+		
+		if (this.ctx.measureText(text).width <= maxWidth) {
+			this.ctx.restore();
+			return text;
+		}
+		
+		let truncated = text;
+		while (truncated.length > 0 && this.ctx.measureText(truncated + ellipsis).width > maxWidth) {
+			truncated = truncated.slice(0, -1);
+		}
+		
+		this.ctx.restore();
+		return truncated + ellipsis;
+	}
 
 	mousePos = { x: 0, y: 0 };
     mouseButtons = [false, false, false]; // [izquierdo, medio, derecho]
@@ -97,15 +284,31 @@ class Js2d {
 	}
 
 	initListeners() {
+		const updateMouseFromClient = (clientX, clientY) => {
+			const rect = this.canvas.getBoundingClientRect();
+			const scaleX = this.canvas.width / rect.width;
+			const scaleY = this.canvas.height / rect.height;
+			this.mousePos.x = (clientX - rect.left) * scaleX;
+			this.mousePos.y = (clientY - rect.top) * scaleY;
+		};
+
+		const emitTouch = (type, event) => {
+			const handlers = this.touchEventHandlers[type];
+			if (!handlers) return;
+			for (let i = 0; i < handlers.length; i++) {
+				const handler = handlers[i];
+				if (handler) handler(event);
+			}
+		};
+
 		// Mover mouse
 		this.canvas.addEventListener('mousemove', e => {
-	        const rect = this.canvas.getBoundingClientRect();
-	        this.mousePos.x = e.clientX - rect.left;
-	        this.mousePos.y = e.clientY - rect.top;
+	        updateMouseFromClient(e.clientX, e.clientY);
 	    });
 
 	    // Clics (presionar)
 		window.addEventListener('mousedown', () => this.initAudio(), { once: true });
+		window.addEventListener('touchstart', () => this.initAudio(), { once: true });
 	    this.canvas.addEventListener('mousedown', e => {
 	        if (e.button >= 0 && e.button < 3) { // 0: izq, 1: medio, 2: der
 	            this.mouseButtons[e.button] = true;
@@ -128,6 +331,45 @@ class Js2d {
 	    // Clic derecho
 	    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
 
+		const updateMouseFromTouch = touch => {
+			if (!touch) return;
+			updateMouseFromClient(touch.clientX, touch.clientY);
+		};
+
+		this.canvas.addEventListener('touchstart', e => {
+			if (e.cancelable) e.preventDefault();
+			const touch = e.touches[0] || e.changedTouches[0];
+			updateMouseFromTouch(touch);
+			this.mouseButtons[0] = true;
+			emitTouch('start', e);
+		}, { passive: false });
+
+		this.canvas.addEventListener('touchmove', e => {
+			if (e.cancelable) e.preventDefault();
+			const touch = e.touches[0] || e.changedTouches[0];
+			updateMouseFromTouch(touch);
+			emitTouch('move', e);
+		}, { passive: false });
+
+		const handleTouchEnd = e => {
+			if (e.cancelable) e.preventDefault();
+			const touch = e.changedTouches[0];
+			updateMouseFromTouch(touch);
+			if (e.touches.length === 0) {
+				this.mouseButtons[0] = false;
+			}
+		};
+
+		this.canvas.addEventListener('touchend', e => {
+			handleTouchEnd(e);
+			emitTouch('end', e);
+		}, { passive: false });
+
+		this.canvas.addEventListener('touchcancel', e => {
+			handleTouchEnd(e);
+			emitTouch('cancel', e);
+		}, { passive: false });
+
 		// Teclado
 		window.addEventListener('keydown', e => {
 			this.initAudio();
@@ -142,15 +384,36 @@ class Js2d {
 		window.addEventListener('resize', () => this.resizeCanvas());
 	}
 
+	addTouchListener(type, handler) {
+		if (!this.touchEventHandlers[type] || typeof handler !== 'function') {
+			return () => {};
+		}
+		this.touchEventHandlers[type].push(handler);
+		return () => {
+			const handlers = this.touchEventHandlers[type];
+			const index = handlers.indexOf(handler);
+			if (index >= 0) {
+				handlers.splice(index, 1);
+			}
+		};
+	}
+
 	getMousePosition() {
 	    return { ...this.mousePos }; // Copia
 	}
 
 	getMouseWheelDelta() {
-		// No modificar sin saber
 	    const delta = this.mouseWheelDelta;
 	    this.mouseWheelDelta = 0;
 	    return delta;
+	}
+	
+	peekMouseWheelDelta() {
+	    return this.mouseWheelDelta;
+	}
+	
+	consumeMouseWheelDelta() {
+	    this.mouseWheelDelta = 0;
 	}
 
 	getCanvasRectangle(){
@@ -250,13 +513,37 @@ class Js2d {
 	}
 
 	// Todos los rectángulos se dibujan desde la esquina "superior izquierda"
-	drawRectangle(rect, color = Color.BLACK) {
+	drawRectangle(rect, color = Color.BLACK, pivot = Pivot.Top_Left) {
+		const width = rect.width || rect.w;
+		const height = rect.height || rect.h;
+		if (width <= 0 || height <= 0) return;
+		
 		this.ctx.save()
 		this.ctx.strokeStyle = "none"
 		this.ctx.fillStyle = color
-		this.ctx.fillRect(rect.x, rect.y, rect.width, rect.height)
+		this.ctx.fillRect(rect.x, rect.y, width, height)
 		this.ctx.restore()
 	}
+
+	drawRectangleOutline(rect, fillColor, borderColor, borderWidth = 1) {
+		const width = rect.width || rect.w;
+		const height = rect.height || rect.h;
+		if (width <= 0 || height <= 0) return;
+
+		const r1 = {x: rect.x, y: rect.y, width: width, height: height};
+		if (fillColor) {
+			this.drawRectangle(r1, fillColor);
+		}
+		
+		if (borderWidth > 0 && borderColor) {
+			const strokeWidth = Math.max(0, width - borderWidth);
+			const strokeHeight = Math.max(0, height - borderWidth);
+			const inset = borderWidth / 2;
+			const r2 = {x: r1.x + inset, y: r1.y + inset, width: strokeWidth, height: strokeHeight};
+			this.drawRectangleLines(r2, borderWidth, borderColor);
+		}
+	}
+
 	drawRectWithAlpha(rect, color, alpha) {
 		this.ctx.save()
 		this.ctx.globalAlpha = alpha
@@ -294,6 +581,25 @@ class Js2d {
 		this.ctx.stroke()
 
 		this.ctx.restore()
+	}
+	drawRectangleRoundedOutline(rect, cornerRadius, fillColor, borderColor, borderWidth = 1) {
+		const width = rect.width || rect.w;
+		const height = rect.height || rect.h;
+		if (width <= 0 || height <= 0) return;
+		const radius = Math.max(0, Math.min(cornerRadius, Math.min(width, height) / 2));
+		
+		const r1 = { x: rect.x, y: rect.y, width: width, height: height};
+		if (fillColor) {
+			this.drawRectangleRounded(r1, cornerRadius, fillColor);
+		}
+		
+		if (borderWidth > 0 && borderColor) {
+			const inset = borderWidth / 2;
+			const strokeWidth = Math.max(0, width - borderWidth);
+			const strokeHeight = Math.max(0, height - borderWidth);
+			const r2 = { x: r1.x + inset, y: r1.y + inset, width: strokeWidth, height: strokeHeight};
+			this.drawRectangleRoundedLines(r2, cornerRadius, borderWidth, borderColor);
+		}
 	}
 
 	drawTriangle(p1, p2, p3, color = Color.BLACK) {
@@ -491,6 +797,13 @@ class Js2d {
 		this.ctx.fillText(text, pos.x, pos.y);
 		this.ctx.restore();
 	}
+	measureText(text, fontSize, fontFamily = 'monospace') {
+		this.ctx.save();
+		this.ctx.font = `${fontSize}px ${fontFamily}`;
+		const width = this.ctx.measureText(text).width;
+		this.ctx.restore();
+		return width;
+	}
 	measureTextCustom(font, text, size) {
 		this.ctx.save();
 
@@ -638,12 +951,15 @@ class Js2d {
 
 	countWrappedLines(font, text, maxWidth, fontSize, lineSpacing) {
 		if (!text || text.length === 0) return 0;
-		const ctx = this.ctx; // Accede al contexto de dibujo de Js2d
+		const ctx = this.ctx;
 		
-		// Guarda el estado actual de la fuente
 		const originalFont = ctx.font; 
 
-		ctx.font = `${fontSize}px "${font.fontFamily}"`;
+		if (!font || !font.fontFamily) {
+			ctx.font = `${fontSize}px monospace`;
+		} else {
+			ctx.font = `${fontSize}px "${font.fontFamily}"`;
+		}
 
 		const words = text.split(' ');
 		let currentLine = '';
@@ -940,7 +1256,7 @@ class Js2d {
 	}
 
 	playSoundEffect({ frequency = 440, duration = 0.1, volume = 0.5, type = 'sine', attack = 0.01, release = 0.1 }) {
-		if (!this.audioCtx) return;
+		if (!this.audioCtx) return null;
 
 		const now = this.audioCtx.currentTime;
 		const gainNode = this.audioCtx.createGain();
@@ -963,6 +1279,8 @@ class Js2d {
 		oscillator.start(now);
 
 		oscillator.stop(now + duration);
+		
+		return { oscillator, gainNode };
 	}
 
 	animations = {}
@@ -1352,6 +1670,10 @@ class Js2d {
 		const distance = Math.sqrt(dx * dx + dy * dy);
 		return distance < circle1.radius + circle2.radius;
 	}
+	checkCollisionPointRect(point, rect) {
+		return point.x >= rect.x && point.x <= rect.x + rect.width &&
+			   point.y >= rect.y && point.y <= rect.y + rect.height;
+	}
 	checkCollisionCircleRect(circle, rect) {
 		const closestX = Math.max(rect.x, Math.min(circle.x, rect.x + rect.width));
 		const closestY = Math.max(rect.y, Math.min(circle.y, rect.y + rect.height));
@@ -1518,97 +1840,6 @@ class Js2d {
 
 			newImage.src = canvas.toDataURL();
 		});
-	}
-
-	componentToHex(c) {
-		const hex = c.toString(16);
-		return hex.length == 1 ? "0" + hex : hex;
-	}
-
-	rgbToHex(r, g, b) {
-		return "#" + this.componentToHex(r) + this.componentToHex(g) + this.componentToHex(b);
-	}
-
-	hexToRgb(hex) {
-		// Expande el formato corto (ej. "03F") al formato completo (ej. "0033FF")
-		const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
-		hex = hex.replace(shorthandRegex, function(m, r, g, b) {
-			return r + r + g + g + b + b;
-		});
-
-		const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-		return result ? {
-			r: parseInt(result[1], 16),
-			g: parseInt(result[2], 16),
-			b: parseInt(result[3], 16)
-		} : null;
-	}
-
-	rgbToHsl(r, g, b) {
-		r /= 255; g /= 255; b /= 255;
-		const max = Math.max(r, g, b), min = Math.min(r, g, b);
-		let h, s, l = (max + min) / 2;
-
-		if (max === min) {
-			h = s = 0; // Acromático
-		} else {
-			const d = max - min;
-			s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-			switch (max) {
-				case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-				case g: h = (b - r) / d + 2; break;
-				case b: h = (r - g) / d + 4; break;
-			}
-			h /= 6;
-		}
-		return { h, s, l };
-	}
-
-	hslToRgb(h, s, l) {
-		let r, g, b;
-		if (s === 0) {
-			r = g = b = l; // Acromático
-		} else {
-			const hue2rgb = (p, q, t) => {
-				if (t < 0) t += 1;
-				if (t > 1) t -= 1;
-				if (t < 1/6) return p + (q - p) * 6 * t;
-				if (t < 1/2) return q;
-				if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-				return p;
-			};
-			const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-			const p = 2 * l - q;
-			r = hue2rgb(p, q, h + 1/3);
-			g = hue2rgb(p, q, h);
-			b = hue2rgb(p, q, h - 1/3);
-		}
-		return {
-			r: Math.round(r * 255),
-			g: Math.round(g * 255),
-			b: Math.round(b * 255)
-		};
-	}
-
-	lerpColor(color1, color2, t) {
-		const parseColor = (color) => {
-			if (color.startsWith('#')) {
-				const hex = color.slice(1);
-				return {
-					r: parseInt(hex.substr(0, 2), 16),
-					g: parseInt(hex.substr(2, 2), 16),
-					b: parseInt(hex.substr(4, 2), 16)
-				};
-			}
-			if (color === 'white') return { r: 255, g: 255, b: 255 };
-			return { r: 255, g: 255, b: 255 };
-		};
-		const c1 = parseColor(color1);
-		const c2 = parseColor(color2);
-		const r = Math.round(c1.r + (c2.r - c1.r) * t);
-		const g = Math.round(c1.g + (c2.g - c1.g) * t);
-		const b = Math.round(c1.b + (c2.b - c1.b) * t);
-		return `rgb(${r}, ${g}, ${b})`;
 	}
 
 	noise2D(xin, yin) {
