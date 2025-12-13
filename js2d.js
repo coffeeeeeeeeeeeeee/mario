@@ -303,6 +303,7 @@ class Js2d {
 		};
 
 		const emitTouch = (type, event) => {
+			if (!this.touchEventHandlers) return;
 			const handlers = this.touchEventHandlers[type];
 			if (!handlers) return;
 			for (let i = 0; i < handlers.length; i++) {
