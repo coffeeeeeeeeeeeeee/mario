@@ -210,7 +210,7 @@ async function init() {
     // UI
     js2d.defineSpriteFromTileset("UI_Coin", "UI_Tiles", 0, 0, 1, fontSize / tileScale / 2);
     js2d.defineSpriteFromTileset("Cursor", "UI_Tiles", 1, 0, 1, fontSize / tileScale / 2);
-    js2d.defineSpriteFromTileset("Object_Coin", "Overworld_Tiles", 0, 9, 5, tileScale);
+    js2d.defineSpriteFromTileset("Coin", "Overworld_Tiles", 0, 9, 5, tileScale);
 
     // Fireball
     js2d.defineSpriteFromTileset("Object_Fireball", "Fireball_Tiles", 0, 0, 4, tileScale);
@@ -232,14 +232,15 @@ async function init() {
 	js2d.createAnimatedSprite("Goomba", "Enemy_Goomba", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Koopa_Green", "Enemy_Koopa_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Koopa_Red", "Enemy_Koopa_Red", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Koopa_Winged_Red", "Enemy_Koopa_Winged_Red", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Koopa_Winged_Green", "Enemy_Koopa_Winged_Green", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Koopa_Shell_Red", "Koopa_Shell_Red", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Koopa_Winged_Red", "Enemy_Koopa_Winged_Red", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Koopa_Shell_Green", "Koopa_Shell_Green", {x: 0, y: 0}, tileScale);
-	js2d.createAnimatedSprite("Pakkun_Green", "Enemy_Pakkun_Green", {x: 0, yas: 0}, tileScale);
+	js2d.createAnimatedSprite("Koopa_Shell_Red", "Koopa_Shell_Red", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Pakkun_Green", "Enemy_Pakkun_Green", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Pakkun_Red", "Enemy_Pakkun_Red", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Fireball", "Object_Fireball", {x: 0, y: 0}, tileScale);
 	js2d.createAnimatedSprite("Fireball_Hit", "Object_Fireball_Hit", {x: 0, y: 0}, tileScale);
+	js2d.createAnimatedSprite("Coin", "Coin", {x: 0, y: 0}, tileScale);
 
 	// Animaciones
 	// Small
@@ -325,13 +326,33 @@ async function init() {
 	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Idle", [0], true, 16);
 	js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Sliding", [0, 1], true, 16);
 
-	js2d.addAnimationToSprite("Object_Coin", "Object_Coin_Spin", [0, 1, 2, 3], true, 8);
+	js2d.addAnimationToSprite("Coin", "Object_Coin_Spin", [0, 1, 2, 3], true, 8);
 
 	//
 	// ---
 	//
 
 	// Default
+	js2d.setAnimationForSprite("Mario", "Mario_Idle");
+	js2d.setAnimationForSprite("Luigi", "Luigi_Idle");
+	js2d.setAnimationForSprite("Mario_Grow", "Mario_Growing");
+	js2d.setAnimationForSprite("Luigi_Grow", "Luigi_Growing");
+	js2d.setAnimationForSprite("Mario_Big", "Mario_Big_Idle");
+	js2d.setAnimationForSprite("Luigi_Big", "Luigi_Big_Idle");
+	js2d.setAnimationForSprite("Mario_Fire", "Mario_Fire_Idle");
+	js2d.setAnimationForSprite("Luigi_Fire", "Luigi_Fire_Idle");
+	js2d.setAnimationForSprite("Goomba", "Goomba_Walk");
+	js2d.setAnimationForSprite("Koopa_Green", "Koopa_Walk");
+	js2d.setAnimationForSprite("Koopa_Red", "Koopa_Walk");
+	js2d.setAnimationForSprite("Koopa_Winged_Green", "Koopa_Winged_Walk");
+	js2d.setAnimationForSprite("Koopa_Winged_Red", "Koopa_Winged_Walk");
+	js2d.setAnimationForSprite("Pakkun_Red", "Pakkun_Bite");
+	js2d.setAnimationForSprite("Pakkun_Green", "Pakkun_Bite");
+	js2d.setAnimationForSprite("Koopa_Shell_Green", "Shell_Idle");
+	js2d.setAnimationForSprite("Koopa_Shell_Red", "Shell_Idle");
+	js2d.setAnimationForSprite("Fireball", "Spin");
+	js2d.setAnimationForSprite("Fireball_Hit", "Explode");
+	js2d.setAnimationForSprite("Coin", "Object_Coin_Spin");
 	js2d.setAnimationForSprite("Mario", "Mario_Idle");
 	js2d.setAnimationForSprite("Luigi", "Luigi_Idle");
 	js2d.setAnimationForSprite("Mario_Grow", "Mario_Growing");

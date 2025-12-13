@@ -266,22 +266,112 @@ class Game {
 			'R': 'Block_Bush_Right'
 		};
 
+		if (typeof this.initializeTouchControls === 'function') {
+			this.initializeTouchControls = this.initializeTouchControls.bind(this);
+		}
+
 		if (typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator?.maxTouchPoints > 0))) {
-			this.initializeTouchControls();
+			if (typeof this.initializeTouchControls === 'function') {
+				this.initializeTouchControls();
+			} else {
+				console.warn('[GAME] initializeTouchControls no disponible; controles táctiles deshabilitados.');
+			}
 		}
-		if (typeof window !== 'undefined') {
-			this.boundHardwareKeyDown = e => this.hardwareKeysDown.add(e.code);
-			this.boundHardwareKeyUp = e => this.hardwareKeysDown.delete(e.code);
-			window.addEventListener('keydown', this.boundHardwareKeyDown);
-			window.addEventListener('keyup', this.boundHardwareKeyUp);
+
+		let tilesetName = "Overworld_Tiles";
+		const tileScale = SPRITE_SCALE;
+
+		switch (this.currentMap?.type ?? World_Type.Overworld) {
+			case World_Type.Underground:
+				tilesetName = "Underground_Tiles";
+				break;
+			case World_Type.Overworld:
+			default:
+				tilesetName = "Overworld_Tiles";
+				break;
 		}
+
+		js2d.defineSpriteFromTileset("Block_Black", tilesetName, 0, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Ground", tilesetName, 1, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Stairs", tilesetName, 2, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Zigzag", tilesetName, 5, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Zigzag_Filled", tilesetName, 6, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Arch", tilesetName, 7, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Break", tilesetName, 8, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Brick_Cut", tilesetName, 9, 0, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Question",				tilesetName, 0, 1, 3, tileScale);
+		js2d.defineSpriteFromTileset("Object_Coinbox_Multiple",	tilesetName, 0, 1, 3, tileScale);
+		js2d.defineSpriteFromTileset("Block_Question_Used",		tilesetName, 1, 1, 1, tileScale);
+		js2d.defineSpriteFromTileset("Object_Twentyfive",			tilesetName, 2, 1, 3, tileScale);
+		js2d.defineSpriteFromTileset("Object_Coin",					tilesetName, 7, 1, 3, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Used",		tilesetName, 3, 1, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Invisible",	tilesetName, 15, 15, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Empty",		tilesetName, 15, 15, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Pipe_Start_Top", tilesetName, 4, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Start_Bottom", tilesetName, 5, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 8, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 9, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_End_Top", tilesetName, 6, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", tilesetName, 7, 2, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Pipe_Top_Left", tilesetName, 0, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", tilesetName, 1, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
+
+		const sceneryTileset = "Overworld_Tiles";
+
+		js2d.defineSpriteFromTileset("Block_Cloud_Top_Left", sceneryTileset, 0, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Top_Middle", sceneryTileset, 1, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Top_Right", sceneryTileset, 2, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Left", sceneryTileset, 3, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Middle", sceneryTileset, 4, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Bottom_Right", sceneryTileset, 5, 4, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Bush_Left", sceneryTileset, 12, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Bush_Middle", sceneryTileset, 13, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Bush_Right", sceneryTileset, 14, 4, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Hill_Left", sceneryTileset, 6, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_1", sceneryTileset, 7, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Middle", sceneryTileset, 8, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Middle_Hole_2", sceneryTileset, 9, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Right", sceneryTileset, 10, 4, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Hill_Top", sceneryTileset, 11, 4, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Block_Flagpole_Top", sceneryTileset, 0, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Flagpole", sceneryTileset, 1, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Object_Flag", sceneryTileset, 2, 3, 1, tileScale);
+
+		js2d.defineSpriteFromTileset("Object_Mushroom_Super", sceneryTileset, 0, 6, 1, tileScale);
+		js2d.defineSpriteFromTileset("Object_Mushroom_1UP", sceneryTileset, 1, 6, 1, tileScale);
+		js2d.defineSpriteFromTileset("Object_Fire_Flower", sceneryTileset, 0, 7, 4, tileScale);
+
+		js2d.createAnimatedSprite("Mushroom_Super", "Object_Mushroom_Super", {x: 0, y: 0}, tileScale);
+		js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
+		js2d.createAnimatedSprite("Fire_Flower", "Object_Fire_Flower", {x: 0, y: 0}, tileScale);
+		js2d.createAnimatedSprite("Coin", "Object_Coin",  {x: 0, y: 0}, tileScale);
+
+		js2d.createAnimatedSprite("UICoin", "UI_Coin",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
+		js2d.createAnimatedSprite("Cursor", "Cursor",  {x: 0, y: 0}, TEXT_SIZE / this.tileSize);
+
+		js2d.addAnimationToSprite("Coin", "Coin_Shine", [0, 1, 2], true, 8);
+		js2d.addAnimationToSprite("UICoin", "Coin_Score", [0, 1, 2], true, 8);
+		
+		js2d.setAnimationForSprite("Coin", "Coin_Shine");
+		js2d.setAnimationForSprite("UICoin", "Coin_Score");
 	}
 
 	defineWorldSprites() {
 		let tilesetName = "Overworld_Tiles";
 		const tileScale = SPRITE_SCALE;
 
-		switch (this.currentMap.type) {
+		switch (this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Underground:
 				tilesetName = "Underground_Tiles";
 				break;
@@ -2161,10 +2251,259 @@ class Game {
 		if (this.state !== Game_State.Playing && this.state !== Game_State.Editor) return;
 		const pad = this.touchControls.pad;
 		const padColor = pad.touchId !== null ? TOUCH_CONTROLS.COLOR_ACTIVE : TOUCH_CONTROLS.COLOR_BASE;
+		this.engine.drawCircle(pad.center, pad.radius, padColor);
+		this.engine.drawCircle(pad.center, pad.innerRadius, 'rgba(255,255,255,0.15)');
+		this.engine.drawCircle(pad.knob, pad.innerRadius, TOUCH_CONTROLS.COLOR_ACTIVE);
+		const buttons = this.touchControls.buttons;
+		Object.values(buttons).forEach(button => {
 			const color = button.pressed ? TOUCH_CONTROLS.COLOR_ACTIVE : TOUCH_CONTROLS.COLOR_BASE;
 			this.engine.drawCircle(button.center, button.radius, color);
 			this.engine.drawTextCustom(font, button.label, TEXT_SIZE * 1.2, "#ffffff", { x: button.center.x, y: button.center.y + TEXT_SIZE * 0.4 }, "center");
 		});
+	}
+
+	initializeTouchControls() {
+		if (!this.engine?.canvas) return;
+		if (this.touchControls?.initialized) return;
+		this.disposeTouchListeners();
+		this.touchControls = {
+			initialized: true,
+			enabled: true,
+			pad: {
+				center: { x: 0, y: 0 },
+				radius: TOUCH_CONTROLS.PAD_RADIUS,
+				innerRadius: TOUCH_CONTROLS.PAD_INNER_RADIUS,
+				touchId: null,
+				vector: { x: 0, y: 0 },
+				knob: { x: 0, y: 0 }
+			},
+			buttons: {
+				jump: {
+					label: "A",
+					keys: ["ArrowUp", "KeyW"],
+					center: { x: 0, y: 0 },
+					radius: TOUCH_CONTROLS.BUTTON_RADIUS,
+					touchId: null,
+					pressed: false
+				},
+				shoot: {
+					label: "B",
+					keys: ["ControlLeft", "ControlRight", "Space"],
+					center: { x: 0, y: 0 },
+					radius: TOUCH_CONTROLS.BUTTON_RADIUS,
+					touchId: null,
+					pressed: false
+				}
+			}
+		};
+		if (typeof window !== 'undefined') {
+			this.boundHardwareKeyDown = e => this.hardwareKeysDown.add(e.code);
+			this.boundHardwareKeyUp = e => this.hardwareKeysDown.delete(e.code);
+			window.addEventListener('keydown', this.boundHardwareKeyDown);
+			window.addEventListener('keyup', this.boundHardwareKeyUp);
+		}
+
+		this.boundUpdateTouchLayout = () => this.updateTouchLayout();
+		this.boundResetTouchInput = () => this.resetTouchInput();
+		window.addEventListener("resize", this.boundUpdateTouchLayout);
+		window.addEventListener("orientationchange", this.boundUpdateTouchLayout);
+		window.addEventListener("blur", this.boundResetTouchInput);
+		this.touchListenerDisposers = [
+			this.engine.addTouchListener("start", e => this.handleTouchStart(e)),
+			this.engine.addTouchListener("move", e => this.handleTouchMove(e)),
+			this.engine.addTouchListener("end", e => this.handleTouchEnd(e)),
+			this.engine.addTouchListener("cancel", e => this.handleTouchEnd(e))
+		];
+		this.updateTouchLayout();
+	}
+
+	disposeTouchListeners() {
+		if (this.touchListenerDisposers?.length) {
+			this.touchListenerDisposers.forEach(dispose => {
+				if (typeof dispose === "function") dispose();
+			});
+		}
+		this.touchListenerDisposers = [];
+		if (this.boundUpdateTouchLayout) {
+			window.removeEventListener("resize", this.boundUpdateTouchLayout);
+			window.removeEventListener("orientationchange", this.boundUpdateTouchLayout);
+			this.boundUpdateTouchLayout = null;
+		}
+		if (this.boundResetTouchInput) {
+			window.removeEventListener("blur", this.boundResetTouchInput);
+			this.boundResetTouchInput = null;
+		}
+	}
+
+	updateTouchLayout() {
+		if (!this.touchControls?.enabled) return;
+		const canvasWidth = this.engine.getCanvasWidth();
+		const canvasHeight = this.engine.getCanvasHeight();
+		const pad = this.touchControls.pad;
+		pad.center.x = TOUCH_CONTROLS.MARGIN + pad.radius;
+		pad.center.y = canvasHeight - (TOUCH_CONTROLS.MARGIN + pad.radius);
+		pad.knob.x = pad.center.x;
+		pad.knob.y = pad.center.y;
+		pad.vector = { x: 0, y: 0 };
+		const buttons = this.touchControls.buttons;
+		const jump = buttons.jump;
+		const shoot = buttons.shoot;
+		jump.center.x = canvasWidth - (TOUCH_CONTROLS.MARGIN + jump.radius);
+		jump.center.y = canvasHeight - (TOUCH_CONTROLS.MARGIN + jump.radius * 1.25);
+		shoot.center.x = jump.center.x - (jump.radius * 2 + TOUCH_CONTROLS.BUTTON_SPACING);
+		shoot.center.y = jump.center.y - jump.radius * 0.25;
+		Object.values(buttons).forEach(button => {
+			button.touchId = null;
+			button.pressed = false;
+		});
+		this.applyPadDirection();
+	}
+
+	handleTouchStart(event) {
+		if (!this.touchControls?.enabled) return;
+		const pad = this.touchControls.pad;
+		const buttons = this.touchControls.buttons;
+		Array.from(event.changedTouches || []).forEach(touch => {
+			const point = this.getTouchPoint(touch);
+			if (pad.touchId === null && this.isPointInsideCircle(point, pad.center, pad.radius)) {
+				pad.touchId = touch.identifier;
+				this.updatePadVector(point);
+				return;
+			}
+			Object.values(buttons).forEach(button => {
+				if (button.touchId !== null) return;
+				if (this.isPointInsideCircle(point, button.center, button.radius)) {
+					button.touchId = touch.identifier;
+					this.pressButton(button, true);
+				}
+			});
+		});
+	}
+
+	handleTouchMove(event) {
+		if (!this.touchControls?.enabled) return;
+		const pad = this.touchControls.pad;
+		const buttons = this.touchControls.buttons;
+		Array.from(event.changedTouches || []).forEach(touch => {
+			const point = this.getTouchPoint(touch);
+			if (pad.touchId === touch.identifier) {
+				this.updatePadVector(point);
+			}
+			Object.values(buttons).forEach(button => {
+				if (button.touchId !== touch.identifier) return;
+				if (this.isPointInsideCircle(point, button.center, button.radius)) return;
+				this.pressButton(button, false);
+				button.touchId = null;
+			});
+		});
+	}
+
+	handleTouchEnd(event) {
+		if (!this.touchControls?.enabled) return;
+		const pad = this.touchControls.pad;
+		const buttons = this.touchControls.buttons;
+		Array.from(event.changedTouches || []).forEach(touch => {
+			if (pad.touchId === touch.identifier) {
+				pad.touchId = null;
+				pad.vector = { x: 0, y: 0 };
+				pad.knob = { x: pad.center.x, y: pad.center.y };
+				this.applyPadDirection();
+			}
+			Object.values(buttons).forEach(button => {
+				if (button.touchId !== touch.identifier) return;
+				this.pressButton(button, false);
+				button.touchId = null;
+			});
+		});
+	}
+
+	getTouchPoint(touch) {
+		const rect = this.engine.canvas.getBoundingClientRect();
+		const scaleX = this.engine.canvas.width / rect.width;
+		const scaleY = this.engine.canvas.height / rect.height;
+		return {
+			x: (touch.clientX - rect.left) * scaleX,
+			y: (touch.clientY - rect.top) * scaleY
+		};
+	}
+
+	updatePadVector(point) {
+		const pad = this.touchControls.pad;
+		const dx = point.x - pad.center.x;
+		const dy = point.y - pad.center.y;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		const cappedDistance = Math.min(distance, pad.radius);
+		const vector = distance === 0 ? { x: 0, y: 0 } : { x: dx / pad.radius, y: dy / pad.radius };
+		if (distance < pad.radius * TOUCH_CONTROLS.PAD_THRESHOLD) {
+			pad.vector = { x: 0, y: 0 };
+			pad.knob = { x: pad.center.x, y: pad.center.y };
+		} else {
+			pad.vector = vector;
+			const knobDistance = Math.min(cappedDistance, pad.radius - pad.innerRadius);
+			pad.knob = {
+				x: pad.center.x + vector.x * knobDistance,
+				y: pad.center.y + vector.y * knobDistance
+			};
+		}
+		this.applyPadDirection();
+	}
+
+	applyPadDirection() {
+		const pad = this.touchControls?.pad;
+		if (!pad) return;
+		const threshold = TOUCH_CONTROLS.PAD_THRESHOLD;
+		const leftActive = pad.vector.x <= -threshold;
+		const rightActive = pad.vector.x >= threshold;
+		const upActive = pad.vector.y <= -threshold;
+		const downActive = pad.vector.y >= threshold;
+		this.setVirtualKey(["ArrowLeft", "KeyA"], leftActive);
+		this.setVirtualKey(["ArrowRight", "KeyD"], rightActive);
+		this.setVirtualKey(["ArrowUp", "KeyW"], upActive);
+		this.setVirtualKey(["ArrowDown", "KeyS"], downActive);
+	}
+
+	setVirtualKey(code, active) {
+		const codes = Array.isArray(code) ? code : [code];
+		codes.forEach(keyCode => {
+			if (!keyCode) return;
+			if (active) {
+				this.virtualKeysState[keyCode] = true;
+				this.virtualKeysDown.add(keyCode);
+				this.engine.keysPressed[keyCode] = true;
+			} else {
+				this.virtualKeysState[keyCode] = false;
+				if (this.virtualKeysDown.has(keyCode)) this.virtualKeysDown.delete(keyCode);
+				if (!this.hardwareKeysDown.has(keyCode)) {
+					delete this.engine.keysPressed[keyCode];
+				}
+			}
+		});
+	}
+
+	pressButton(button, active) {
+		if (!button) return;
+		button.pressed = active;
+		this.setVirtualKey(button.keys, active);
+	}
+
+	resetTouchInput() {
+		if (!this.touchControls) return;
+		const pad = this.touchControls.pad;
+		pad.touchId = null;
+		pad.vector = { x: 0, y: 0 };
+		pad.knob = { x: pad.center.x, y: pad.center.y };
+		const buttons = this.touchControls.buttons;
+		Object.values(buttons).forEach(button => {
+			if (button.pressed) this.pressButton(button, false);
+			button.touchId = null;
+		});
+		this.applyPadDirection();
+	}
+
+	isPointInsideCircle(point, center, radius) {
+		const dx = point.x - center.x;
+		const dy = point.y - center.y;
+		return dx * dx + dy * dy <= radius * radius;
 	}
 
 	getCurrentThemeAudio() {
