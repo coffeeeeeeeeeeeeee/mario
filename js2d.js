@@ -242,8 +242,12 @@ class Js2d {
 	mousePos = { x: 0, y: 0 };
     mouseButtons = [false, false, false]; // [izquierdo, medio, derecho]
     mouseWheelDelta = 0;
-	
-	// Propiedades para el contador de FPS
+	touchEventHandlers = {
+		start: [],
+		move: [],
+		end: [],
+		cancel: []
+	};
 	#lastFrameTime = 0;
 	#frameCount = 0;
 	#fps = 0;
@@ -262,6 +266,12 @@ class Js2d {
 		this.canvas = canvas;
 		this.ctx = canvas.getContext('2d');
 		this.tilesets = {};
+		this.touchEventHandlers = {
+			start: [],
+			move: [],
+			end: [],
+			cancel: []
+		};
 
 		this.initListeners();
 		
