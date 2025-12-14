@@ -1,5 +1,13 @@
-const SPRITE_SIZE = 16;
+const SPRITE_SIZE = 32;
+const TILE_PIXEL_SIZE = 16;
+
 const SPRITE_SCALE = 4;
+const BASE_JUMP_POWER = -22;
+const BASE_GRAVITY = 0.8;
+const BASE_VELOCITY_GROUND = (TILE_PIXEL_SIZE * 9.10 / 16) * 60;
+const BASE_VELOCITY_TURBO = (TILE_PIXEL_SIZE * 14.4 / 16) * 60;
+const BASE_VELOCITY_SWIM = (TILE_PIXEL_SIZE * 17.6 / 16) * 60;
+
 const TEXT_SIZE = 16;
 
 const DEFAULT_LIVES = 1;
@@ -22,13 +30,13 @@ const COIN_SPIN_VELOCITY = 15;
 const BLACK_SCREEN_DURATION = 2000;
 
 const Game_State = {
-	Title_Menu: 0,
-	Pause:      1,
-	Playing:    2,
-	Player_Dying: 3,
-	Black_Screen: 4,
-	Level_Complete: 5,
-	Editor: 6,
+	Title_Menu:		0,
+	Pause:			1,
+	Playing:		2,
+	Player_Dying:	3,
+	Black_Screen:	4,
+	Level_Complete:	5,
+	Editor:			6,
 };
 
 const Player = {
@@ -116,6 +124,9 @@ const BlockType = [
 	'Block_Pipe_Body_Bottom',		// 45
 	'Block_Pipe_End_Top',			// 46
 	'Block_Pipe_End_Bottom',		// 47
+	'Block_Pipe_Top_Center',		// 48
+	'Block_Pipe_Body_Center',		// 49
+	'Block_Pipe_End_Center',		// 50
 ];
 
 class Game {
@@ -144,10 +155,11 @@ class Game {
 	currentSelection = 0;
 	currentWorldIndex = 0;
 	mapOffset = {x: 0, y: 0};
-	tileSize = SPRITE_SIZE * SPRITE_SCALE;
+	tileScale = SPRITE_SCALE;
+	tileSize = TILE_PIXEL_SIZE * this.tileScale;
 	velocityY = 0;
-	jumpPower = -22;
-	gravity = 0.8;
+	jumpPower = 0;
+	gravity = 0;
 	slideVelocityX = 0;
 	
 	isInvincible = false;
@@ -202,7 +214,7 @@ class Game {
         11, // Koopa Rojo
         12, // Koopa Verde
         12, // Planta Piraña
-        42, 43, 44, 45, 46, 47, // Tuberías Horizontal
+        42, 43, 44, 45, 46, 47, 48, 49, 50, // Tuberías Horizontal
 
     ];
 	// editorPalette = BlockType;
@@ -212,12 +224,16 @@ class Game {
 	UNDERWATER_COLOR = "#5C94FC";
 	CASTLE_COLOR = "#000000";
 
-	velocityXGround = (SPRITE_SIZE * 9.10 / 16) * 60;
-	velocityXTurbo  = (SPRITE_SIZE * 14.4 / 16) * 60;
-	velocityXSwim   = (SPRITE_SIZE * 17.6 / 16) * 60;
+	velocityXGround = BASE_VELOCITY_GROUND;
+	velocityXTurbo  = BASE_VELOCITY_TURBO;
+	velocityXSwim   = BASE_VELOCITY_SWIM;
 
-	constructor(engine, textSize) {
+
+	constructor(engine, textSize, spriteScale = SPRITE_SCALE) {
 		this.engine = engine;
+		this.tileScale = spriteScale;
+		this.tileSize = TILE_PIXEL_SIZE * this.tileScale;
+		this.updatePhysicsScaling();
 		this.specialBlocks = {};
 		this.foregroundBlocks = [5, 6, 7, 8];
 		
@@ -279,7 +295,7 @@ class Game {
 		}
 
 		let tilesetName = "Overworld_Tiles";
-		const tileScale = SPRITE_SCALE;
+		const tileScale = this.tileScale;
 
 		switch (this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Underground:
@@ -367,9 +383,18 @@ class Game {
 		js2d.setAnimationForSprite("UICoin", "Coin_Score");
 	}
 
+	updatePhysicsScaling() {
+		const scaleFactor = this.tileScale / SPRITE_SCALE;
+		this.jumpPower = BASE_JUMP_POWER * scaleFactor;
+		this.gravity = BASE_GRAVITY * scaleFactor;
+		this.velocityXGround = BASE_VELOCITY_GROUND * scaleFactor;
+		this.velocityXTurbo = BASE_VELOCITY_TURBO * scaleFactor;
+		this.velocityXSwim = BASE_VELOCITY_SWIM * scaleFactor;
+	}
+
 	defineWorldSprites() {
 		let tilesetName = "Overworld_Tiles";
-		const tileScale = SPRITE_SCALE;
+		const tileScale = this.tileScale;
 
 		switch (this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Underground:
@@ -488,8 +513,8 @@ class Game {
 	tileToScreen(tx, ty) {
 		const mapHeight = this.currentMap.dimensions.height;
 		const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
-		const x = tx * this.tileSize + this.mapOffset.x;
-		const y = ty * this.tileSize + this.mapOffset.y - offsetY;
+		const x = Math.round(tx * this.tileSize + this.mapOffset.x);
+		const y = Math.round(ty * this.tileSize + this.mapOffset.y - offsetY);
 		return { x, y };
 	}
 
@@ -848,6 +873,7 @@ class Game {
 				}
 
 				const enemyHeight = (enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+
 				enemy.vy += this.gravity;
 				enemy.y += enemy.vy;
 
@@ -969,15 +995,14 @@ class Game {
 		}
 
 		for (const enemy of this.enemies) {
+
 			const screenX = enemy.x + this.mapOffset.x;
-			if (screenX < -this.tileSize || screenX > this.engine.canvas.width) continue;
 
 			let spriteNameToDraw = enemy.type;
 
 			if (enemy.color) {
 				spriteNameToDraw = `${enemy.type}_${enemy.color}`;
 			}
-
 
 			if (enemy.type === 'Koopa' && enemy.isWinged) {
 				 spriteNameToDraw = `Koopa_Winged_${enemy.color}`;
@@ -995,7 +1020,7 @@ class Game {
 					pakkunGreenAnim.animations.Pakkun_Bite.frames[pakkunGreenAnim.currentFrame],
 
 					{ x: screenX, y: screenY + this.tileSize },
-					SPRITE_SCALE, 
+					this.tileScale, 
 					false, 0, 
 					Pivot.Bottom_Left
 				);
@@ -1044,7 +1069,7 @@ class Game {
 				const spriteName = "Player_" + PlayerName[this.player];
 				const playerSprite = this.engine.sprites[spriteName];
 				if(playerSprite) {
-					this.engine.drawSprite(spriteName, 0, playerImagePos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+					this.engine.drawSprite(spriteName, 0, playerImagePos, this.tileScale, false, 0, Pivot.Top_Left);
 				}
 				break;
 
@@ -1075,7 +1100,7 @@ class Game {
 		const titleImg = titleSprite.image;
 		const titlePosX = this.engine.canvas.width / 2;
 		const titlePosY = this.tileSize * 1.5;
-		const titleScale = SPRITE_SCALE * this.engine.getCanvasHeight() * titleMaxY * 0.002;
+		const titleScale = this.tileScale * this.engine.getCanvasHeight() * titleMaxY * 0.002;
 		const titleWidth = titleImg.width * titleScale;
 		const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
 		this.engine.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
@@ -1085,7 +1110,7 @@ class Game {
 			{ name: "LUIGI GAME", action: () => { this.selectPlayer(Player.Luigi); }},
 		];
 		if(this.savedState){
-			menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame() } });
+			menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame(); } });
 		}
 
 		const executeMenuSelection = () => {
@@ -1116,19 +1141,26 @@ class Game {
 			this.currentSelection = getMenuSelectionFromPointer();
 			executeMenuSelection();
 		};
-		if(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']){ this.engine.keysPressed = []; this.currentSelection--; }
-		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){ this.engine.keysPressed = []; this.currentSelection++; }
+		if(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']){
+			this.engine.keysPressed = [];
+			this.currentSelection--;
+		}
+		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){
+			this.engine.keysPressed = [];
+			this.currentSelection++;
+		}
 
 		if(this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA']){
-			this.engine.keysPressed['ArrowLeft'] = false; this.engine.keysPressed['KeyA'] = false;
+			this.engine.keysPressed['ArrowLeft'] = false;
+			this.engine.keysPressed['KeyA'] = false;
 			this.currentWorldIndex--;
 		}
 		if(this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD']){
-			this.engine.keysPressed['ArrowRight'] = false; this.engine.keysPressed['KeyD'] = false;
+			this.engine.keysPressed['ArrowRight'] = false;
+			this.engine.keysPressed['KeyD'] = false;
 			this.currentWorldIndex++;
 		}
 
-		// Asegurarse de que el índice del mundo siempre esté dentro de los límites (da la vuelta)
 		const worldCount = this.availableWorlds.length;
 		this.currentWorldIndex = ((this.currentWorldIndex % worldCount) + worldCount) % worldCount;
 
@@ -1152,7 +1184,7 @@ class Game {
 			}
 			this.updateMusicVolume();
 		}
-		
+
 		if(this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']){
 			handlePrimaryPress();
 			delete this.engine.keysPressed['Enter'];
@@ -1168,13 +1200,17 @@ class Game {
 		for(let i = 0; i < numButtons; i++){
 			const menuPosY = this.engine.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + TEXT_SIZE;
 			const textPos = { x: this.engine.getCanvasWidth() / 2, y: menuPosY };
-			if(this.currentSelection == i){
-				const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - SPRITE_SIZE * 1.1 };
+			const buttonLabel = menuButtons[i].name;
+			const textWidth = this.engine.measureTextCustom(font, buttonLabel, TEXT_SIZE);
+			if(this.currentSelection === i){
+				const textLeft = textPos.x - textWidth / 2;
+				const cursorOffset = this.tileSize * 1.5;
+				const cursorPos = { x: textLeft - cursorOffset, y: menuPosY - SPRITE_SIZE / 2 };
 				if(this.engine.sprites["Cursor"]) {
 					this.engine.drawSprite("Cursor", 0, cursorPos, this.engine.sprites["Cursor"].scale, false, 0, Pivot.Top_Left);
 				}
 			}
-			this.engine.drawTextCustom(font, menuButtons[i].name, TEXT_SIZE, "#ffffff", textPos, "center");
+			this.engine.drawTextCustom(font, buttonLabel, TEXT_SIZE, "#ffffff", textPos, "center");
 		}
 
 		const topScore = "TOP - " + this.highscore.toString().padStart(6, "0");
@@ -1200,18 +1236,18 @@ class Game {
 				const key = row[x];
 				if (key !== ' ' && spriteMap[key]) {
 					const spriteName = spriteMap[key];
-					const drawPos = { 
-						x: objPos.x + x * this.tileSize, 
-						y: objPos.y + y * this.tileSize 
+					const drawPos = {
+						x: objPos.x + x * this.tileSize,
+						y: objPos.y + y * this.tileSize
 					};
-					this.engine.drawSprite(spriteName, 0, drawPos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+					this.engine.drawSprite(spriteName, 0, drawPos, this.tileScale, false, 0, Pivot.Top_Left);
 				}
 			}
 		}
 	}
 
 	drawBackground() {
-		switch(this.currentMap.type) {
+		switch(this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Overworld:
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.OVERWORLD_COLOR);
 
@@ -1447,6 +1483,7 @@ class Game {
 
 				const moveSprite = this.engine.animatedSprites["Fireball_Hit"];
 				moveSprite.position = screenPos;
+				
 				this.engine.drawAnimatedSprite("Fireball_Hit", Pivot.Center);
 			}
 		}
@@ -1499,7 +1536,7 @@ class Game {
 				"Object_Coin", 
 				coinSprite.currentFrame, 
 				{ x: screenX, y: coin.y }, 
-				SPRITE_SCALE, 
+				this.tileScale, 
 				false,
 				coin.rotation,
 				Pivot.Center
@@ -1647,7 +1684,7 @@ class Game {
 				const deathAnimDuration = 400;
 				const maxScaleMultiplier = 1.5;
 				const progress = Math.min(1, this.deathTimer / deathAnimDuration);
-				const newScale = SPRITE_SCALE + (SPRITE_SCALE * (maxScaleMultiplier - 1) * progress);
+				const newScale = this.tileScale + (this.tileScale * (maxScaleMultiplier - 1) * progress);
 				const newWidth = SPRITE_SIZE * newScale;
 				const offset = (newWidth - this.tileSize) / 2;
 				const drawPos = { x: playerPos.x - offset, y: playerPos.y - offset };
@@ -1879,7 +1916,12 @@ class Game {
 				}
 			}
 			if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
-			if (playerPos.y > this.engine.canvas.height && this.state === Game_State.Playing) { this.killPlayer(); }
+			
+			// Verificar si el jugador cayó del mapa (usando coordenadas de mundo)
+			const playerTile = this.screenToTile(playerPos.x + this.tileSize / 2, playerPos.y + this.tileSize / 2);
+			if ((playerTile.y >= this.currentMap.dimensions.height || playerPos.y > this.engine.canvas.height + this.tileSize * 2) && this.state === Game_State.Playing) { 
+				this.killPlayer(); 
+			}
 
 
 		if (shouldDrawPlayer) {
@@ -1914,6 +1956,7 @@ class Game {
 	updateAndDrawScorePopups() {
 		for (let i = this.scorePopups.length - 1; i >= 0; i--) {
 			const popup = this.scorePopups[i];
+
 			popup.y -= 0.5;
 			popup.timer--;
 			this.engine.drawTextCustom(font, popup.text, TEXT_SIZE, Color.WHITE, {x: popup.x, y: popup.y}, "center");
@@ -2201,12 +2244,12 @@ class Game {
 					p.animTimer = (p.animTimer + 1) % 16;
 					const frame = Math.floor(p.animTimer / 8);
 
-					this.engine.drawSprite('Object_Fire_Flower', frame, { x: screenX, y: p.y }, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+					this.engine.drawSprite('Object_Fire_Flower', frame, { x: screenX, y: p.y }, this.tileScale, false, 0, Pivot.Top_Left);
 					continue;
 			}
 			
 			if (spriteToDraw) {
-				this.engine.drawSprite(spriteToDraw, 0, { x: screenX, y: p.y }, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+				this.engine.drawSprite(spriteToDraw, 0, { x: screenX, y: p.y }, this.tileScale, false, 0, Pivot.Top_Left);
 			}
 		}
 	}
@@ -2228,7 +2271,7 @@ class Game {
 		const coinSprite = this.engine.sprites["UI_Coin"];
 		if (coinSprite) {
 			const coinPos = { x: colWidth + paddingX + paddingX * 0.15, y: paddingY * 3 - TEXT_SIZE + paddingY * 0.15 };
-			this.engine.drawSprite("UI_Coin", 0, coinPos, SPRITE_SCALE / 1.8, false, 0, Pivot.Top_Left);
+			this.engine.drawSprite("UI_Coin", 0, coinPos, this.tileScale / 1.8, false, 0, Pivot.Top_Left);
 		}
 
 		const coinText = multChar + this.coins.toString().padStart(2, "0");
@@ -2554,13 +2597,33 @@ class Game {
 			let enemyColor = null;
 
 			switch (blockId) {
-				case 10: enemyType = "Goomba"; break;
-				case 11: enemyType = "Koopa"; enemyColor = "Green"; break;
-				case 12: enemyType = "Pakkun"; enemyColor = "Green"; break;
-				case 37: enemyType = "Koopa_Winged"; enemyColor = "Red"; break;
-				case 43: enemyType = "Koopa_Winged"; enemyColor = "Green"; break;
-				case 44: enemyType = "Koopa"; enemyColor = "Red"; break;
-				case 45: enemyType = "Pakkun"; enemyColor = "Red"; break;
+				case 10: 
+					enemyType = "Goomba"; 
+					break;
+				case 11: 
+					enemyType = "Koopa"; 
+					enemyColor = "Green";
+					break;
+				case 12: 
+					enemyType = "Pakkun"; 
+					enemyColor = "Green";
+					break;
+				case 37: 
+					enemyType = "Koopa_Winged";
+					enemyColor = "Red";
+					break;
+				case 43:
+					enemyType = "Koopa_Winged";
+					enemyColor = "Green";
+					break;
+				case 44:
+					enemyType = "Koopa";
+					enemyColor = "Red";
+					break;
+				case 45:
+					enemyType = "Pakkun";
+					enemyColor = "Red";
+					break;
 			}
 
 			if (enemyType) {
@@ -2594,8 +2657,8 @@ class Game {
                         vy: 0, 
                         state: "walking", 
                         stompTimer: 0,
-                        isWinged: enemyType.includes("Winged"), 
-                        canFly: enemyType.includes("Winged"), 
+                        isWinged: enemyType === "Koopa_Winged",
+                        canFly: enemyType === "Koopa_Winged",
                         flyTimer: 0,
                     });
                 }
@@ -2665,7 +2728,7 @@ class Game {
                  const coords = this.engine.indexToCoords(i, mapWidth);
                  const pos = this.tileToScreen(coords.x, coords.y);
                  if (BlockType[bid] && this.engine.sprites[BlockType[bid]]) {
-                    this.engine.drawSprite(BlockType[bid], 0, pos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+                    this.engine.drawSprite(BlockType[bid], 0, pos, this.tileScale, false, 0, Pivot.Top_Left);
                  }
             }
         }
@@ -2690,7 +2753,7 @@ class Game {
                 if (ghostSpriteName && this.engine.sprites[ghostSpriteName]) {
                     this.engine.ctx.save();
                     this.engine.ctx.globalAlpha = 0.6; // Semitransparente
-                    this.engine.drawSprite(ghostSpriteName, 0, cursorScreenPos, SPRITE_SCALE, false, 0, Pivot.Top_Left);
+                    this.engine.drawSprite(ghostSpriteName, 0, cursorScreenPos, this.tileScale, false, 0, Pivot.Top_Left);
                     this.engine.ctx.restore();
                 }
             }
@@ -2723,12 +2786,12 @@ class Game {
             };
 
             const alpha = offset === 0 ? 1.0 : 0.4;
-            const scale = offset === 0 ? SPRITE_SCALE * 1.2 : SPRITE_SCALE;
+            const scale = offset === 0 ? this.tileScale * 1.2 : this.tileScale;
             
             // Ajuste de centro por escala
             const adjustedPos = {
-                x: drawPos.x - (scale - SPRITE_SCALE) * (SPRITE_SIZE / 2),
-                y: drawPos.y - (scale - SPRITE_SCALE) * (SPRITE_SIZE / 2)
+                x: drawPos.x - (scale - this.tileScale) * (SPRITE_SIZE / 2),
+                y: drawPos.y - (scale - this.tileScale) * (SPRITE_SIZE / 2)
             };
 
             if (spriteName !== "Unknown" && this.engine.sprites[spriteName]) {
@@ -2742,8 +2805,8 @@ class Game {
                 this.engine.ctx.globalAlpha = alpha;
                 this.engine.drawRectangle({
                     x: adjustedPos.x, y: adjustedPos.y, 
-                    width: this.tileSize * (scale/SPRITE_SCALE), 
-                    height: this.tileSize * (scale/SPRITE_SCALE)
+                    width: this.tileSize * (scale/this.tileScale), 
+                    height: this.tileSize * (scale/this.tileScale)
                 }, "#FF00FF");
                 this.engine.ctx.restore();
             }

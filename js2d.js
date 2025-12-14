@@ -1457,8 +1457,8 @@ class Js2d {
 		
 		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
 
-		const dWidth = sWidth * scale;
-		const dHeight = sHeight * scale;
+		const dWidth = Math.round(sWidth * scale);
+		const dHeight = Math.round(sHeight * scale);
 
 		this.ctx.save();
 		this.ctx.translate(Math.round(pos.x), Math.round(pos.y));
