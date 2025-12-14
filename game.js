@@ -46,12 +46,18 @@ function update(dt) {
         js2d.keysPressed['Escape'] = false; // Consumir la tecla
         if (
             smb.state === Game_State.Playing ||
-            smb.state === Game_State.Editor
+            smb.state === Game_State.Editor ||
+            smb.state === Game_State.Settings_Menu
         ) {
-            smb.stopAllMusic();
-            smb.savedState = null;
-            smb.loadMap("0-0");
-            smb.state = Game_State.Title_Menu;
+            if (smb.state === Game_State.Settings_Menu) {
+                smb.state = Game_State.Title_Menu;
+                smb.currentSelection = 0;
+            } else {
+                smb.stopAllMusic();
+                smb.savedState = null;
+                smb.loadMap("0-0");
+                smb.state = Game_State.Title_Menu;
+            }
         }
     }
 
@@ -59,6 +65,10 @@ function update(dt) {
         case Game_State.Title_Menu:
             // smb.loadMap("0-0");
             smb.drawMenu();
+            break;
+
+        case Game_State.Settings_Menu:
+            smb.drawSettingsMenu();
             break;
 
         case Game_State.Black_Screen:

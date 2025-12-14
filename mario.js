@@ -1,7 +1,7 @@
-const SPRITE_SIZE = 32;
+const SPRITE_SIZE = 16;
 const TILE_PIXEL_SIZE = 16;
 
-const SPRITE_SCALE = 4;
+const SPRITE_SCALE = 3;
 const BASE_JUMP_POWER = -22;
 const BASE_GRAVITY = 0.8;
 const BASE_VELOCITY_GROUND = (TILE_PIXEL_SIZE * 9.10 / 16) * 60;
@@ -37,6 +37,7 @@ const Game_State = {
 	Black_Screen:	4,
 	Level_Complete:	5,
 	Editor:			6,
+	Settings_Menu:	7,
 };
 
 const Player = {
@@ -155,6 +156,7 @@ class Game {
 	currentSelection = 0;
 	currentWorldIndex = 0;
 	mapOffset = {x: 0, y: 0};
+	maxMapOffsetX = 0; // Rastrea el máximo offset de la cámara hacia la izquierda
 	tileScale = SPRITE_SCALE;
 	tileSize = TILE_PIXEL_SIZE * this.tileScale;
 	velocityY = 0;
@@ -246,6 +248,13 @@ class Game {
 		const savedVolume = this.engine.getCookie("smb_volume");
 		this.volume = savedVolume !== null ? parseFloat(savedVolume) : DEFAULT_VOLUME;
 		this.updateMusicVolume();
+
+		// Settings Menu
+		this.currentSettingsSelection = 0;
+		const savedDifficulty = this.engine.getCookie("smb_difficulty");
+		this.difficulty = savedDifficulty || "Normal"; // Easy, Normal, Hard
+		const savedSFX = this.engine.getCookie("smb_sfx");
+		this.sfxEnabled = savedSFX !== "false";
 
 		this.HILL_SMALL_PATTERN = [
 			[' ', 'T', ' '],
@@ -754,6 +763,7 @@ class Game {
 		this.time = 400;
 		this.specialBlocks = {};
 		this.flagpoleFlag = null;
+		this.maxMapOffsetX = 0;
 	
 		if (this.currentMap && this.currentWorldIndex) {
 			this.loadMap(this.availableWorlds[this.currentWorldIndex]);
@@ -769,7 +779,7 @@ class Game {
 	resetLevel() {
 		const player = this.engine.animatedSprites[PlayerName[this.player]];
 		player.position.x = 300; player.position.y = 300;
-		this.mapOffset.x = 0; this.velocityY = 0; this.coins = 0; this.score = 0;
+		this.mapOffset.x = 0; this.maxMapOffsetX = 0; this.velocityY = 0; this.coins = 0; this.score = 0;
 		this.specialBlocks = {};
 		this.state = Game_State.Playing;
 		this.loadMap(this.currentMap.world);
@@ -1100,7 +1110,7 @@ class Game {
 		const titleImg = titleSprite.image;
 		const titlePosX = this.engine.canvas.width / 2;
 		const titlePosY = this.tileSize * 1.5;
-		const titleScale = this.tileScale * this.engine.getCanvasHeight() * titleMaxY * 0.002;
+		const titleScale = (this.engine.getCanvasHeight() * 0.40) / titleImg.height;
 		const titleWidth = titleImg.width * titleScale;
 		const imgPos = { x: titlePosX - titleWidth / 2, y: titlePosY };
 		this.engine.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
@@ -1112,6 +1122,7 @@ class Game {
 		if(this.savedState){
 			menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame(); } });
 		}
+		menuButtons.push({ name: "SETTINGS", action: () => { this.state = Game_State.Settings_Menu; this.currentSettingsSelection = 0; } });
 
 		const executeMenuSelection = () => {
 			const selection = menuButtons[this.currentSelection];
@@ -1142,11 +1153,13 @@ class Game {
 			executeMenuSelection();
 		};
 		if(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']){
-			this.engine.keysPressed = [];
+			this.engine.keysPressed['ArrowUp'] = false;
+			this.engine.keysPressed['KeyW'] = false;
 			this.currentSelection--;
 		}
 		if(this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']){
-			this.engine.keysPressed = [];
+			this.engine.keysPressed['ArrowDown'] = false;
+			this.engine.keysPressed['KeyS'] = false;
 			this.currentSelection++;
 		}
 
@@ -1164,29 +1177,8 @@ class Game {
 		const worldCount = this.availableWorlds.length;
 		this.currentWorldIndex = ((this.currentWorldIndex % worldCount) + worldCount) % worldCount;
 
-		if (this.engine.keysPressed['KeyN']) {
-			this.engine.keysPressed['KeyN'] = false;
-			this.volume = Math.min(1, this.volume + 0.1);
-			this.engine.setMasterVolume(this.volume);
-		}
-		if (this.engine.keysPressed['KeyB']) {
-			this.engine.keysPressed['KeyB'] = false;
-			this.volume = Math.max(0, this.volume - 0.1);
-			this.engine.setMasterVolume(this.volume);
-		}
-		if (this.engine.keysPressed['KeyM']) {
-			this.engine.keysPressed['KeyM'] = false;
-			if (this.volume > 0) {
-				this.savedVolume = this.volume;
-				this.volume = 0;
-			} else {
-				this.volume = this.savedVolume;
-			}
-			this.updateMusicVolume();
-		}
-
 		if(this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']){
-			handlePrimaryPress();
+			executeMenuSelection();
 			delete this.engine.keysPressed['Enter'];
 			delete this.engine.keysPressed['Space'];
 		}
@@ -1227,6 +1219,128 @@ class Game {
 			y: this.engine.getCanvasHeight() - 20
 		};
 		this.engine.drawTextCustom(font, volumeText, TEXT_SIZE, Color.WHITE, volumePos, "left");
+	}
+
+	drawSettingsMenu() {
+		this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.OVERWORLD_COLOR);
+
+		this.drawBackground();
+		this.drawBlocks();
+		this.drawForegroundBlocks();
+
+		// Título
+		const titleText = "SETTINGS";
+		const titlePos = {
+			x: this.engine.getCanvasWidth() / 2,
+			y: this.engine.canvas.height * 0.15
+		};
+		this.engine.drawTextCustom(font, titleText, TEXT_SIZE * 2, "#ffffff", titlePos, "center");
+
+		const settingsOptions = [
+			{ label: "DIFFICULTY", values: ["EASY", "NORMAL", "HARD"], getValue: () => this.difficulty, setValue: (v) => { this.difficulty = v; this.engine.setCookie("smb_difficulty", v, 365); } },
+			{ label: "VOLUME", values: [], getValue: () => Math.round(this.volume * 100) + "%", setValue: null },
+			{ label: "SOUND EFFECTS", values: ["ON", "OFF"], getValue: () => this.sfxEnabled ? "ON" : "OFF", setValue: (v) => { this.sfxEnabled = v === "ON"; this.engine.setCookie("smb_sfx", this.sfxEnabled, 365); } },
+			{ label: "BACK", values: [], getValue: () => "", setValue: null }
+		];
+
+		const menuStartY = this.engine.canvas.height * 0.35;
+		const menuGap = this.engine.canvas.height * 0.12;
+
+		for (let i = 0; i < settingsOptions.length; i++) {
+			const option = settingsOptions[i];
+			const menuPosY = menuStartY + menuGap * i;
+
+			// Dibujar selector
+			if (this.currentSettingsSelection === i) {
+				const cursorSprite = this.engine.sprites["Cursor"];
+				if(cursorSprite) {
+					const cursorHeight = cursorSprite.image.height * cursorSprite.scale;
+					const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - cursorHeight / 2 };
+					this.engine.drawSprite("Cursor", 0, cursorPos, cursorSprite.scale, false, 0, Pivot.Center);
+				}
+			}
+
+			// Dibujar opción
+			const optionTextPos = {
+				x: this.engine.getCanvasWidth() / 2 - this.tileSize * 4,
+				y: menuPosY
+			};
+			this.engine.drawTextCustom(font, option.label, TEXT_SIZE, "#ffffff", optionTextPos, "left");
+
+			// Dibujar valores (si existen)
+			const currentValue = option.getValue();
+			if (currentValue !== "") {
+				const valueTextPos = {
+					x: this.engine.getCanvasWidth() / 2 + this.tileSize * 2,
+					y: menuPosY
+				};
+				this.engine.drawTextCustom(font, currentValue, TEXT_SIZE, "#ffff00", valueTextPos, "right");
+			}
+		}
+
+		// Controles de navegación
+		if (this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']) {
+			this.engine.keysPressed['ArrowUp'] = false;
+			this.engine.keysPressed['KeyW'] = false;
+			this.currentSettingsSelection--;
+		}
+		if (this.engine.keysPressed['ArrowDown'] || this.engine.keysPressed['KeyS']) {
+			this.engine.keysPressed['ArrowDown'] = false;
+			this.engine.keysPressed['KeyS'] = false;
+			this.currentSettingsSelection++;
+		}
+
+		this.currentSettingsSelection = ((this.currentSettingsSelection % settingsOptions.length) + settingsOptions.length) % settingsOptions.length;
+
+		// Cambiar valores con left/right
+		const currentOption = settingsOptions[this.currentSettingsSelection];
+		if (currentOption.values.length > 0) {
+			const currentValueIndex = currentOption.values.indexOf(currentOption.getValue());
+
+			if (this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA']) {
+				this.engine.keysPressed['ArrowLeft'] = false;
+				this.engine.keysPressed['KeyA'] = false;
+				if (currentValueIndex > 0) {
+					currentOption.setValue(currentOption.values[currentValueIndex - 1]);
+				}
+			}
+			if (this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD']) {
+				this.engine.keysPressed['ArrowRight'] = false;
+				this.engine.keysPressed['KeyD'] = false;
+				if (currentValueIndex < currentOption.values.length - 1) {
+					currentOption.setValue(currentOption.values[currentValueIndex + 1]);
+				}
+			}
+		} else if (this.currentSettingsSelection === 1) {
+			// Controlar volumen con left/right cuando está seleccionada la opción de VOLUME
+			if (this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA']) {
+				this.engine.keysPressed['ArrowLeft'] = false;
+				this.engine.keysPressed['KeyA'] = false;
+				this.volume = Math.max(0, this.volume - 0.05);
+				this.engine.setMasterVolume(this.volume);
+				this.engine.setCookie("smb_volume", this.volume, 365);
+			}
+			if (this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD']) {
+				this.engine.keysPressed['ArrowRight'] = false;
+				this.engine.keysPressed['KeyD'] = false;
+				this.volume = Math.min(1, this.volume + 0.05);
+				this.engine.setMasterVolume(this.volume);
+				this.engine.setCookie("smb_volume", this.volume, 365);
+			}
+		}
+
+		// Confirmar selección (Enter/Space solo en BACK)
+		if ((this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']) && this.currentSettingsSelection === 3) {
+			delete this.engine.keysPressed['Enter'];
+			delete this.engine.keysPressed['Space'];
+			this.state = Game_State.Title_Menu;
+		}
+
+		// Tecla ESC para volver
+		if (this.engine.keysPressed['Escape']) {
+			this.engine.keysPressed['Escape'] = false;
+			this.state = Game_State.Title_Menu;
+		}
 	}
 
 	drawCompositeObject(objPos, pattern, spriteMap) {
@@ -1340,9 +1454,17 @@ class Game {
 				switch (this.currentMap.type) {
 					case World_Type.Overworld:
 						spriteName = this.specialBlocks[i]?.revealed ? 'Block_Question' : 'Block_Brick';
+						// Cambiar a Block_Question_Used si no hay más monedas
+						if (this.specialBlocks[i]?.coinsLeft === 0) {
+							spriteName = 'Block_Question_Used';
+						}
 						break;
 					case World_Type.Underground:
 						spriteName = this.specialBlocks[i]?.revealed ? 'Block_Question' : 'Block_Brick_Underground';
+						// Cambiar a Block_Question_Used si no hay más monedas
+						if (this.specialBlocks[i]?.coinsLeft === 0) {
+							spriteName = 'Block_Question_Used';
+						}
 						break;
 					default:
 						break;
@@ -1744,7 +1866,9 @@ class Game {
 							let blockSoundPlayed = false;
 
 							if (blockId === 34) {
-								if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { coinsLeft: 10, revealed: true }; }
+								if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { coinsLeft: 10, revealed: false }; }
+								// Revelar el bloque en la primera activación
+								this.specialBlocks[idx].revealed = true;
 								if (this.specialBlocks[idx].coinsLeft > 0) {
 									this.specialBlocks[idx].coinsLeft--; this.coins++; this.spawnCoin(blockX, blockY);
 									this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
@@ -1843,9 +1967,10 @@ class Game {
 					// Mover al jugador (replicando la lógica de la cámara)
 					if (this.slideVelocityX > 0) { // Deslizando a la derecha
 						if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX;
-						else this.mapOffset.x -= this.slideVelocityX;
+						else { this.mapOffset.x -= this.slideVelocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); }
 					} else { // Deslizando a la izquierda
-						playerPos.x = newX;
+						// Solo bloquear si intenta salir del borde izquierdo de la pantalla
+						if (newX >= 0) playerPos.x = newX;
 					}
 				}
 				
@@ -1882,7 +2007,8 @@ class Game {
 							blocked = true; break;
 						}
 					}
-					if (!blocked) playerPos.x = newX;
+					// Solo bloquear si intenta salir del borde izquierdo de la pantalla
+					if (!blocked && newX >= 0) playerPos.x = newX;
 				} else if (isTryingToMoveRight) {
 					player.flipped = false;
 					const newX = playerPos.x + velocityX;
@@ -1912,7 +2038,7 @@ class Game {
 							break;
 						}
 					}
-					if (!blocked) { if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX; else this.mapOffset.x -= velocityX; }
+					if (!blocked) { if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX; else { this.mapOffset.x -= velocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); } }
 				}
 			}
 			if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
