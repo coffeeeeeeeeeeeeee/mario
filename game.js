@@ -166,6 +166,27 @@ function animate(timestamp) {
     requestAnimationFrame(animate);
 }
 
+// El atlas (atlas.js, generado desde la ROM por tools/build-atlas.js) trae todas las hojas en una sola
+// imagen. Cada hoja se recorta y se registra como tileset con su nombre y el tamaño de celda del manifiesto.
+let atlasImage = null;
+
+function atlasSheetImage(name) {
+    const s = ATLAS.sheets[name];
+    const c = document.createElement("canvas");
+    c.width = s.w;
+    c.height = s.h;
+    c.getContext("2d").drawImage(atlasImage, s.x, s.y, s.w, s.h, 0, 0, s.w, s.h);
+    return c.toDataURL("image/png");
+}
+
+async function loadAtlas() {
+    atlasImage = await js2d.loadImage(ATLAS.image);
+    for (const [name, s] of Object.entries(ATLAS.sheets)) {
+        if (name === "Title_Image") continue;
+        await js2d.loadTileset(name, atlasSheetImage(name), s.tw, s.th);
+    }
+}
+
 async function init() {
     const recalculateScales = () => {
         const resolutionScale = Math.min(window.innerWidth / 640, window.innerHeight / 480);
@@ -193,26 +214,7 @@ async function init() {
 
     font = await js2d.loadFont("SMB2_Font", "assets/fonts/Super-Mario-Bros-NES.ttf");
 
-    await js2d.loadTileset("Overworld_Tiles", overworldTileset, 16, 16);
-    await js2d.loadTileset("Underground_Tiles", undergroundTileset, 16, 16);
-    await js2d.loadTileset("Castle_Tiles", castleTileset, 16, 16);
-
-    await js2d.loadTileset("Player_Mario_Tiles", marioSmallTileset, 16, 16);
-    await js2d.loadTileset("Player_Mario_Big_Tiles", marioBigTileset, 16, 32);
-    await js2d.loadTileset("Player_Mario_Grow_Tiles", marioGrowTileset, 16, 16);
-    await js2d.loadTileset("Player_Luigi_Grow_Tiles", luigiGrowTileset, 16, 16);
-    await js2d.loadTileset("Player_Mario_Fire_Tiles", marioFireTileset, 16, 32);
-    await js2d.loadTileset("Player_Luigi_Tiles", luigiSmallTileset, 16, 32);
-    await js2d.loadTileset("Player_Luigi_Big_Tiles", luigiBigTileset, 16, 32);
-    await js2d.loadTileset("Player_Luigi_Fire_Tiles", luigiFireTileset, 16, 32);
-
-    await js2d.loadTileset("Enemy_Short_Tiles", enemiesShortTileset, 16, 16);
-    await js2d.loadTileset("Enemy_Tall_Tiles", enemiesTallTileset, 16, 24);
-
-    await js2d.loadTileset("Fireball_Hit_Tiles", fireballSpritesheet, 8, 8);
-    await js2d.loadTileset("Fireball_Tiles", fireballHitSpritesheet, 16, 16);
-
-    await js2d.loadTileset("UI_Tiles", uiImage, 8, 8);
+    await loadAtlas();
 
     //
     // ---
@@ -221,7 +223,7 @@ async function init() {
     // Enemigos bajos
     js2d.defineSpriteFromTileset("Enemy_Goomba", "Enemy_Short_Tiles", 0, 0, 3, tileScale);
     js2d.defineSpriteFromTileset("Koopa_Shell_Green", "Enemy_Short_Tiles", 3, 0, 2, tileScale);
-    js2d.defineSpriteFromTileset("Koopa_Shell_Red", "Enemy_Short_Tiles", 4, 5, 2, tileScale);
+    js2d.defineSpriteFromTileset("Koopa_Shell_Red", "Enemy_Short_Tiles", 5, 0, 2, tileScale);
 
     // Enemigos altos
     js2d.defineSpriteFromTileset("Enemy_Koopa_Green", "Enemy_Tall_Tiles", 0, 0, 2, tileScale);
@@ -231,7 +233,7 @@ async function init() {
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Green", "Enemy_Tall_Tiles", 8, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
-    await js2d.loadSprite("UI_Title_Image", titleImage, tileScale);
+    await js2d.loadSprite("UI_Title_Image", atlasSheetImage("Title_Image"), tileScale);
     js2d.defineSpriteFromTileset("Player_Mario_Grow", "Player_Mario_Grow_Tiles", 0, 0, 3, tileScale);
     js2d.defineSpriteFromTileset("Player_Luigi_Grow", "Player_Luigi_Grow_Tiles", 0, 0, 3, tileScale);
     js2d.defineSpriteFromTileset("Player_Mario", "Player_Mario_Tiles", 0, 0, 15, tileScale);
@@ -247,8 +249,8 @@ async function init() {
     js2d.defineSpriteFromTileset("Coin", "Overworld_Tiles", 0, 9, 5, tileScale);
 
     // Fireball
-    js2d.defineSpriteFromTileset("Object_Fireball", "Fireball_Tiles", 0, 0, 4, tileScale);
-    js2d.defineSpriteFromTileset("Object_Fireball_Hit", "Fireball_Hit_Tiles", 0, 0, 3, tileScale);
+    js2d.defineSpriteFromTileset("Object_Fireball", "Fireball_Explosion_Tiles", 0, 0, 4, tileScale);
+    js2d.defineSpriteFromTileset("Object_Fireball_Hit", "Fireball_Spin_Tiles", 0, 0, 3, tileScale);
 
     //
     // ---
@@ -308,6 +310,7 @@ async function init() {
     js2d.addAnimationToSprite("Mario_Big", "Mario_Big_Crouch", [6], true, 16);
     js2d.addAnimationToSprite("Mario_Big", "Mario_Big_Slide", [7], false, 16);
     js2d.addAnimationToSprite("Mario_Big", "Mario_Big_Fall", [7, 8], true, 16);
+    js2d.addAnimationToSprite("Mario_Big", "Mario_Big_Swim", [9, 10, 11, 12, 13], true, 16);
 
     js2d.addAnimationToSprite("Luigi_Big", "Luigi_Big_Idle", [0], true, 16);
     js2d.addAnimationToSprite("Luigi_Big", "Luigi_Big_Run", [1, 2, 3], true, 16);
@@ -316,6 +319,7 @@ async function init() {
     js2d.addAnimationToSprite("Luigi_Big", "Luigi_Big_Crouch", [6], true, 16);
     js2d.addAnimationToSprite("Luigi_Big", "Luigi_Big_Slide", [7], false, 16);
     js2d.addAnimationToSprite("Luigi_Big", "Luigi_Big_Fall", [7, 8], true, 16);
+    js2d.addAnimationToSprite("Luigi_Big", "Luigi_Big_Swim", [9, 10, 11, 12, 13], true, 16);
 
     // Fire
     js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Idle", [0], true, 16);
@@ -326,6 +330,7 @@ async function init() {
     js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Slide", [8], false, 16);
     js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Fall", [7, 8], false, 16);
     js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Swimg", [9, 10, 11, 12, 13, 14], false, 16);
+    js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Swim", [9, 10, 11, 12, 13], true, 16);
     js2d.addAnimationToSprite("Mario_Fire", "Mario_Fire_Shoot", [15], false, 16);
 
     js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Idle", [0], true, 16);
@@ -336,6 +341,7 @@ async function init() {
     js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Slide", [7], false, 16);
     js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Fall", [7, 8], false, 16);
     js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Swimg", [9, 10, 11, 12, 13, 14], false, 16);
+    js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Swim", [9, 10, 11, 12, 13], true, 16);
     js2d.addAnimationToSprite("Luigi_Fire", "Luigi_Fire_Shoot", [15], false, 16);
 
     // Enemies

@@ -2,8 +2,8 @@
 // armar spritesheets PNG. La ROM no se versiona (ver .gitignore); este script sólo la lee.
 //
 // El CHR tiene dos tablas de patrones de 256 tiles de 8x8 píxeles a 2 bits:
-//   banco 0 ($0000): fondo (bloques, caños, nubes, fuente de texto)
-//   banco 1 ($1000): sprites (Mario, enemigos, objetos)
+//   banco 0 ($0000): sprites (Mario, enemigos, objetos)
+//   banco 1 ($1000): fondo (bloques, caños, nubes, fuente de texto)
 
 const fs = require('fs');
 const path = require('path');

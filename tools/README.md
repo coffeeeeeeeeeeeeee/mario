@@ -67,19 +67,41 @@ solo, para inspeccionar las dos tablas de patrones:
 node tools/smb-chr.js <carpeta>      # escribe chr_bank0.png (sprites) y chr_bank1.png (fondo)
 ```
 
-### `build-castle-tileset.js`: tileset de castillo
+### `build-atlas.js`: atlas de gráficos
 
-Genera `assets/images/tileset_castle.png` y la constante `castleTileset` de `assets.js`. Toma las
-definiciones de metatiles del desensamblado y la paleta `CastlePaletteData`, y las dibuja con las
-coordenadas del tileset exterior; lo que no cambia con la paleta (bloques de pregunta, monedas,
-nubes) se copia de esa hoja.
+Reconstruye desde la ROM **todos** los gráficos del juego en un único atlas y es lo que usa el motor
+(ya no hay PNG sueltos por hoja):
 
 ```
-node tools/build-castle-tileset.js
+node tools/build-atlas.js                    # escribe assets/images/atlas.png y atlas.js
+node tools/build-atlas.js --debug <carpeta>  # además vuelca el atlas y todos los metatiles para revisarlos
 ```
 
-Para otra área (agua, por ejemplo) habría que cambiar `CastlePaletteData` por la paleta del área,
-ajustar `LAYOUT` (qué metatile va en cada celda) y el nombre de la hoja de salida.
+`atlas.js` define `ATLAS = { image, sheets }`: la imagen embebida y, por hoja, su lugar en el atlas
+(`x, y, w, h`) y el tamaño de celda (`tw, th`). `loadAtlas()` en `game.js` recorta cada hoja y la
+registra como tileset con el mismo nombre, así los sprites se definen con (columna, fila) como siempre.
+
+| Hoja | Contenido |
+|---|---|
+| `Overworld_Tiles` | Bloques, pregunta, caños, mástil y bandera, nubes, colina, arbustos; filas 6 a 9: hongos, flor, estrella y moneda que salta |
+| `Underground_Tiles`, `Castle_Tiles`, `Water_Tiles` | Las filas 0 a 5 de la anterior con la paleta de cada área |
+| `Player_{Mario,Luigi}_Tiles` / `_Big_Tiles` / `_Grow_Tiles` | Cuadros chico (16x16), grande (16x32) y de crecimiento |
+| `Player_{Mario,Luigi}_Fire_Tiles` | Cuadros del jugador de fuego |
+| `Enemy_Short_Tiles`, `Enemy_Tall_Tiles` | Goomba, caparazones, koopas, paratroopas y plantas piraña |
+| `Fireball_Spin_Tiles`, `Fireball_Explosion_Tiles` | Bola de fuego y su explosión |
+| `UI_Tiles` | Moneda del marcador e ícono de hongo del menú |
+| `Title_Image` | Cartel del título (la pantalla se guarda en el CHR como escrituras al nametable) |
+
+Cómo se arma cada cosa: los metatiles del fondo salen de `Palette0_MTiles` ... `Palette3_MTiles` con la
+paleta de fondo de cada área (`GroundPaletteData`, etc.); los cuadros de Mario, de `PlayerGraphicsTable`
+con los colores de `PlayerColors`; los de los enemigos, de `EnemyGraphicsTable` con las paletas de sprites
+del área. El original guarda a los personajes mirando a la derecha: los que el juego muestra mirando a la
+izquierda se espejan, y cuando los dos tiles de una fila son iguales el derecho va espejado, como en el
+hardware. El bloque de pregunta y la moneda del fondo tienen tres cuadros por la rotación de color de
+`ColorRotatePalette`; la flor y la estrella, cuatro, uno por paleta de sprites.
+
+Para mover o agregar un sprite hay que cambiar las coordenadas en la hoja y en las definiciones de
+`defineWorldSprites()` (`mario.js`) o de `init()` (`game.js`).
 
 ## Cómo se conectan con el motor
 
@@ -88,14 +110,13 @@ archivo: `METATILE_SPRITE` (sprite), `BLOCK_ITEM` (qué entrega al golpearlo des
 conjuntos de bloques sólidos, ocultos y en primer plano. Un metatile que figura en un nivel pero no
 en esas tablas se dibuja como bloque duro si es sólido.
 
-El motor lee las coordenadas de cada sprite en las hojas de `assets.js`. Las hojas del exterior y
-del subterráneo no se generan con estos scripts: son las que ya tenía el juego.
+El motor lee las coordenadas de cada sprite en las hojas de `atlas.js` (ver `build-atlas.js`).
 
 ## Qué no cubre
 
 Plataformas móviles (quedan como filas fijas de bloques duros), barras de fuego, peces, Bullet Bill,
 Bowser (se reemplaza por un Koopa rojo), enredaderas y estrellas en ladrillos (dan un hongo).
-Los niveles de agua (2-2 y 7-2) se generan, pero el motor no tiene natación; las salas de agua y los
+Los niveles de agua (2-2, 7-2 y las salas de agua) tienen natación, pero sin peces ni Bloobers; los
 niveles de nubes (que se entran por enredadera) no se generan, y sus caños quedan como decoración.
 Los laberintos con bucle de los castillos (4-4, 7-4, 8-4) no vuelven a Mario atrás si se equivoca.
 Los fondos (nubes, colinas, arbustos) los dibuja el motor con parallax propio.

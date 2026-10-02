@@ -69,6 +69,11 @@ const X_FRICTION = [0xe4, 0x98, 0xd0];    // FrictionData, en 1/256 de unidad de
 const RUNNING_TIMER_STEPS = 10 * 21;      // RunningTimer: se sigue corriendo ~3,5 s tras soltar B
 // Salto según la velocidad horizontal al despegar (umbrales de ProcJumping: 9, 16, 25 y 28)
 const JUMP_BY_SPEED = [SMB_JUMP.standing, SMB_JUMP.standing, SMB_JUMP.walking, SMB_JUMP.running, SMB_JUMP.running];
+// Natación (entradas de agua de JumpMForceData, FallMForceData, PlayerYSpdData e InitMForceData)
+const SWIM_STROKE_SPEED = -1.5;           // $fe más la fracción $80
+const SWIM_FORCE_UP = 0x0d / 256;
+const SWIM_FORCE_DOWN = 0x0a / 256;
+const SWIM_TIMER_STEPS = 0x20;            // JumpSwimTimer: se puede dar otra brazada en seguida
 // Altura de Mario al tocar el mástil (en píxeles del NES) -> premio (FlagpoleYPosData, FlagpoleScoreMods)
 const FLAGPOLE_Y_DATA = [0x18, 0x22, 0x50, 0x68, 0x90];
 const FLAGPOLE_SCORES = [5000, 2000, 800, 400, 100];
@@ -160,6 +165,7 @@ const METATILE_SPRITE = {
 	0x14: 'Block_Pipe_Body_Left', 0x15: 'Block_Pipe_Body_Right',
 	0x1c: 'Block_Pipe_Start_Top', 0x1d: 'Block_Pipe_Body_Top', 0x1e: 'Block_Pipe_End_Top',
 	0x1f: 'Block_Pipe_Start_Bottom', 0x20: 'Block_Pipe_Body_Bottom', 0x21: 'Block_Pipe_End_Bottom',
+	0x69: 'Block_Coral', 0x6b: 'Block_Pipe_Start_Top', 0x6c: 'Block_Pipe_Start_Bottom',   // boca del caño de salida en agua
 	0x24: 'Block_Flagpole_Top', 0x25: 'Block_Flagpole',
 	0x51: 'Block_Brick', 0x52: 'Block_Brick_Middle', 0x54: 'Block_Ground', 0x62: 'Block_Ground',   // 0x62: terreno del castillo
 	0xc0: 'Block_Question', 0xc1: 'Block_Question', 0xc2: 'Object_Coin', 0xc3: 'Object_Coin',
@@ -250,6 +256,7 @@ class Game {
 	flagpoleInfo = null;
 	pipeTransition = null;
 	timeAcc = 0;
+	swimTimer = 0;
 	hidden1UpFlag = false;
 	levelCoinTally = 0;
 	xSpeed = 0;            // velocidad horizontal: unidades de 1/16 px por cuadro, con 8 bits de fracción
@@ -400,6 +407,9 @@ class Game {
 			case World_Type.Castle:
 				tilesetName = "Castle_Tiles";
 				break;
+			case World_Type.Underwater:
+				tilesetName = "Water_Tiles";
+				break;
 			case World_Type.Overworld:
 			default:
 				tilesetName = "Overworld_Tiles";
@@ -411,16 +421,11 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Stairs", tilesetName, 2, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Zigzag", tilesetName, 5, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Zigzag_Filled", tilesetName, 6, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Arch", tilesetName, 7, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Break", tilesetName, 8, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Cut", tilesetName, 9, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Coral", tilesetName, 5, 0, 1, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Question",				tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coinbox_Multiple",	tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Block_Question_Used",		tilesetName, 1, 1, 1, tileScale);
-		js2d.defineSpriteFromTileset("Object_Twentyfive",			tilesetName, 2, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coin",					tilesetName, 7, 1, 3, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Used",		tilesetName, 3, 1, 1, tileScale);
@@ -438,15 +443,6 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", tilesetName, 1, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
-
-		// El tileset subterráneo no tiene la pieza superior del empalme del caño lateral, y su cuerpo
-		// está un tile más a la izquierda que en el exterior. El empalme sale del tileset exterior.
-		if (tilesetName === "Underground_Tiles") {
-			js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 7, 2, 1, tileScale);
-			js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 8, 2, 1, tileScale);
-			js2d.defineSpriteFromTileset("Block_Pipe_End_Top", "Overworld_Tiles", 6, 2, 1, tileScale);
-			js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", "Overworld_Tiles", 7, 2, 1, tileScale);
-		}
 
 		const sceneryTileset = "Overworld_Tiles";
 
@@ -511,6 +507,9 @@ class Game {
 			case World_Type.Castle:
 				tilesetName = "Castle_Tiles";
 				break;
+			case World_Type.Underwater:
+				tilesetName = "Water_Tiles";
+				break;
 			case World_Type.Overworld:
 			default:
 				tilesetName = "Overworld_Tiles";
@@ -522,16 +521,11 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Stairs", tilesetName, 2, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Zigzag", tilesetName, 5, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Zigzag_Filled", tilesetName, 6, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Arch", tilesetName, 7, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Break", tilesetName, 8, 0, 1, tileScale);
-		js2d.defineSpriteFromTileset("Block_Brick_Cut", tilesetName, 9, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Coral", tilesetName, 5, 0, 1, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Question",				tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coinbox_Multiple",	tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Block_Question_Used",		tilesetName, 1, 1, 1, tileScale);
-		js2d.defineSpriteFromTileset("Object_Twentyfive",			tilesetName, 2, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coin",					tilesetName, 7, 1, 3, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Used",		tilesetName, 3, 1, 1, tileScale);
@@ -549,15 +543,6 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", tilesetName, 1, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
-
-		// El tileset subterráneo no tiene la pieza superior del empalme del caño lateral, y su cuerpo
-		// está un tile más a la izquierda que en el exterior. El empalme sale del tileset exterior.
-		if (tilesetName === "Underground_Tiles") {
-			js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 7, 2, 1, tileScale);
-			js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 8, 2, 1, tileScale);
-			js2d.defineSpriteFromTileset("Block_Pipe_End_Top", "Overworld_Tiles", 6, 2, 1, tileScale);
-			js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", "Overworld_Tiles", 7, 2, 1, tileScale);
-		}
 
 		const sceneryTileset = "Overworld_Tiles";
 
@@ -666,6 +651,10 @@ class Game {
 			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
 
 			this.createEnemies();
+			// En el agua la gravedad es la liviana de la natación; en tierra, la del salto parado
+			this.jumpForceUp = this.isWater ? SWIM_FORCE_UP : SMB_JUMP.standing.up;
+			this.jumpForceDown = this.isWater ? SWIM_FORCE_DOWN : SMB_JUMP.standing.down;
+			this.swimTimer = 0;
 		} else {
 			console.error(`[GAME] No se pudo encontrar el mapa: ${name}`);
 		}
@@ -883,6 +872,8 @@ class Game {
 		if (level === 3 && this.levelCoinTally >= HIDDEN_1UP_COINS[world - 1]) this.hidden1UpFlag = true;
 	}
 
+	get isWater() { return this.currentMap?.type === World_Type.Underwater; }
+
 	resetHorizontalMotion() {
 		this.xSpeed = 0;
 		this.movingDir = 1;
@@ -923,6 +914,7 @@ class Game {
 		} else {
 			maxIdx = 1; fricIdx = (absSpeed >= 0x1c || absSpeed >= 0x21) ? 2 : 1;
 		}
+		if (this.isWater && onGround) { maxIdx = 2; fricIdx = absSpeed >= 0x21 ? 2 : 1; }
 		let friction = X_FRICTION[fricIdx];
 		if (this.facingDir !== this.movingDir) friction *= 2;   // frenar contra el sentido de marcha
 		const maxRight = X_MAX_RIGHT[maxIdx] * 256, maxLeft = X_MAX_LEFT[maxIdx] * 256;
@@ -952,6 +944,7 @@ class Game {
 		this.physicsSteps = Math.max(0, Math.floor((this.physicsAccumulator + PHYSICS_STEP_TOLERANCE_MS) / PHYSICS_STEP_MS));
 		this.physicsAccumulator -= this.physicsSteps * PHYSICS_STEP_MS;
 		if (this.starTimer > 0) this.starTimer = Math.max(0, this.starTimer - dt);
+		this.swimTimer = Math.max(0, this.swimTimer - this.physicsSteps);
 	}
 
 	giveLife() {
@@ -1090,7 +1083,7 @@ class Game {
 	// "down" se entra parado sobre la boca apretando abajo; "right" caminando contra la boca lateral.
 	findPipeWarp(playerPos, playerHeight) {
 		const warps = this.currentMap?.warps;
-		if (!warps || !warps.length || !this.isOnGround) return null;
+		if (!warps || !warps.length || (!this.isOnGround && !this.isWater)) return null;
 		const ts = this.tileSize;
 		const keys = this.engine.keysPressed;
 		const down = keys['ArrowDown'] || keys['KeyS'];
@@ -1106,7 +1099,12 @@ class Game {
 			} else if (warp.type === 'right' && right) {
 				const floor = this.tileToScreen(warp.x, warp.y + 2).y;
 				const worldRight = worldLeft + ts;
-				if (Math.abs(feet - floor) < ts * 0.1 && worldRight >= left - 2 && worldRight <= left + ts * 0.3) return warp;
+				const touching = worldRight >= left - 2 && worldRight <= left + ts * 0.3;
+				if (!touching) continue;
+				// Sobre el piso, o nadando con el cuerpo a la altura de la boca (los dos tiles del caño)
+				const mouthTop = this.tileToScreen(warp.x, warp.y).y;
+				const centerY = playerPos.y + playerHeight / 2;
+				if (Math.abs(feet - floor) < ts * 0.1 || (this.isWater && centerY > mouthTop && centerY < mouthTop + 2 * ts)) return warp;
 			}
 		}
 		return null;
@@ -1884,7 +1882,7 @@ class Game {
 
 				const cloudY = 80;
 				for (let i = 0; i < numObjects; i++) {
-					const cloudWidth = 2 + (i % 2);
+					const cloudWidth = 3 + (i % 2);
 					const cloudPos = {
 						x: (i * 500) + offsetX * parallaxSpeedClouds,
 						y: cloudY + (i % 3) * 40
@@ -2443,6 +2441,7 @@ class Game {
 			const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 			if (isCrouching) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Crouch`);
 			else if (this.isThrowing) { this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Shoot`); } 
+			else if (this.isWater && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Swim`);
 			else if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
 			else if (this.velocityY > this.gravity && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Fall`);
 			else if (this.isSkidding) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Stop`);
@@ -2509,7 +2508,18 @@ class Game {
 			}
 			// Como en el original, el salto solo se dispara al apretar: mantener apretado no repite.
 			const jumpDown = !!(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']);
-			if (jumpDown && !this.jumpHeld && this.isOnGround) {
+			if (jumpDown && !this.jumpHeld && this.isWater) {
+				// Brazada: se puede dar de nuevo enseguida, o al empezar a caer
+				if (this.swimTimer > 0 || this.velocityY >= 0) {
+					this.velocityY = SWIM_STROKE_SPEED * this.tileScale;
+					this.jumpForceUp = SWIM_FORCE_UP;
+					this.jumpForceDown = SWIM_FORCE_DOWN;
+					this.jumpOriginY = playerPos.y;
+					this.isOnGround = false;
+					this.swimTimer = SWIM_TIMER_STEPS;
+					this.engine.playAudioOverlap(audio["Player_Stomp"]);
+				}
+			} else if (jumpDown && !this.jumpHeld && this.isOnGround) {
 				const absSpeed = Math.abs(Math.floor(this.xSpeed / 256));
 				const jump = JUMP_BY_SPEED[absSpeed >= 28 ? 4 : absSpeed >= 25 ? 3 : absSpeed >= 16 ? 2 : absSpeed >= 9 ? 1 : 0];
 				this.velocityY = -jump.speed * this.tileScale;

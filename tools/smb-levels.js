@@ -403,6 +403,14 @@ class AreaDecoder {
 		this.flagpole = { col: this.currentPageLoc * 16 + this.currentColumnPos };
 	}
 
+	// Boca de caño de los niveles de agua: dos celdas (0x6b, 0x6c); entrar por ella termina el nivel
+	waterPipe(x) {
+		this.getLrgObjAttrib(x);
+		this.mt[this.d07] = 0x6b;
+		this.mt[this.d07 + 1] = 0x6c;
+		this.exitPipes.push({ col: this.currentPageLoc * 16 + this.currentColumnPos, row: this.d07 });
+	}
+
 	emptyBlock(x) {
 		this.getLrgObjAttrib(x);
 		this.renderUnderPart(this.d07, 0, 0xc4);
@@ -475,7 +483,7 @@ class AreaDecoder {
 			case 0x16: case 0x17: case 0x18: return this.questionBlock(x);
 			case 0x19: return this.hidden1UpBlock(x);
 			case 0x1a: case 0x1b: case 0x1c: case 0x1d: case 0x1e: return this.brickWithItem(x);
-			case 0x1f: return;                                     // caño de agua
+			case 0x1f: return this.waterPipe(x);
 			case 0x20: return this.emptyBlock(x);
 			case 0x21: return this.jumpspring(x);
 			case 0x22: return this.introPipe(x);
@@ -767,7 +775,10 @@ function buildMap(dec, report, label) {
 const pointerKey = p => `${(p >> 5) & 3}:${p & 0x1f}`;
 const KEY_BONUS_ROOM = '2:2';    // L_UndergroundArea3: salas de bonus
 const KEY_WARP_ZONE = '1:15';    // L_GroundArea16: zona de atajos del 4-2
-const AREA_KEY_NOTES = { '1:11': 'nivel de nubes (se entra por enredadera)', '1:20': 'nivel de nubes (se entra por enredadera)', '0:0': 'sala de agua', '0:2': 'sala de agua' };
+const AREA_KEY_NOTES = { '1:11': 'nivel de nubes (se entra por enredadera)', '1:20': 'nivel de nubes (se entra por enredadera)' };
+// Áreas enteras a las que se entra por un caño y se generan como subnivel: letra del nombre
+// (w = zona de atajos del 4-2, s = salas de agua de 5-2, 6-2 y 8-4)
+const AREA_SUBS = { [KEY_WARP_ZONE]: 'w', '0:0': 's', '0:2': 's' };
 
 // Lee World{n}Areas y le da a cada área su nombre de nivel según el comentario de su etiqueta
 // (";level 1-3/5-3" sirve para el 1-3 y el 5-3). Las áreas sin nivel (pantalla del caño
@@ -896,7 +907,10 @@ function generate(lines, report) {
 	const warpsOf = {};
 	const addWarp = (levelName, w) => { (warpsOf[levelName] ||= []).push(w); };
 	const subNames = {};                                  // `${padre}|${página}` -> nombre
-	const mainTarget = (world, entry) => levelOf[`${world}|${pointerKey(entry.pointer)}`];
+	// (varios niveles terminan en el tramo final del 1-1, área $25: si el mundo no tiene un nivel con ese
+	// puntero, se usa el de cualquier otro mundo)
+	const anyLevelOf = key => info.find(l => pointerKey(l.pointer) === key)?.name;
+	const mainTarget = (world, entry) => levelOf[`${world}|${pointerKey(entry.pointer)}`] ?? anyLevelOf(pointerKey(entry.pointer));
 
 	// Destino de un caño que lleva a un nivel principal: aparece saliendo del primer caño de la página
 	const spawnInto = (target, entry, sourceLevelName) => {
@@ -927,9 +941,9 @@ function generate(lines, report) {
 					subs[subNames[sk]] = { kind: 'window', parent: name, world: dec.worldNumber, entrancePage: entry.entrancePage };
 				}
 				addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: subNames[sk], spawn: { x: 2, y: 3, emerge: 'drop' } });
-			} else if (key === KEY_WARP_ZONE) {
-				const sn = name + 'w';
-				subs[sn] = { kind: 'area', parent: name, world: dec.worldNumber, pointer: 0x20 | 15 };
+			} else if (AREA_SUBS[key]) {
+				const sn = name + AREA_SUBS[key];
+				subs[sn] = { kind: 'area', parent: name, world: dec.worldNumber, pointer: entry.pointer & 0x7f };
 				addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: sn, spawn: { x: 2, y: 3, emerge: 'drop' } });
 			} else if (mainTarget(dec.worldNumber, entry)) {
 				const target = mainTarget(dec.worldNumber, entry);
@@ -961,6 +975,15 @@ function generate(lines, report) {
 			const lv = decodeLevel(lines, spec, report);
 			Object.assign(sub, { width: lv.width, map: lv.map, enemies: lv.enemies, areaType: lv.dec.areaType, night: lv.dec.night });
 			for (const w of zoneWarps(lv.dec)) addWarp(name, w);
+			// Las salidas de la sala: sus propias entradas de cambio de área
+			const cands = [
+				...lv.dec.pipeTops.map(p => ({ x: p.col, y: p.row + TOP_ROWS, type: 'down' })),
+				...lv.dec.exitPipes.map(p => ({ x: p.col, y: p.row + TOP_ROWS, type: 'right' })),
+			];
+			for (const { entry, pipe } of linkWarps(lv.dec.warpEntries, cands)) {
+				const target = mainTarget(sub.world, entry);
+				if (target) addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: target, spawn: spawnInto(target, entry, sub.parent) });
+			}
 		}
 	}
 
