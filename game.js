@@ -147,6 +147,10 @@ function update(dt) {
             smb.drawUI();
             break;
 
+        case Game_State.Pipe_Transition:
+            smb.updateAndDrawPipeTransition(dt);
+            break;
+
         case Game_State.Editor:
             smb.updateAndDrawEditor();
             break;

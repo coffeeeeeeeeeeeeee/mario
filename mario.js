@@ -2,10 +2,33 @@ const SPRITE_SIZE = 16;
 const TILE_PIXEL_SIZE = 16;
 
 const SPRITE_SCALE = 3;
-const BASE_JUMP_POWER = -22;
 const BASE_GRAVITY = 0.8;
-const BASE_VELOCITY_GROUND = (TILE_PIXEL_SIZE * 9.10 / 16) * 60;
-const BASE_VELOCITY_TURBO = (TILE_PIXEL_SIZE * 14.4 / 16) * 60;
+// Velocidades máximas del Super Mario Bros original, en píxeles del NES por cuadro (a ~60 cuadros
+// por segundo). Salen de MaxRightXSpdData en SMBDIS.ASM: $18 caminando y $28 corriendo (con B),
+// en unidades de 1/16 de píxel, o sea 24/16 y 40/16. Se escalan por SPRITE_SCALE para quedar en
+// píxeles de esta pantalla por segundo.
+const SMB_WALK_SPEED = 24 / 16;
+const SMB_RUN_SPEED = 40 / 16;
+const BASE_VELOCITY_GROUND = SMB_WALK_SPEED * SPRITE_SCALE * 60;
+const BASE_VELOCITY_TURBO = SMB_RUN_SPEED * SPRITE_SCALE * 60;
+// Salto del Super Mario Bros original (SMBDIS.ASM: JumpMForceData, FallMForceData, PlayerYSpdData).
+// Todo en píxeles del NES: la velocidad es en píxeles por cuadro y las fuerzas en píxeles por
+// cuadro al cuadrado (el original las guarda en 1/256). Se multiplica por tileScale para pasar
+// a píxeles de esta pantalla. La física vertical corre en pasos fijos de 1/60 s, como el original.
+// El tipo de salto depende de la velocidad horizontal al despegar: parado, caminando o corriendo.
+const SMB_JUMP = {
+	standing: { speed: 4, up: 0x20 / 256, down: 0x70 / 256 },
+	walking:  { speed: 4, up: 0x1e / 256, down: 0x60 / 256 },
+	running:  { speed: 5, up: 0x28 / 256, down: 0x90 / 256 },
+};
+const SMB_MAX_FALL_SPEED = 4;
+const SMB_STOMP_SPEED = -3;        // rebote al pisar un enemigo ($FD)
+const SMB_BRICK_BREAK_SPEED = -2;  // al romper un ladrillo Mario sigue subiendo ($FE)
+const SMB_BUMP_SPEED = 0;          // al golpear un bloque que rebota
+const SMB_CEILING_SPEED = 1;       // al chocar con un techo sólido empieza a caer
+const PHYSICS_STEP_MS = 1000 / 60;
+const PHYSICS_STEP_TOLERANCE_MS = 2; // absorbe el jitter de requestAnimationFrame a 60 Hz
+const PIPE_TRANSITION_MS = 700;      // lo que tarda Mario en entrar o salir de un caño
 const BASE_VELOCITY_SWIM = (TILE_PIXEL_SIZE * 17.6 / 16) * 60;
 
 const TEXT_SIZE = 16;
@@ -38,6 +61,7 @@ const Game_State = {
 	Level_Complete:	5,
 	Editor:			6,
 	Settings_Menu:	7,
+	Pipe_Transition: 8,
 };
 
 const Player = {
@@ -160,7 +184,11 @@ class Game {
 	tileScale = SPRITE_SCALE;
 	tileSize = TILE_PIXEL_SIZE * this.tileScale;
 	velocityY = 0;
-	jumpPower = 0;
+	jumpHeld = false;
+	jumpOriginY = 0;
+	jumpForceUp = SMB_JUMP.standing.up;
+	jumpForceDown = SMB_JUMP.standing.down;
+	physicsAccumulator = 0;
 	gravity = 0;
 	slideVelocityX = 0;
 	
@@ -175,6 +203,8 @@ class Game {
 	levelCompleteState = 'none';
 	flagpoleFlag = null;
 	flagpoleInfo = null;
+	pipeTransition = null;
+	nextWorldOverride = null; // reemplaza al nextWorld del nivel actual (p. ej. al salir del 1-2 por el final del 1-1)
 
 	availableWorlds = [];
 	enemies = [];
@@ -238,9 +268,9 @@ class Game {
 		this.tileSize = TILE_PIXEL_SIZE * this.tileScale;
 		this.updatePhysicsScaling();
 		this.specialBlocks = {};
-		this.foregroundBlocks = [5, 6, 7, 8];
+		this.foregroundBlocks = [5, 6, 7, 8, 42, 43, 44, 45, 46, 47];
 		
-		this.availableWorlds = [...new Set(map.map(m => m.world))].sort();
+		this.availableWorlds = [...new Set(map.filter(m => !m.hidden).map(m => m.world))].sort();
 		this.currentWorldIndex = 0;
 
 		const savedHighscore = this.engine.getCookie("smb_highscore");
@@ -350,6 +380,14 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
 
+		// El tileset subterráneo no tiene la pieza inferior del empalme del caño lateral, y su cuerpo
+		// está un tile más a la izquierda que en el exterior. El empalme sale del tileset exterior.
+		if (tilesetName === "Underground_Tiles") {
+			js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 7, 2, 1, tileScale);
+			js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 8, 2, 1, tileScale);
+			js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", "Overworld_Tiles", 7, 2, 1, tileScale);
+		}
+
 		const sceneryTileset = "Overworld_Tiles";
 
 		js2d.defineSpriteFromTileset("Block_Cloud_Top_Left", sceneryTileset, 0, 4, 1, tileScale);
@@ -395,7 +433,6 @@ class Game {
 
 	updatePhysicsScaling() {
 		const scaleFactor = this.tileScale / SPRITE_SCALE;
-		this.jumpPower = BASE_JUMP_POWER * scaleFactor;
 		this.gravity = BASE_GRAVITY * scaleFactor;
 		this.velocityXGround = BASE_VELOCITY_GROUND * scaleFactor;
 		this.velocityXTurbo = BASE_VELOCITY_TURBO * scaleFactor;
@@ -448,6 +485,14 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Pipe_Top_Right", tilesetName, 1, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
+
+		// El tileset subterráneo no tiene la pieza inferior del empalme del caño lateral, y su cuerpo
+		// está un tile más a la izquierda que en el exterior. El empalme sale del tileset exterior.
+		if (tilesetName === "Underground_Tiles") {
+			js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 7, 2, 1, tileScale);
+			js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 8, 2, 1, tileScale);
+			js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", "Overworld_Tiles", 7, 2, 1, tileScale);
+		}
 
 		const sceneryTileset = "Overworld_Tiles";
 
@@ -578,15 +623,15 @@ class Game {
 						enemyType = "Koopa_Winged";
 						enemyColor = "Red";
 						break;
-					case 43:
+					case 38:
 						enemyType = "Koopa_Winged";
 						enemyColor = "Green";
 						break;
-					case 44:
+					case 39:
 						enemyType = "Koopa";
 						enemyColor = "Red";
 						break;
-					case 45:
+					case 40:
 						enemyType = "Pakkun";
 						enemyColor = "Red";
 						break;
@@ -642,7 +687,7 @@ class Game {
 			player: this.player, velocityX: this.velocityX, velocityY: this.velocityY, time: this.time, score: this.score, lives: this.lives,
 			coins: this.coins, isOnGround: this.isOnGround, currentAnimation: player.currentAnimation,
 			mapState: JSON.parse(JSON.stringify(this.currentMap)), enemiesState: JSON.parse(JSON.stringify(this.enemies)),
-			specialBlocksState: JSON.parse(JSON.stringify(this.specialBlocks))
+			specialBlocksState: JSON.parse(JSON.stringify(this.specialBlocks)), nextWorldOverride: this.nextWorldOverride
 		};
 	}
 
@@ -651,6 +696,7 @@ class Game {
 			this.currentMap = this.savedState.mapState;
 			this.enemies = this.savedState.enemiesState;
 			this.specialBlocks = this.savedState.specialBlocksState;
+			this.nextWorldOverride = this.savedState.nextWorldOverride ?? null;
 			this.player = this.savedState.player; this.time = this.savedState.time; this.score = this.savedState.score; this.lives = this.savedState.lives;
 			this.coins = this.savedState.coins;
 			const player = this.engine.animatedSprites[PlayerName[this.player]];
@@ -765,6 +811,8 @@ class Game {
 		this.specialBlocks = {};
 		this.flagpoleFlag = null;
 		this.maxMapOffsetX = 0;
+		this.nextWorldOverride = null;
+		this.pipeTransition = null;
 	
 		if (this.currentMap && this.currentWorldIndex) {
 			this.loadMap(this.availableWorlds[this.currentWorldIndex]);
@@ -801,6 +849,166 @@ class Game {
 		this.resetLevelState();
 		
 		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
+	}
+
+	// --- Subniveles por caños ----------------------------------------------------------------------
+
+	currentPlayerSpriteName() {
+		switch (this.playerSize) {
+			case Player_Size.Big: return PlayerName[this.player] + "_Big";
+			case Player_Size.Fire: return PlayerName[this.player] + "_Fire";
+			default: return PlayerName[this.player];
+		}
+	}
+
+	currentPlayerAnimPrefix() {
+		return PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (this.playerSize > Player_Size.Small ? "_Big" : ""));
+	}
+
+	// Un warp está en el mapa como { type, x, y, to, spawn }: x, y es la celda superior izquierda del caño.
+	// "down" se entra parado sobre la boca apretando abajo; "right" caminando contra la boca lateral.
+	findPipeWarp(playerPos, playerHeight) {
+		const warps = this.currentMap?.warps;
+		if (!warps || !warps.length || !this.isOnGround) return null;
+		const ts = this.tileSize;
+		const keys = this.engine.keysPressed;
+		const down = keys['ArrowDown'] || keys['KeyS'];
+		const right = keys['ArrowRight'] || keys['KeyD'];
+		const worldLeft = playerPos.x - this.mapOffset.x;
+		const feet = playerPos.y + playerHeight;
+		for (const warp of warps) {
+			const left = warp.x * ts;
+			if (warp.type === 'down' && down) {
+				const top = this.tileToScreen(warp.x, warp.y).y;
+				const center = worldLeft + ts / 2;
+				if (Math.abs(feet - top) < ts * 0.1 && center > left + ts * 0.25 && center < left + ts * 1.75) return warp;
+			} else if (warp.type === 'right' && right) {
+				const floor = this.tileToScreen(warp.x, warp.y + 2).y;
+				const worldRight = worldLeft + ts;
+				if (Math.abs(feet - floor) < ts * 0.1 && worldRight >= left - 2 && worldRight <= left + ts * 0.3) return warp;
+			}
+		}
+		return null;
+	}
+
+	startPipeTransition(warp, playerHeight) {
+		const sprite = this.engine.animatedSprites[this.currentPlayerSpriteName()];
+		this.pipeTransition = {
+			phase: 'enter', t: 0, warp, playerHeight,
+			startX: sprite.position.x, startY: sprite.position.y,
+		};
+		this.state = Game_State.Pipe_Transition;
+		this.velocityY = 0;
+		this.isSliding = false;
+		this.slideVelocityX = 0;
+		this.skidTimer = 0;
+		this.engine.playAudio(audio["Player_Pipe"], false);
+	}
+
+	// Deja la cámara de modo que Mario quede donde está su spawn, sin mostrar nada más allá del fin del mapa.
+	placePlayerAtSpawn(spawn, sprite, playerHeight) {
+		const ts = this.tileSize;
+		const cw = this.engine.getCanvasWidth();
+		const mapPx = this.currentMap.dimensions.width * ts;
+		const worldX = spawn.emerge === 'up' ? spawn.x * ts + ts / 2 : spawn.x * ts;
+		if (mapPx >= cw) {
+			let offset = worldX > cw / 2 ? -(worldX - cw / 2) : 0;
+			offset = Math.max(offset, -(mapPx - cw));
+			this.mapOffset.x = offset;
+		}
+		this.maxMapOffsetX = this.mapOffset.x;
+		sprite.position.x = worldX + this.mapOffset.x;
+		sprite.flipped = false;
+		const cellTop = this.tileToScreen(spawn.x, spawn.y).y;
+		if (spawn.emerge === 'up') {
+			sprite.position.y = cellTop;
+			return { fromY: cellTop, toY: cellTop - playerHeight };
+		}
+		sprite.position.y = cellTop;
+		return null;
+	}
+
+	performPipeWarp(tr) {
+		const warp = tr.warp;
+		const spawn = warp.spawn;
+		if (!map.some(m => m.world === warp.to)) {
+			console.error(`[GAME] El warp apunta a un mapa inexistente: ${warp.to}`);
+			this.finishPipeTransition();
+			return;
+		}
+		this.stopAllMusic();
+		this.loadMap(warp.to);
+		this.specialBlocks = {};
+		this.activeCoins = [];
+		this.bumpingBlocks = [];
+		this.activePowerups = [];
+		this.scorePopups = [];
+		this.brickParticles = [];
+		this.activeFireballs = [];
+		this.flagpoleFlag = null;
+		this.flagpoleInfo = null;
+		if (spawn.then) this.nextWorldOverride = spawn.then;
+
+		const sprite = this.engine.animatedSprites[this.currentPlayerSpriteName()];
+		const rise = this.placePlayerAtSpawn(spawn, sprite, tr.playerHeight);
+		if (rise) {
+			tr.phase = 'exit';
+			tr.t = 0;
+			tr.fromY = rise.fromY;
+			tr.toY = rise.toY;
+			this.engine.playAudio(audio["Player_Pipe"], false);
+		} else {
+			this.finishPipeTransition();
+		}
+	}
+
+	finishPipeTransition() {
+		this.pipeTransition = null;
+		this.state = Game_State.Playing;
+		this.velocityY = 0;
+		this.isOnGround = false;
+		this.jumpHeld = true;   // si sigue apretado el salto, no dispara uno al salir
+		this.physicsAccumulator = 0;
+		this.wasCrouching = false;
+	}
+
+	updateAndDrawPipeTransition(dt) {
+		const tr = this.pipeTransition;
+		if (!tr) { this.state = Game_State.Playing; return; }
+		const ts = this.tileSize;
+		const name = this.currentPlayerSpriteName();
+		const prefix = this.currentPlayerAnimPrefix();
+		const sprite = this.engine.animatedSprites[name];
+
+		tr.t += dt;
+		const p = Math.min(1, tr.t / PIPE_TRANSITION_MS);
+		if (tr.phase === 'enter') {
+			if (tr.warp.type === 'down') {
+				sprite.position.y = tr.startY + tr.playerHeight * p;
+				this.engine.setAnimationForSprite(name, `${prefix}_Idle`);
+			} else {
+				sprite.position.x = tr.startX + ts * 1.6 * p;
+				sprite.flipped = false;
+				this.engine.setAnimationForSprite(name, `${prefix}_Run`);
+			}
+			if (p >= 1) this.performPipeWarp(tr);
+		} else {
+			sprite.position.y = tr.fromY + (tr.toY - tr.fromY) * p;
+			this.engine.setAnimationForSprite(name, `${prefix}_Idle`);
+			if (p >= 1) {
+				sprite.position.y = tr.toY;
+				this.finishPipeTransition();
+				this.isOnGround = true;
+			}
+		}
+
+		this.drawBackground();
+		this.drawBlocks();
+		this.drawBumpingBlocksOverlay();
+		this.drawEnemies(dt);
+		this.engine.drawAnimatedSprite(name, this.frameDt, Pivot.Top_Left);
+		this.drawForegroundBlocks();
+		this.drawUI();
 	}
 
 	rectsOverlap(r1, r2) {
@@ -961,7 +1169,7 @@ class Game {
 				}
 
 				if (isStomping) {
-					this.velocityY = -10;
+					this.velocityY = SMB_STOMP_SPEED * this.tileScale;
 					this.engine.playAudioOverlap(audio["Player_Stomp"]);
 					if (enemy.type === 'Goomba') {
 						enemy.state = 'stomped';
@@ -1198,9 +1406,11 @@ class Game {
 			if(this.currentSelection === i){
 				const textLeft = textPos.x - textWidth / 2;
 				const cursorOffset = this.tileSize * 1.5;
-				const cursorPos = { x: textLeft - cursorOffset, y: menuPosY - SPRITE_SIZE / 2 };
+				// menuPosY es la línea base del texto: el centro visual de las mayúsculas queda ~0.47 del
+				// tamaño de fuente más arriba, y el hongo se centra en vertical sobre ese punto.
+				const cursorPos = { x: textLeft - cursorOffset, y: menuPosY - TEXT_SIZE * 0.47 };
 				if(this.engine.sprites["Cursor"]) {
-					this.engine.drawSprite("Cursor", 0, cursorPos, this.engine.sprites["Cursor"].scale, false, 0, Pivot.Top_Left);
+					this.engine.drawSprite("Cursor", 0, cursorPos, this.engine.sprites["Cursor"].scale, false, 0, Pivot.Center_Left);
 				}
 			}
 			this.engine.drawTextCustom(font, buttonLabel, TEXT_SIZE, "#ffffff", textPos, "center");
@@ -1255,9 +1465,11 @@ class Game {
 			if (this.currentSettingsSelection === i) {
 				const cursorSprite = this.engine.sprites["Cursor"];
 				if(cursorSprite) {
-					const cursorHeight = cursorSprite.image.height * cursorSprite.scale;
-					const cursorPos = { x: this.engine.getCanvasWidth() / 2 - this.tileSize * 3, y: menuPosY - cursorHeight / 2 };
-					this.engine.drawSprite("Cursor", 0, cursorPos, cursorSprite.scale, false, 0, Pivot.Center);
+					// Mismo criterio que el menú principal: a la izquierda de la etiqueta y centrado
+					// en vertical sobre las mayúsculas (menuPosY es la línea base del texto).
+					const labelLeft = this.engine.getCanvasWidth() / 2 - this.tileSize * 4;
+					const cursorPos = { x: labelLeft - this.tileSize * 1.5, y: menuPosY - TEXT_SIZE * 0.47 };
+					this.engine.drawSprite("Cursor", 0, cursorPos, cursorSprite.scale, false, 0, Pivot.Center_Left);
 				}
 			}
 
@@ -1827,7 +2039,12 @@ class Game {
 			const mapWidth = this.currentMap.dimensions.width;
 			const inBounds = (x, y) => x >= 0 && x < mapWidth;
 			
-			this.velocityY += this.gravity;
+			// Física vertical en pasos fijos de 1/60 s, igual que el original, sin importar los Hz de la pantalla.
+			this.physicsAccumulator = Math.min(this.physicsAccumulator + dt, PHYSICS_STEP_MS * 5);
+			const physicsSteps = Math.max(0, Math.floor((this.physicsAccumulator + PHYSICS_STEP_TOLERANCE_MS) / PHYSICS_STEP_MS));
+			this.physicsAccumulator -= physicsSteps * PHYSICS_STEP_MS;
+
+			for (let physicsStep = 0; physicsStep < physicsSteps; physicsStep++) {
 			const newY = playerPos.y + this.velocityY;
 
 			// Colisión con techo
@@ -1840,6 +2057,7 @@ class Game {
 					this.handleCoinCollision(idx); 
 					const blockId = this.currentMap.map[idx] || 0;
 					if (isSolid(blockId) || blockId === 25) {
+						let ceilingSpeed = SMB_CEILING_SPEED;
 						const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 						let blockSoundPlayed = false;
 
@@ -1864,6 +2082,7 @@ class Game {
 							this.spawnBrickParticles(blockX, blockY);
 							this.score += 50;
 							this.spawnScorePopup("50", blockX + this.tileSize / 2, blockY);
+							ceilingSpeed = SMB_BRICK_BREAK_SPEED;
 
 
 						} else {
@@ -1893,6 +2112,7 @@ class Game {
 							if (!isAlreadyBumping && !justExhausted) {
 								this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId });
 								this.currentMap.map[idx] = 0;
+								ceilingSpeed = SMB_BUMP_SPEED;
 							}
 
 							if (!blockSoundPlayed) {
@@ -1900,7 +2120,7 @@ class Game {
 							}
 						}
 
-						this.velocityY = 0; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y; hitCeiling = true;
+						this.velocityY = ceilingSpeed * this.tileScale; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y; hitCeiling = true;
 					}
 				}
 				if (!hitCeiling) playerPos.y = newY;
@@ -1921,6 +2141,14 @@ class Game {
 					}
 				}
 				if (!foundGround) { this.isOnGround = false; playerPos.y = newY; }
+			}
+
+			// La gravedad se aplica después de mover, como en el original. Subiendo con el salto
+			// apretado (o sin haber subido todavía 1 px) rige la fuerza suave; soltando o cayendo, la fuerte.
+			const rising = this.velocityY < 0;
+			const risenEnough = (this.jumpOriginY - playerPos.y) >= this.tileScale;
+			const force = (rising && (this.jumpHeld || !risenEnough)) ? this.jumpForceUp : this.jumpForceDown;
+			this.velocityY = Math.min(this.velocityY + force * this.tileScale, SMB_MAX_FALL_SPEED * this.tileScale);
 			}
 
 
@@ -2045,8 +2273,26 @@ class Game {
 					if (!blocked) { if (playerPos.x < (this.engine.getCanvasWidth() / 2)) playerPos.x = newX; else { this.mapOffset.x -= velocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); } }
 				}
 			}
-			if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
+			// Como en el original, el salto solo se dispara al apretar: mantener apretado no repite.
+			const jumpDown = !!(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']);
+			if (jumpDown && !this.jumpHeld && this.isOnGround) {
+				const walking = !isCrouching && !!(isTryingToMoveLeft || isTryingToMoveRight);
+				const jump = walking ? (isTurbo ? SMB_JUMP.running : SMB_JUMP.walking) : SMB_JUMP.standing;
+				this.velocityY = -jump.speed * this.tileScale;
+				this.jumpForceUp = jump.up;
+				this.jumpForceDown = jump.down;
+				this.jumpOriginY = playerPos.y;
+				this.isOnGround = false;
+				this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]);
+			}
+			this.jumpHeld = jumpDown;
 			
+			// Caños que llevan a otro nivel (abajo sobre la boca, o derecha contra la boca lateral)
+			if (this.state === Game_State.Playing && !this.isSliding) {
+				const warp = this.findPipeWarp(playerPos, playerHeight);
+				if (warp) this.startPipeTransition(warp, playerHeight);
+			}
+
 			// Verificar si el jugador cayó del mapa (usando coordenadas de mundo)
 			const playerTile = this.screenToTile(playerPos.x + this.tileSize / 2, playerPos.y + this.tileSize / 2);
 			if ((playerTile.y >= this.currentMap.dimensions.height || playerPos.y > this.engine.getCanvasHeight() + this.tileSize * 2) && this.state === Game_State.Playing) { 
@@ -2177,7 +2423,8 @@ class Game {
 				if (playerPos.x >= this.flagpoleInfo.castleDoorX && this.levelCompleteState !== 'finished') {
 					this.playerIsVisible = false;
 					this.levelCompleteState = 'finished';
-					const nextWorldName = this.currentMap.nextWorld;
+					const nextWorldName = this.nextWorldOverride || this.currentMap.nextWorld;
+					this.nextWorldOverride = null;
 					if (nextWorldName) {
 						this.startNextLevel(nextWorldName);
 					} else {
