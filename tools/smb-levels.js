@@ -798,10 +798,10 @@ function buildMap(dec, report, label) {
 			enemies.push({ ...ent, x: e.x, y: cellRow });
 		} else if (e.id >= 0x24 && e.id <= 0x2c) {
 			// 24 balancín, 25 sube y baja, 26/2b suben, 27/2c bajan, 28 va y viene, 29 cae al pisarla, 2a se va a la derecha.
-			// Las grandes miden 48 px (32 en los castillos) y las chicas 24; la superficie queda en y = fila * 16 - 24
+			// Las grandes miden 48 px (32 en los castillos) y las chicas 24; la superficie queda en y = fila * 16 - 8
 			const KINDS = { 0x24: 'balance', 0x25: 'vert', 0x26: 'lift', 0x27: 'lift', 0x28: 'hori', 0x29: 'drop', 0x2a: 'right', 0x2b: 'lift', 0x2c: 'lift' };
 			const small = e.id >= 0x2b;
-			platforms.push({ kind: KINDS[e.id], x: e.x * 16, y: e.row * 16 - 24, w: small ? 24 : (dec.areaType === AREA_TYPE.Castle ? 32 : 48), dir: e.id === 0x26 || e.id === 0x2b ? -1 : 1, small });
+			platforms.push({ kind: KINDS[e.id], x: e.x * 16, y: e.row * 16 - 8, w: small ? 24 : (dec.areaType === AREA_TYPE.Castle ? 32 : 48), dir: e.id === 0x26 || e.id === 0x2b ? -1 : 1, small });
 		} else {
 			unsupported[e.id] = (unsupported[e.id] || 0) + 1;
 		}
@@ -887,6 +887,7 @@ function decodeLevel(lines, spec, report) {
 	// Castillo de Bowser: el hacha queda en el mapa y el motor termina el nivel al tocarla
 	if (dec.axe) built.axe = { x: dec.axe.col, y: dec.axe.row + TOP_ROWS };
 	built.frenzy = dec.frenzy;
+	if (LEVEL_LOOPS[name]) { built.loops = LEVEL_LOOPS[name].loops.map(([page, y]) => ({ page, y })); if (LEVEL_LOOPS[name].multi) built.multi = true; }
 	return { name, dec, time: GAME_TIMER_BY_SETTING[dec.gameTimerSetting], halfway: halfwayPage(lines, spec.world, spec.level), ...built };
 }
 
@@ -930,6 +931,15 @@ function linkWarps(entries, candidates) {
 	}
 	return links;
 }
+
+// Laberintos de los castillos (LoopCmdWorldNumber, LoopCmdPageNumber y LoopCmdYPosition): al llegar la pantalla a
+// esa página, Mario tiene que estar parado en el suelo a esa altura (la y del NES de su parte de arriba, de un
+// Mario chico); si no, vuelve cuatro páginas atrás. En el 7-4 se juntan de a tres y se vuelve si falla alguno.
+const LEVEL_LOOPS = {
+	'4-4': { loops: [[5, 0x40], [9, 0xb0]] },
+	'7-4': { loops: [[4, 0xb0], [5, 0x80], [6, 0x40], [8, 0x40], [9, 0x80], [10, 0x40]], multi: true },
+	'8-4': { loops: [[6, 0xf0], [0xb, 0xf0], [0x10, 0xf0]] },
+};
 
 // Mundos a los que llevan los tres caños de una zona de atajos (WarpZoneNumbers en el original);
 // 0x24 y 0 son casilleros sin caño.
@@ -1056,7 +1066,7 @@ function generate(lines, report) {
 
 	const out = [];
 	for (const [name, lv] of Object.entries(levels)) {
-		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, frenzy: lv.frenzy, axe: lv.axe, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, frenzy: lv.frenzy, loops: lv.loops, multi: lv.multi, axe: lv.axe, warps: warpsOf[name] || [] });
 	}
 	for (const name of Object.keys(subs).sort()) {
 		const sub = subs[name];
@@ -1092,6 +1102,8 @@ function formatLevels(out) {
 		if (lv.halfway) L.push(`\t\thalfway: ${lv.halfway},`);
 		L.push(`\t\tdimensions: { width: ${lv.width}, height: ${MAP_HEIGHT} },`);
 		if (lv.axe) L.push(`\t\taxe: ${JSON.stringify(lv.axe)},`);
+		if (lv.loops) L.push(`\t\tloops: ${JSON.stringify(lv.loops)},`);
+		if (lv.multi) L.push('\t\tmulti: true,');
 		if (lv.exit) L.push(`\t\texit: ${JSON.stringify(lv.exit)},`);
 		if (lv.frenzy && lv.frenzy.length) L.push(`\t\tfrenzy: ${JSON.stringify(lv.frenzy)},`);
 		L.push(`\t\twarps: ${JSON.stringify(lv.warps)},`);

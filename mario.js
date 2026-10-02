@@ -250,6 +250,8 @@ const FIREWORK_Y = [0x60, 0x40, 0x70, 0x40, 0x60, 0x30];   // FireworksYPosData
 const FIREWORK_FRAME_MS = 100;
 const VINE_GROW_SPEED = 0.5, VINE_MAX = 96;   // la enredadera crece 1 px cada dos cuadros hasta 96 px (VineHeightData)
 const CLIMB_SPEED = 0.8;                     // px del NES por cuadro al trepar
+const LOOP_BACK_PAGES = 4;                         // el laberinto devuelve a Mario cuatro páginas atrás
+const LOOP_TOLERANCE = 3;                          // px del NES de margen en la altura de los pies
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
 const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
@@ -766,6 +768,7 @@ class Game {
 		this.springs = this.currentMap.springDefs.map(d => ({ ...d, anim: 0, timer: 0, force: SPRING_BOUNCE }));
 		this.vines = [];
 		this.climbVine = null;
+		this.loopPrevRight = null; this.loopPass = 0; this.loopCorrect = 0;
 		this.cameraY = 0;
 		this.hasLakitu = (this.currentMap.enemies || []).some(e => e.type === 'Lakitu');
 		this.lakituTimer = 0;
@@ -1412,6 +1415,7 @@ class Game {
 		const screenRight = screenLeft + this.engine.getCanvasWidth();
 		this.updateCannons(player, screenLeft, screenRight);
 		this.updateFrenzy(player, screenLeft, screenRight);
+		this.updateLoops(player, screenRight);
 		this.updateVines(player);
 		if (this.hasLakitu && !this.enemies.some(e => e.type === 'Lakitu') && ++this.lakituTimer >= LAKITU_RESPAWN_STEPS * 0.5) {
 			// Si lo derrotan, otro Lakitu vuelve a aparecer por la derecha pasado un rato
@@ -1593,6 +1597,42 @@ class Game {
 			const n = Math.ceil(v.h / 8);
 			for (let i = 0; i < n; i++) this.engine.drawSprite('Vine_Segment', i === 0 ? 1 : 0, { x: v.baseX + k, y: top + i * 8 * k }, k, false, 0, Pivot.Top_Left);
 		}
+	}
+
+	// Laberintos de los castillos: cuando la pantalla llega al borde de una página marcada, Mario tiene que estar en el
+	// suelo a la altura que pide el original (los pies, en px del NES: 16 de la barra de arriba más la altura en el nivel);
+	// si no, vuelve cuatro páginas atrás y los enemigos se vuelven a armar
+	updateLoops(player, screenRight) {
+		const loops = this.currentMap.loops;
+		if (!loops || !loops.length) return;
+		const k = this.tileScale;
+		const right = screenRight / k;
+		const prev = this.loopPrevRight ?? right;
+		this.loopPrevRight = right;
+		if (right <= prev || right - prev > 64) return;   // sólo cuenta el avance continuo, no los saltos de un caño
+		for (const L of loops) {
+			const edge = L.page * 256;
+			if (!(prev < edge && right >= edge)) continue;
+			const feet = 16 + (player.position.y + this.playerHeightPx() - this.platformBaseY()) / k;
+			const ok = this.isOnGround && Math.abs(feet - (L.y + 16)) <= LOOP_TOLERANCE;
+			if (this.currentMap.multi) {
+				this.loopPass = (this.loopPass || 0) + 1;
+				if (ok) this.loopCorrect = (this.loopCorrect || 0) + 1;
+				if (this.loopPass >= 3) {
+					const failed = (this.loopCorrect || 0) < 3;
+					this.loopPass = this.loopCorrect = 0;
+					if (failed) this.loopBack();
+				}
+			} else if (!ok) this.loopBack();
+		}
+	}
+
+	loopBack() {
+		const d = LOOP_BACK_PAGES * 256 * this.tileScale;
+		this.mapOffset.x = Math.min(0, this.mapOffset.x + d);
+		this.maxMapOffsetX = this.mapOffset.x;
+		this.loopPrevRight = null;
+		this.createEnemies();
 	}
 
 	// Ataque continuo de los niveles (AreaFrenzy): cheep-cheeps que saltan, Bullet Bills desde la derecha o,
@@ -1939,8 +1979,12 @@ class Game {
 		}
 		enemy.y += enemy.vy;
 
-		// Llamas: en los mundos 1 a 5 y en el 8 (en el 6 y 7 el original tira martillos, que acá no están)
+		// Desde el mundo 6 Bowser también tira martillos mientras está en el aire, de a no más de tres
 		const world = parseInt(this.currentMap.world, 10);
+		if (world >= 6 && enemy.y < floor - k && enemy.frame % 8 === 0 && this.enemies.filter(e => e.type === 'Hammer').length < 3) {
+			this.enemies.push({ id: this.enemies.length, type: 'Hammer', color: null, x: enemy.x + 4 * k, y: enemy.y - 6 * k, vx: enemy.dir * k, vy: -HAMMER_UP_SPEED * k, dir: enemy.dir, state: 'walking', active: true, anim: 0 });
+		}
+		// Llamas: en los mundos 1 a 5 y en el 8 (en el 6 y 7 sólo hay martillos)
 		if (world <= 5 || world === 8) {
 			if (--enemy.fireTimer <= 0) {
 				if (!enemy.mouth) { enemy.mouth = true; enemy.fireTimer = 32; }
@@ -2120,7 +2164,25 @@ class Game {
 		return tall ? this.tileSize * 1.5 : this.tileSize;
 	}
 
+	// Caja de choque de un enemigo, con los desplazamientos de BoundBoxCtrlData del original (en px del NES, respecto de
+	// la esquina de arriba a la izquierda del sprite). La del Goomba y los que usan SmallBBox es de 10x6; la de los
+	// koopas, de 12x12. Devuelve null si el enemigo usa la caja entera.
+	enemyHitRect(enemy) {
+		const k = this.tileScale, x = enemy.x + this.mapOffset.x, y = enemy.y;
+		const r = (l, t, w, h) => ({ x: x + l * k, y: y + t * k, w: w * k, h: h * k });
+		switch (enemy.type) {
+			case 'Goomba': case 'Spiny': case 'Bloober': case 'Cheep': case 'Podoboo': case 'BulletBill': return r(3, 6, 10, 6);
+			case 'Lakitu': return r(2, 1, 12, 12);
+			case 'HammerBro': return r(4, 4, 8, 20);
+			case 'Koopa': case 'Koopa_Winged':
+				return (enemy.state === 'walking' && enemy.color !== 'Buzzy') ? r(2, 9, 12, 12) : r(2, 1, 12, 12);
+			default: return null;
+		}
+	}
+
 	enemyScreenRect(enemy) {
+		const hit = this.enemyHitRect(enemy);
+		if (hit) return hit;
 		const k = this.tileScale, sx = enemy.x + this.mapOffset.x;
 		if (enemy.type === 'Bowser') return { x: sx + 2 * k, y: enemy.y, w: (BOWSER_W - 4) * k, h: BOWSER_H * k };
 		if (enemy.type === 'BowserFlame') return { x: sx, y: enemy.y, w: FLAME_W * k, h: FLAME_H * k };
@@ -2182,7 +2244,7 @@ class Game {
 
 		const playerRect = this.playerHitbox(player);
 
-		if (enemy.state === 'stomped' || enemy.state === 'falling' || !this.rectsOverlap(playerRect, enemyRect)) return;
+		if (enemy.state === 'stomped' || enemy.state === 'falling' || !this.rectsOverlap(playerRect, this.enemyHitRect(enemy) ?? enemyRect)) return;
 
 		// Con la estrella, Mario se lleva puesto a cualquier enemigo
 		if (this.starTimer > 0) {
