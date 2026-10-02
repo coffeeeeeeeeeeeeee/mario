@@ -404,6 +404,9 @@ sheet('Vine_Tiles', 32, 8, 16, 8, (cv, ox, oy) => {
 	putTile(cv, ox + 22, oy, SPR, 0xe1, pal, { flipX: true });
 });
 
+// Burbuja de Mario bajo el agua: tile $74 de sprites con la paleta 2 del agua
+sheet('Bubble_Tiles', 8, 8, 8, 8, (cv, ox, oy) => putTile(cv, ox, oy, SPR, 0x74, WATER.spr[2]));
+
 // --- Bolas de fuego ----------------------------------------------------------------------------
 
 sheet('Fireball_Spin_Tiles', 32, 8, 8, 8, (cv, ox, oy) => {

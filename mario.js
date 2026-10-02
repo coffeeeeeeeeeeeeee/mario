@@ -222,7 +222,7 @@ const BOWSER_JUMP_SPEED = 2, BOWSER_GRAVITY = 0.0625;      // px del NES por cua
 const BOWSER_FLAME_SPEED = 1.25;                           // la llama avanza 1 px + 0x40/256 por cuadro
 const BOWSER_FLAME_HEIGHTS = [16, 32, 48, 16];             // alturas sobre el puente a las que apunta la llama
 const FLAME_W = 24, FLAME_H = 8;
-const BRIDGE_COLLAPSE_MS = 100;                            // un tile del puente cada 6 cuadros
+const BRIDGE_COLLAPSE_MS = 4 * 1000 / 60;                  // un tile del puente cada 4 cuadros (BridgeCollapse)
 const BASE_GRAVITY_NES = 0.4;   // px del NES por cuadro al cuadrado, para la caída automática de Mario al final
 const BULLET_BILL_SPEED = 1.5;       // px del NES por cuadro (el original lo mueve a $e8/16)
 const CANNON_MIN_STEPS = 120, CANNON_RANGE_STEPS = 120;   // cuadros entre disparos de un cañón, mínimo y variación
@@ -234,9 +234,12 @@ const PLATFORM_HORI_AMPLITUDE = 40, PLATFORM_HORI_RATE = 0.025;  // la que va y 
 const PLATFORM_DROP_GRAVITY = 0.1, PLATFORM_DROP_MAX = 2;        // la que cae al pisarla
 const PLATFORM_FALL_GRAVITY = 0.2;                               // balancín que se suelta
 const PLATFORM_BALANCE_LIMIT = 13;                               // el balancín se suelta si una sube hasta acá
-const HAMMER_THROW_STEPS = 0x30;       // cuadros entre martillos (HammerThrowTmrData)
+const HAMMER_THROW_STEPS = 0x30;       // cuadros entre martillos (HammerThrowTmrData); en el modo difícil, 0x1c
+const HAMMER_THROW_STEPS_HARD = 0x1c;
+const BUBBLE_STEPS = 48, BUBBLE_SPEED = 0.6;   // una burbuja de Mario cada tanto, que sube 0,6 px por cuadro
 const HAMMER_BRO_JUMP_SPEED = 5;      // px del NES por cuadro
 const HAMMER_GRAVITY = 0x10 / 256, HAMMER_UP_SPEED = 2;
+const LAKITU_DIFF_ADJ = [0x15, 0x30, 0x40];   // velocidad base de Lakitu, en 1/16 px por cuadro (LakituDiffAdj)
 const LAKITU_EGG_STEPS = 0x80;        // cuadros entre huevos de espinosos
 const LAKITU_RESPAWN_STEPS = 7 * 0x80;
 const SPRING_OFFSETS = [0, 8, 16, 8];              // cuánto baja la parte de arriba en cada cuadro (Jumpspring_Y_PosData)
@@ -253,6 +256,7 @@ const CLIMB_SPEED = 0.8;                     // px del NES por cuadro al trepar
 const LOOP_BACK_PAGES = 4;                         // el laberinto devuelve a Mario cuatro páginas atrás
 const LOOP_TOLERANCE = 3;                          // px del NES de margen en la altura de los pies
 const HURRY_TIME = 100;               // con este tiempo o menos suena la música apurada
+const TIME_WARNING_MS = 3000;           // lo que dura el aviso de poco tiempo antes de la música apurada
 const HURRY_PLAYBACK_RATE = 1.25;    // cuánto se acelera la melodía en los niveles sin pista propia
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
@@ -774,7 +778,9 @@ class Game {
 		this.cameraY = 0;
 		this.hasLakitu = (this.currentMap.enemies || []).some(e => e.type === 'Lakitu');
 		this.lakituTimer = 0;
-		const base = (this.currentMap.platforms || []).map(d => {
+		const base = (this.currentMap.platforms || []).map((d0) => {
+			let d = d0;
+			if (this.secondaryHard && d.w === 48) d = { ...d, w: 32 };   // en el modo difícil las plataformas grandes miden 32 px
 			const p = { ...d, ox: d.x, oy: d.y, vx: 0, vy: 0, rider: false, t: d.kind === 'vert' ? -Math.PI / 2 : 0, active: false, falling: false };
 			if (d.kind === 'vert') p.cy = d.y + PLATFORM_VERT_AMPLITUDE;
 			return p;
@@ -1159,6 +1165,7 @@ class Game {
 		this.engine.stopAudio(audio["Underwater_Theme"]);
 		this.engine.stopAudio(audio["Castle_Theme"]);
 		this.engine.stopAudio(audio["Hurry_Theme"]);
+		this.engine.stopAudio(audio["Star_Theme"]);
 	}
 
 	resetLevelState() {
@@ -1420,6 +1427,7 @@ class Game {
 		this.updateFrenzy(player, screenLeft, screenRight);
 		this.updateLoops(player, screenRight);
 		this.updateVines(player);
+		this.updateBubbles(player);
 		if (this.hasLakitu && !this.enemies.some(e => e.type === 'Lakitu') && ++this.lakituTimer >= LAKITU_RESPAWN_STEPS * 0.5) {
 			// Si lo derrotan, otro Lakitu vuelve a aparecer por la derecha pasado un rato
 			this.lakituTimer = 0;
@@ -1536,11 +1544,45 @@ class Game {
 		this.performPipeWarp(tr);
 	}
 
+	// Burbujas de Mario nadando: sale una cada 48 cuadros de la boca y sube hasta la superficie del agua
+	updateBubbles(player) {
+		if (!this.bubbles) this.bubbles = [];
+		if (!this.isWater || this.state !== Game_State.Playing) { this.bubbles.length = 0; return; }
+		const k = this.tileScale, ts = this.tileSize, pos = player.position, top = this.tileToScreen(0, 2).y;
+		for (let st = 0; st < this.physicsSteps; st++) {
+			this.bubbleTimer = (this.bubbleTimer ?? BUBBLE_STEPS) - 1;
+			if (this.bubbleTimer <= 0) {
+				this.bubbleTimer = BUBBLE_STEPS;
+				const big = this.playerSize > Player_Size.Small;
+				this.bubbles.push({ x: pos.x + (this.facingDir < 0 ? 0 : ts - 8 * k), y: pos.y + (big ? 6 : 2) * k });
+			}
+			for (const b of this.bubbles) b.y -= BUBBLE_SPEED * k;
+		}
+		this.bubbles = this.bubbles.filter(b => b.y > top);
+	}
+
+	drawBubbles() {
+		const sprite = this.engine.sprites['Bubble'];
+		if (!sprite) return;
+		for (const b of this.bubbles || []) this.engine.drawSprite('Bubble', 0, { x: b.x, y: b.y }, sprite.scale, false, 0, Pivot.Top_Left);
+	}
+
+	// Texto de la zona de atajos: el título y, sobre cada caño, el mundo al que lleva
+	drawWarpZoneText() {
+		const pipes = (this.currentMap?.warps || []).filter(w => w.spawn && w.spawn.start);
+		if (!pipes.length || this.state !== Game_State.Playing) return;
+		const ts = this.tileSize, W = this.engine.getCanvasWidth();
+		const shown = pipes.map(w => ({ w, pos: this.tileToScreen(w.x, w.y) })).filter(p => p.pos.x > -ts && p.pos.x < W);
+		if (!shown.length) return;
+		this.engine.drawTextCustom(font, 'WELCOME TO WARP ZONE!', TEXT_SIZE, Color.WHITE, { x: W / 2, y: ts * 2.4 }, "center");
+		for (const { w, pos } of shown) this.engine.drawTextCustom(font, String(w.to).split('-')[0], TEXT_SIZE, Color.WHITE, { x: pos.x + ts, y: pos.y - ts * 0.7 }, "center");
+	}
+
 	// --- Enredaderas ---------------------------------------------------------------------------
 
 	spawnVine(tx, ty) {
 		this.vines.push({ tx, ty, h: 0 });
-		this.engine.playAudioOverlap(audio["Powerup_Appears"]);
+		this.engine.playAudioOverlap(audio["Vine"]);
 	}
 
 	// Crece, y Mario se agarra si la toca apretando arriba o abajo; trepa con arriba y abajo y sube al nivel de nubes
@@ -1655,7 +1697,7 @@ class Game {
 		const base = { id: this.enemies.length, color, state: 'walking', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true, anim: 0, frame: 0, swimPhase: 0, force: 0, floatTimer: 0 };
 		if (mode === 'fly') {
 			this.frenzyTimer = 16 + Math.floor(Math.random() * 80);
-			if (this.enemies.filter(e => e.flying).length >= 3) return;
+			if (this.enemies.filter(e => e.flying).length >= (this.secondaryHard ? 4 : 3)) return;
 			const dir = Math.random() < 0.5 ? -1 : 1;
 			this.enemies.push({ ...base, type: 'Cheep', flying: true, x: screenLeft + (0.15 + Math.random() * 0.7) * W, y: H + ts,
 				dir, vx: dir * (0.9 + Math.random() * 1.1) * k, vy: -(5 + Math.random() * 1.5) * k, origY: H, bobDown: false });
@@ -1708,7 +1750,10 @@ class Game {
 		}
 	}
 
-	// Lakitu: flota arriba, sigue a Mario por encima y cada 128 cuadros suelta un huevo de Spiny
+	// Lakitu (MoveLakitu / PlayerLakituDiff): flota arriba y se mueve hacia Mario más rápido cuanto más cerca está
+	// (la velocidad es un valor base menos la distancia en cuartos, con la distancia limitada a 60 px) y más aún si
+	// Mario corre con la pantalla avanzando. Si se aleja de más en el sentido contrario, frena y da la vuelta.
+	// Cada 128 cuadros suelta un huevo de Spiny.
 	stepLakitu(enemy, player) {
 		const k = this.tileScale;
 		if (enemy.state === 'falling') {
@@ -1718,11 +1763,24 @@ class Game {
 		}
 		enemy.anim++;
 		const playerX = player.position.x - this.mapOffset.x;
-		const dx = playerX - enemy.x;
-		const target = Math.max(-2.5, Math.min(2.5, dx * 0.03)) * k;
-		enemy.vx0 = (enemy.vx0 || 0) + (target - (enemy.vx0 || 0)) * 0.05;
-		enemy.x += enemy.vx0;
-		enemy.vx = enemy.vx0 >= 0 ? 1 : -1;
+		const dx = (playerX - enemy.x) / k;
+		const toward = dx < 0 ? -1 : 1;
+		const dist = Math.min(Math.abs(dx), 60);
+		if (enemy.moveDir === undefined) { enemy.moveDir = -1; enemy.moveSpeed = 0x10; }
+		const xs = Math.abs(Math.floor(this.xSpeed / 256));
+		const scrolling = xs !== 0 && player.position.x >= this.engine.getCanvasWidth() * 0.44;
+		const idx = scrolling ? (xs >= 0x19 ? 2 : 1) : 0;
+		let speed;
+		if (Math.abs(dx) >= 60 && toward !== enemy.moveDir) {
+			// Se pasó de largo: va frenando y, al llegar a cero, da la vuelta hacia Mario
+			if (enemy.moveDir < 0 || --enemy.moveSpeed <= 0) enemy.moveDir = toward;
+			speed = Math.max(0, enemy.moveSpeed);
+		} else {
+			speed = Math.max(0, LAKITU_DIFF_ADJ[idx] - ((Math.floor(dist) & 0x3c) >> 2));
+			enemy.moveSpeed = speed;
+		}
+		enemy.x += enemy.moveDir * speed / 16 * k;
+		enemy.vx = enemy.moveDir;
 		enemy.y = this.tileSize * 1.4;   // flota cerca del borde de arriba de la pantalla
 		if (--enemy.throwTimer <= 0) {
 			enemy.throwTimer = LAKITU_EGG_STEPS;
@@ -1758,7 +1816,7 @@ class Game {
 		}
 		enemy.warning = enemy.throwTimer < 20;
 		if (--enemy.throwTimer <= 0) {
-			enemy.throwTimer = HAMMER_THROW_STEPS;
+			enemy.throwTimer = this.secondaryHard ? HAMMER_THROW_STEPS_HARD : HAMMER_THROW_STEPS;
 			const sx = enemy.x + this.mapOffset.x;
 			if (sx > -this.tileSize && sx < this.engine.getCanvasWidth()) {
 				this.enemies.push({ id: this.enemies.length, type: 'Hammer', color: null, x: enemy.x + 2 * k, y: enemy.y - 10 * k, vx: face * 1 * k, vy: -HAMMER_UP_SPEED * k, dir: face, state: 'walking', active: true, anim: 0 });
@@ -1942,6 +2000,15 @@ class Game {
 		}
 	}
 
+	// Modo difícil secundario del original: rige desde el 5-3 y acelera el Hammer Bro, a las llamas de Bowser y a los
+	// cheep-cheeps, y achica las plataformas grandes
+	get secondaryHard() {
+		const m = /^(\d)-(\d)/.exec(this.currentMap?.world || '');
+		if (!m) return false;
+		const w = +m[1], l = +m[2];
+		return w > 5 || (w === 5 && l >= 3);
+	}
+
 	// Altura (en pantalla) de la superficie del puente de Bowser: la fila del puente es dos más abajo que el hacha
 	bridgeFloorY() {
 		const ax = this.currentMap.axe;
@@ -2001,10 +2068,10 @@ class Game {
 				if (!enemy.mouth) { enemy.mouth = true; enemy.fireTimer = 32; }
 				else {
 					enemy.mouth = false;
-					enemy.fireTimer = BOWSER_FLAME_TIMER[enemy.flameIdx++ % BOWSER_FLAME_TIMER.length];
+					enemy.fireTimer = BOWSER_FLAME_TIMER[enemy.flameIdx++ % BOWSER_FLAME_TIMER.length] - (this.secondaryHard ? 16 : 0);
 					const target = this.bridgeFloorY() - BOWSER_FLAME_HEIGHTS[Math.floor(Math.random() * 4)] * k;
 					this.enemies.push({ id: this.enemies.length, type: 'BowserFlame', color: null, x: enemy.x - 14 * k, y: enemy.y + 8 * k, targetY: target, dir: -1, vx: -1, vy: 0, state: 'walking', anim: 0, active: true });
-					this.engine.playAudioOverlap(audio["Shell"]);
+					this.engine.playAudioOverlap(audio["Bowser_Fire"]);
 				}
 			}
 		}
@@ -2027,7 +2094,7 @@ class Game {
 		enemy.vy = ENEMY_JUMP_SPEED * this.tileScale;
 		this.score += BOWSER_SCORE;
 		this.spawnScorePopup(String(BOWSER_SCORE), enemy.x + this.mapOffset.x, enemy.y);
-		this.engine.playAudioOverlap(audio["Shell"]);
+		this.engine.playAudioOverlap(audio["Bowser_Falls"]);
 	}
 
 	// Barra de fuego: 6 bolas (12 la larga) separadas 8 px que giran alrededor del bloque; el estado de giro
@@ -2062,7 +2129,7 @@ class Game {
 		}
 		enemy.timer--;
 		enemy.y += enemy.vy;
-		enemy.vy += PODOBOO_GRAVITY * k;
+		enemy.vy = Math.min(enemy.vy + PODOBOO_GRAVITY * k, 3 * k);   // la caída tiene tope de 3 px por cuadro
 	}
 
 	// Cheep-cheep y Bloober (MoveSwimmingCheepCheep / MoveBloober). El cheep-cheep avanza a la izquierda
@@ -2269,6 +2336,7 @@ class Game {
 			enemy.kicked = true;
 			enemy.shellChain = 0;
 			this.awardChain(3, enemyScreenX, enemy.y);
+			this.engine.playAudioOverlap(audio["Kick"]);
 			return;
 		}
 
@@ -2305,6 +2373,7 @@ class Game {
 
 	drawEnemies() {
 		this.drawVines();
+		this.drawBubbles();
 		this.drawPlatforms();
 		this.drawSprings();
 		const pakkunGreenAnim = this.engine.animatedSprites['Pakkun_Green'];
@@ -3578,7 +3647,7 @@ class Game {
                         }
                         if (!this.bridgeTiles.length) {
                             const bowser = this.enemies.find(e => e.type === 'Bowser');
-                            if (bowser && bowser.state !== 'falling') { bowser.state = 'falling'; bowser.vy = 0; }
+                            if (bowser && bowser.state !== 'falling') { bowser.state = 'falling'; bowser.vy = 0; this.engine.playAudioOverlap(audio["Bowser_Falls"]); }
                             this.levelCompleteState = 'axe_fall';
                             this.axeTimer = 0;
                         }
@@ -3707,7 +3776,7 @@ class Game {
 						y: ts * 1.0 + (FIREWORK_Y[i] - 0x28) / 0x48 * ts * 3.2,
 						t: 0,
 					});
-					this.engine.playAudioOverlap(audio["Player_Bump"]);
+					this.engine.playAudioOverlap(audio["Fireworks"]);
 					this.fireworksLeft--;
 					this.score += 500;
 					this.bonusTimer = 0;
@@ -4231,16 +4300,25 @@ class Game {
 		return dx * dx + dy * dy <= radius * radius;
 	}
 
-	// Música del nivel. Con 100 de tiempo o menos suena la versión apurada: en el exterior, una pista aparte; en
-	// los demás tipos de nivel, la misma melodía más rápida.
+	// Música del nivel. Con la estrella suena la de la invencibilidad. Con 100 de tiempo o menos suena primero el aviso
+	// y después la versión apurada: en el exterior, una pista aparte; en los demás tipos de nivel, la misma melodía
+	// más rápida.
 	getCurrentThemeAudio() {
 		if (!this.currentMap) return null;
-		const hurry = this.state === Game_State.Playing && this.time > 0 && this.time <= HURRY_TIME;
-		if (hurry !== !!this.hurryActive) {
-			this.hurryActive = hurry;
+		const playing = this.state === Game_State.Playing;
+		const star = playing && this.starTimer > 0;
+		const hurry = playing && this.time > 0 && this.time <= HURRY_TIME;
+		const mode = star ? 'star' : hurry ? 'hurry' : 'normal';
+		if (mode !== this.musicMode) {
+			// Al cambiar de modo se corta la música; pasar a "apurado" dispara el aviso de tiempo
+			const warn = mode === 'hurry' && this.musicMode === 'normal';
+			this.musicMode = mode;
 			this.stopAllMusic();
 			for (const t of [audio["Overworld_Theme"], audio["Underground_Theme"], audio["Underwater_Theme"], audio["Castle_Theme"]]) if (t) t.playbackRate = 1;
+			if (warn) { this.engine.playAudio(audio["Time_Warning"], false); this.musicResumeAt = this.clockMs + TIME_WARNING_MS; }
 		}
+		if (this.musicResumeAt && this.clockMs < this.musicResumeAt) return null;
+		if (star) return audio["Star_Theme"];
 		let theme = null;
 		switch (this.currentMap.type) {
 			case World_Type.Overworld: theme = hurry ? audio["Hurry_Theme"] : audio["Overworld_Theme"]; break;
