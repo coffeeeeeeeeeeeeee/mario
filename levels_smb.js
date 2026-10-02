@@ -116,10 +116,10 @@ map.push(
 			{"type":"Koopa","color":"Red","x":146,"y":12},
 		],
 		platforms: [
-			{"kind":"lift","x":2224,"y":104,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":2224,"y":200,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":2464,"y":8,"w":48,"dir":-1,"small":false},
-			{"kind":"lift","x":2464,"y":136,"w":48,"dir":-1,"small":false},
+			{"kind":"lift","x":2224,"y":80,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":2224,"y":176,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":2464,"y":-16,"w":48,"dir":-1,"small":false},
+			{"kind":"lift","x":2464,"y":112,"w":48,"dir":-1,"small":false},
 		],
 		scenery: [
 		],
@@ -161,10 +161,10 @@ map.push(
 			{"type":"Koopa","color":"Red","x":133,"y":12},
 		],
 		platforms: [
-			{"kind":"vert","x":880,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":1376,"y":120,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":1504,"y":136,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":2096,"y":88,"w":48,"dir":1,"small":false},
+			{"kind":"vert","x":880,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":1376,"y":96,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":1504,"y":112,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":2096,"y":64,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 			3,3,128,3,4,131,4,3,129,4,4,132,5,3,129,5,4,132,6,3,130,6,4,133,9,7,128,9,8,131,
@@ -231,7 +231,7 @@ map.push(
 			{"type":"Toad","x":153,"y":1},
 		],
 		platforms: [
-			{"kind":"hori","x":2208,"y":88,"w":32,"dir":1,"small":false},
+			{"kind":"hori","x":2208,"y":64,"w":32,"dir":1,"small":false},
 		],
 		scenery: [
 			13,13,134,13,14,135,14,13,134,14,14,135,26,13,134,26,14,135,27,13,134,27,14,135,28,13,134,28,14,135,
@@ -665,9 +665,9 @@ map.push(
 			{"type":"Toad","x":153,"y":1},
 		],
 		platforms: [
-			{"kind":"lift","x":1360,"y":152,"w":24,"dir":-1,"small":true},
-			{"kind":"lift","x":1408,"y":152,"w":24,"dir":1,"small":true},
-			{"kind":"hori","x":2208,"y":88,"w":32,"dir":1,"small":false},
+			{"kind":"lift","x":1360,"y":128,"w":24,"dir":-1,"small":true},
+			{"kind":"lift","x":1408,"y":128,"w":24,"dir":1,"small":true},
+			{"kind":"hori","x":2208,"y":64,"w":32,"dir":1,"small":false},
 		],
 		scenery: [
 			16,13,134,16,14,135,17,13,134,17,14,135,18,13,134,18,14,135,19,13,134,19,14,135,20,13,134,20,14,135,
@@ -903,17 +903,17 @@ map.push(
 			{"type":"Koopa","color":"Red","x":126,"y":9},
 		],
 		platforms: [
-			{"kind":"hori","x":480,"y":56,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":528,"y":120,"w":48,"dir":1,"small":false},
-			{"kind":"drop","x":960,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"balance","x":1296,"y":88,"w":48,"dir":1,"small":false,"pair":4},
-			{"kind":"balance","x":1408,"y":120,"w":48,"dir":1,"small":false,"pair":3},
-			{"kind":"hori","x":1504,"y":136,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":1536,"y":72,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":1648,"y":168,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":2112,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"balance","x":2176,"y":72,"w":48,"dir":1,"small":false,"pair":10},
-			{"kind":"balance","x":2240,"y":120,"w":48,"dir":1,"small":false,"pair":9},
+			{"kind":"hori","x":480,"y":32,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":528,"y":96,"w":48,"dir":1,"small":false},
+			{"kind":"drop","x":960,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"balance","x":1296,"y":64,"w":48,"dir":1,"small":false,"pair":4},
+			{"kind":"balance","x":1408,"y":96,"w":48,"dir":1,"small":false,"pair":3},
+			{"kind":"hori","x":1504,"y":112,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":1536,"y":48,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":1648,"y":144,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":2112,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"balance","x":2176,"y":48,"w":48,"dir":1,"small":false,"pair":10},
+			{"kind":"balance","x":2240,"y":96,"w":48,"dir":1,"small":false,"pair":9},
 		],
 		scenery: [
 			3,3,128,3,4,131,4,3,129,4,4,132,5,3,129,5,4,132,6,3,130,6,4,133,9,7,128,9,8,131,
@@ -989,7 +989,7 @@ map.push(
 			{"type":"Toad","x":153,"y":1},
 		],
 		platforms: [
-			{"kind":"hori","x":2208,"y":88,"w":32,"dir":1,"small":false},
+			{"kind":"hori","x":2208,"y":64,"w":32,"dir":1,"small":false},
 		],
 		scenery: [
 			16,13,134,16,14,135,17,13,134,17,14,135,21,13,134,21,14,135,22,13,134,22,14,135,26,13,134,26,14,135,
@@ -1119,13 +1119,13 @@ map.push(
 			{"type":"Pakkun","color":"Red","x":180,"y":5},
 		],
 		platforms: [
-			{"kind":"lift","x":928,"y":72,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":1824,"y":72,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":1824,"y":184,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":1968,"y":24,"w":48,"dir":-1,"small":false},
-			{"kind":"lift","x":1968,"y":136,"w":48,"dir":-1,"small":false},
-			{"kind":"lift","x":2480,"y":72,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":2480,"y":184,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":928,"y":48,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":1824,"y":48,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":1824,"y":160,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":1968,"y":0,"w":48,"dir":-1,"small":false},
+			{"kind":"lift","x":1968,"y":112,"w":48,"dir":-1,"small":false},
+			{"kind":"lift","x":2480,"y":48,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":2480,"y":160,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 		],
@@ -1164,17 +1164,17 @@ map.push(
 			{"type":"Koopa","color":"Red","x":78,"y":4},
 		],
 		platforms: [
-			{"kind":"balance","x":768,"y":72,"w":48,"dir":1,"small":false,"pair":1},
-			{"kind":"balance","x":880,"y":120,"w":48,"dir":1,"small":false,"pair":0},
-			{"kind":"vert","x":928,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"vert","x":992,"y":56,"w":48,"dir":1,"small":false},
-			{"kind":"balance","x":1280,"y":72,"w":48,"dir":1,"small":false,"pair":5},
-			{"kind":"balance","x":1408,"y":136,"w":48,"dir":1,"small":false,"pair":4},
-			{"kind":"balance","x":1456,"y":72,"w":48,"dir":1,"small":false,"pair":7},
-			{"kind":"balance","x":1536,"y":136,"w":48,"dir":1,"small":false,"pair":6},
-			{"kind":"balance","x":1632,"y":72,"w":48,"dir":1,"small":false,"pair":9},
-			{"kind":"balance","x":1728,"y":136,"w":48,"dir":1,"small":false,"pair":8},
-			{"kind":"vert","x":2176,"y":72,"w":48,"dir":1,"small":false},
+			{"kind":"balance","x":768,"y":48,"w":48,"dir":1,"small":false,"pair":1},
+			{"kind":"balance","x":880,"y":96,"w":48,"dir":1,"small":false,"pair":0},
+			{"kind":"vert","x":928,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"vert","x":992,"y":32,"w":48,"dir":1,"small":false},
+			{"kind":"balance","x":1280,"y":48,"w":48,"dir":1,"small":false,"pair":5},
+			{"kind":"balance","x":1408,"y":112,"w":48,"dir":1,"small":false,"pair":4},
+			{"kind":"balance","x":1456,"y":48,"w":48,"dir":1,"small":false,"pair":7},
+			{"kind":"balance","x":1536,"y":112,"w":48,"dir":1,"small":false,"pair":6},
+			{"kind":"balance","x":1632,"y":48,"w":48,"dir":1,"small":false,"pair":9},
+			{"kind":"balance","x":1728,"y":112,"w":48,"dir":1,"small":false,"pair":8},
+			{"kind":"vert","x":2176,"y":48,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 			3,3,128,3,4,131,4,3,129,4,4,132,5,3,129,5,4,132,6,3,130,6,4,133,9,7,128,9,8,131,
@@ -1449,10 +1449,10 @@ map.push(
 			{"type":"Koopa","color":"Red","x":133,"y":12},
 		],
 		platforms: [
-			{"kind":"vert","x":880,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":1376,"y":120,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":1504,"y":136,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":2096,"y":88,"w":48,"dir":1,"small":false},
+			{"kind":"vert","x":880,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":1376,"y":96,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":1504,"y":112,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":2096,"y":64,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 			3,3,128,3,4,131,4,3,129,4,4,132,5,3,129,5,4,132,6,3,130,6,4,133,9,7,128,9,8,131,
@@ -1529,9 +1529,9 @@ map.push(
 			{"type":"Toad","x":153,"y":1},
 		],
 		platforms: [
-			{"kind":"lift","x":1360,"y":152,"w":24,"dir":-1,"small":true},
-			{"kind":"lift","x":1408,"y":152,"w":24,"dir":1,"small":true},
-			{"kind":"hori","x":2208,"y":88,"w":32,"dir":1,"small":false},
+			{"kind":"lift","x":1360,"y":128,"w":24,"dir":-1,"small":true},
+			{"kind":"lift","x":1408,"y":128,"w":24,"dir":1,"small":true},
+			{"kind":"hori","x":2208,"y":64,"w":32,"dir":1,"small":false},
 		],
 		scenery: [
 			16,13,134,16,14,135,17,13,134,17,14,135,18,13,134,18,14,135,19,13,134,19,14,135,20,13,134,20,14,135,
@@ -1730,22 +1730,22 @@ map.push(
 		enemies: [
 		],
 		platforms: [
-			{"kind":"vert","x":448,"y":200,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":688,"y":72,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":768,"y":104,"w":48,"dir":1,"small":false},
-			{"kind":"hori","x":880,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"vert","x":960,"y":184,"w":48,"dir":1,"small":false},
-			{"kind":"balance","x":1120,"y":72,"w":48,"dir":1,"small":false,"pair":6},
-			{"kind":"balance","x":1184,"y":136,"w":48,"dir":1,"small":false,"pair":5},
-			{"kind":"balance","x":1248,"y":72,"w":48,"dir":1,"small":false,"pair":8},
-			{"kind":"balance","x":1296,"y":136,"w":48,"dir":1,"small":false,"pair":7},
-			{"kind":"hori","x":1936,"y":72,"w":48,"dir":1,"small":false},
-			{"kind":"balance","x":2016,"y":88,"w":48,"dir":1,"small":false,"pair":11},
-			{"kind":"balance","x":2064,"y":136,"w":48,"dir":1,"small":false,"pair":10},
-			{"kind":"drop","x":2256,"y":104,"w":48,"dir":1,"small":false},
-			{"kind":"drop","x":2320,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"drop","x":2384,"y":120,"w":48,"dir":1,"small":false},
-			{"kind":"drop","x":2448,"y":104,"w":48,"dir":1,"small":false},
+			{"kind":"vert","x":448,"y":176,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":688,"y":48,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":768,"y":80,"w":48,"dir":1,"small":false},
+			{"kind":"hori","x":880,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"vert","x":960,"y":160,"w":48,"dir":1,"small":false},
+			{"kind":"balance","x":1120,"y":48,"w":48,"dir":1,"small":false,"pair":6},
+			{"kind":"balance","x":1184,"y":112,"w":48,"dir":1,"small":false,"pair":5},
+			{"kind":"balance","x":1248,"y":48,"w":48,"dir":1,"small":false,"pair":8},
+			{"kind":"balance","x":1296,"y":112,"w":48,"dir":1,"small":false,"pair":7},
+			{"kind":"hori","x":1936,"y":48,"w":48,"dir":1,"small":false},
+			{"kind":"balance","x":2016,"y":64,"w":48,"dir":1,"small":false,"pair":11},
+			{"kind":"balance","x":2064,"y":112,"w":48,"dir":1,"small":false,"pair":10},
+			{"kind":"drop","x":2256,"y":80,"w":48,"dir":1,"small":false},
+			{"kind":"drop","x":2320,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"drop","x":2384,"y":96,"w":48,"dir":1,"small":false},
+			{"kind":"drop","x":2448,"y":80,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 			3,3,128,3,4,131,4,3,129,4,4,132,5,3,129,5,4,132,6,3,130,6,4,133,9,7,128,9,8,131,
@@ -1820,7 +1820,7 @@ map.push(
 			{"type":"Toad","x":153,"y":1},
 		],
 		platforms: [
-			{"kind":"hori","x":2208,"y":88,"w":32,"dir":1,"small":false},
+			{"kind":"hori","x":2208,"y":64,"w":32,"dir":1,"small":false},
 		],
 		scenery: [
 			13,13,134,13,14,135,14,13,134,14,14,135,26,13,134,26,14,135,27,13,134,27,14,135,28,13,134,28,14,135,
@@ -2242,8 +2242,8 @@ map.push(
 			{"type":"Toad","x":217,"y":1},
 		],
 		platforms: [
-			{"kind":"drop","x":288,"y":104,"w":32,"dir":1,"small":false},
-			{"kind":"drop","x":352,"y":120,"w":32,"dir":1,"small":false},
+			{"kind":"drop","x":288,"y":80,"w":32,"dir":1,"small":false},
+			{"kind":"drop","x":352,"y":96,"w":32,"dir":1,"small":false},
 		],
 		scenery: [
 			16,13,134,16,14,135,17,13,134,17,14,135,18,13,134,18,14,135,19,13,134,19,14,135,20,13,134,20,14,135,
@@ -2670,7 +2670,7 @@ map.push(
 			{"type":"Princess","x":313,"y":1},
 		],
 		platforms: [
-			{"kind":"hori","x":1120,"y":200,"w":32,"dir":1,"small":false},
+			{"kind":"hori","x":1120,"y":176,"w":32,"dir":1,"small":false},
 		],
 		scenery: [
 			6,13,134,6,14,135,7,13,134,7,14,135,8,13,134,8,14,135,9,13,134,9,14,135,10,13,134,10,14,135,
@@ -2804,7 +2804,7 @@ map.push(
 		enemies: [
 		],
 		platforms: [
-			{"kind":"right","x":256,"y":152,"w":48,"dir":1,"small":false},
+			{"kind":"right","x":256,"y":128,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 		],
@@ -2869,7 +2869,7 @@ map.push(
 		enemies: [
 		],
 		platforms: [
-			{"kind":"right","x":256,"y":152,"w":48,"dir":1,"small":false},
+			{"kind":"right","x":256,"y":128,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 		],
@@ -3033,7 +3033,7 @@ map.push(
 		enemies: [
 		],
 		platforms: [
-			{"kind":"right","x":256,"y":152,"w":48,"dir":1,"small":false},
+			{"kind":"right","x":256,"y":128,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 		],
@@ -3069,8 +3069,8 @@ map.push(
 			{"type":"Bloober","x":45,"y":12},
 		],
 		platforms: [
-			{"kind":"lift","x":352,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":448,"y":184,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":352,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":448,"y":160,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 			0,2,134,0,3,135,0,4,135,0,5,135,0,6,135,0,7,135,0,8,135,0,9,135,0,10,135,0,11,135,
@@ -3230,8 +3230,8 @@ map.push(
 			{"type":"Bloober","x":45,"y":12},
 		],
 		platforms: [
-			{"kind":"lift","x":352,"y":88,"w":48,"dir":1,"small":false},
-			{"kind":"lift","x":448,"y":184,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":352,"y":64,"w":48,"dir":1,"small":false},
+			{"kind":"lift","x":448,"y":160,"w":48,"dir":1,"small":false},
 		],
 		scenery: [
 			0,2,134,0,3,135,0,4,135,0,5,135,0,6,135,0,7,135,0,8,135,0,9,135,0,10,135,0,11,135,

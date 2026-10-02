@@ -798,10 +798,12 @@ function buildMap(dec, report, label) {
 			enemies.push({ ...ent, x: e.x, y: cellRow });
 		} else if (e.id >= 0x24 && e.id <= 0x2c) {
 			// 24 balancín, 25 sube y baja, 26/2b suben, 27/2c bajan, 28 va y viene, 29 cae al pisarla, 2a se va a la derecha.
-			// Las grandes miden 48 px (32 en los castillos) y las chicas 24; la superficie queda en y = fila * 16 - 8
+			// Las grandes miden 48 px (32 en los castillos) y las chicas 24. En el original, a los enemigos con id menor a $15 se
+			// les suman 8 px de altura y a los demás (plataformas, barras de fuego, Bowser) no, y la pantalla tiene 32 px de barra de
+			// arriba: la superficie queda en y = fila * 16 - 32 desde la fila 0 del nivel
 			const KINDS = { 0x24: 'balance', 0x25: 'vert', 0x26: 'lift', 0x27: 'lift', 0x28: 'hori', 0x29: 'drop', 0x2a: 'right', 0x2b: 'lift', 0x2c: 'lift' };
 			const small = e.id >= 0x2b;
-			platforms.push({ kind: KINDS[e.id], x: e.x * 16, y: e.row * 16 - 8, w: small ? 24 : (dec.areaType === AREA_TYPE.Castle ? 32 : 48), dir: e.id === 0x26 || e.id === 0x2b ? -1 : 1, small });
+			platforms.push({ kind: KINDS[e.id], x: e.x * 16, y: e.row * 16 - 32, w: small ? 24 : (dec.areaType === AREA_TYPE.Castle ? 32 : 48), dir: e.id === 0x26 || e.id === 0x2b ? -1 : 1, small });
 		} else {
 			unsupported[e.id] = (unsupported[e.id] || 0) + 1;
 		}
