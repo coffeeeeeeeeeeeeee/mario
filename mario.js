@@ -176,7 +176,8 @@ for (let id = 0x55; id <= 0x59; id++) METATILE_SPRITE[id] = 'Block_Brick';      
 for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle';      // ídem (subterráneo y castillo)
 METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
 METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
-for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x88, 0x89]) METATILE_SPRITE[id] = 'Block_Stairs';
+for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x67, 0x68, 0x88, 0x89]) METATILE_SPRITE[id] = 'Block_Stairs';
+METATILE_SPRITE[0x64] = 'Block_Cannon_Top'; METATILE_SPRITE[0x65] = 'Block_Cannon_Mid'; METATILE_SPRITE[0x66] = 'Block_Cannon_Base';
 
 // Celda (columna, fila) de la hoja de cada pieza de escenografía de fondo (no sólida), por número de metatile.
 // Las piezas del castillo (0x45 a 0x4b) y el coral (0x69) salen de METATILE_SPRITE.
@@ -207,6 +208,16 @@ const isCoinMetatile = id => id === MT.Coin || id === MT.CoinWater;
 
 // Marcadores de enemigo del editor: ids fuera del rango de metatiles, para colocarlos en la grilla.
 const SWIMMERS = new Set(['Bloober', 'Cheep']);
+const BULLET_BILL_SPEED = 1.5;       // px del NES por cuadro (el original lo mueve a $e8/16)
+const CANNON_MIN_STEPS = 120, CANNON_RANGE_STEPS = 120;   // cuadros entre disparos de un cañón, mínimo y variación
+const CANNON_NEAR_TILES = 3;         // un cañón no dispara si Mario está más cerca que esto
+const CANNON_MAX_BILLS = 3;
+const UNKILLABLE = new Set(['Firebar', 'Podoboo']);   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
+const FIREBAR_SLOW = 0x28 / 256, FIREBAR_FAST = 0x38 / 256;   // giro en 1/32 de vuelta por cuadro (FirebarSpinSpdData)
+const FIREBAR_BALL_STEP = 8;       // separación entre bolas, en px del NES
+const FIREBAR_HIT = 3;             // medio lado de la caja de cada bola, en px del NES
+const PODOBOO_SPEED = 7, PODOBOO_GRAVITY = 0x1c / 256;     // salto del Podoboo en px del NES por cuadro
+const PODOBOO_INTERVAL_STEPS = 21;   // cuadros por "intervalo" del temporizador original
 const BLOOBER_FLOAT_STEPS = 32;   // cuadros que flota hacia abajo antes de volver a mirar a Mario
 
 const ENEMY_MARKERS = [
@@ -437,6 +448,9 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Coral", tilesetName, 5, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cannon_Top", tilesetName, 10, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cannon_Mid", tilesetName, 11, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cannon_Base", tilesetName, 12, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
 		for (const [id, [c, r]] of Object.entries(SCENERY_CELL)) js2d.defineSpriteFromTileset(`Scenery_${Number(id).toString(16)}`, tilesetName, c, r, 1, tileScale);
 
@@ -539,6 +553,9 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Coral", tilesetName, 5, 0, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cannon_Top", tilesetName, 10, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cannon_Mid", tilesetName, 11, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cannon_Base", tilesetName, 12, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
 		for (const [id, [c, r]] of Object.entries(SCENERY_CELL)) js2d.defineSpriteFromTileset(`Scenery_${Number(id).toString(16)}`, tilesetName, c, r, 1, tileScale);
 
@@ -683,6 +700,12 @@ class Game {
 	// del mapa; las plantas piraña van sobre la boca del caño.
 	createEnemies() {
 		this.enemies = [];
+		// Cañones: cada bloque de cañón superior (0x64) dispara Bullet Bills mientras está en pantalla
+		this.cannons = [];
+		const mw = this.currentMap.dimensions.width, mapIds = this.currentMap.map || [];
+		for (let i = 0; i < mapIds.length; i++) {
+			if (mapIds[i] === 0x64) this.cannons.push({ tx: i % mw, ty: Math.floor(i / mw), timer: CANNON_MIN_STEPS + Math.floor(Math.random() * CANNON_RANGE_STEPS) });
+		}
 		for (const e of this.currentMap.enemies || []) {
 			const screenPos = this.tileToScreen(e.x, e.y);
 			if (e.type === 'Pakkun') {
@@ -715,6 +738,7 @@ class Game {
 					shellChain: 0,
 					active: false,
 					// Peces: altura original, sentido del vaivén y ciclo de brazadas del Bloober
+					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spin: 0, timer: 21,
 					origY: screenPos.y,
 					bobDown: e.x % 2 === 0,
 					swimPhase: 0,
@@ -1288,6 +1312,7 @@ class Game {
 		const ts = this.tileSize, k = this.tileScale;
 		const screenLeft = -this.mapOffset.x;
 		const screenRight = screenLeft + this.engine.getCanvasWidth();
+		this.updateCannons(player, screenLeft, screenRight);
 
 		for (let i = this.enemies.length - 1; i >= 0; i--) {
 			const enemy = this.enemies[i];
@@ -1317,6 +1342,9 @@ class Game {
 
 		if (enemy.type === 'Pakkun') { this.stepPiranha(enemy, player); return; }
 		if (SWIMMERS.has(enemy.type)) { this.stepSwimmer(enemy, player); return; }
+		if (enemy.type === 'Firebar') { this.stepFirebar(enemy); return; }
+		if (enemy.type === 'BulletBill') return this.stepBulletBill(enemy);
+		if (enemy.type === 'Podoboo') { this.stepPodoboo(enemy); return; }
 
 		if (enemy.state === 'stomped') {
 			enemy.stompTimer++;
@@ -1374,6 +1402,73 @@ class Game {
 				}
 			}
 		}
+	}
+
+	// Los cañones a la vista disparan un Bullet Bill hacia Mario cada tanto, si Mario no está pegado al cañón
+	updateCannons(player, screenLeft, screenRight) {
+		const ts = this.tileSize;
+		const playerX = player.position.x - this.mapOffset.x;
+		for (const c of this.cannons || []) {
+			const cx = c.tx * ts;
+			if (cx + ts < screenLeft || cx > screenRight) continue;
+			c.timer -= this.physicsSteps;
+			if (c.timer > 0) continue;
+			c.timer = CANNON_MIN_STEPS + Math.floor(Math.random() * CANNON_RANGE_STEPS);
+			if (Math.abs(playerX - cx) < CANNON_NEAR_TILES * ts) continue;
+			if (this.enemies.filter(e => e.type === 'BulletBill').length >= CANNON_MAX_BILLS) continue;
+			const pos = this.tileToScreen(c.tx, c.ty);
+			const dir = playerX < cx ? -1 : 1;
+			this.enemies.push({ id: this.enemies.length, type: 'BulletBill', color: null, x: cx - this.mapOffset.x + this.mapOffset.x, y: pos.y, dir, vx: dir, vy: 0, state: 'walking', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true });
+			this.engine.playAudioOverlap(audio["Shell"]);
+		}
+	}
+
+	// Bullet Bill: vuela recto a 1,5 px por cuadro, atraviesa todo y se va al salir de la pantalla
+	stepBulletBill(enemy) {
+		const k = this.tileScale;
+		if (enemy.state === 'falling') {
+			enemy.y += enemy.vy;
+			enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
+			return;
+		}
+		enemy.x += enemy.dir * BULLET_BILL_SPEED * k;
+		const sx = enemy.x + this.mapOffset.x;
+		if (sx < -this.tileSize * 3 || sx > this.engine.getCanvasWidth() + this.tileSize * 3) return 'remove';
+	}
+
+	// Barra de fuego: 6 bolas (12 la larga) separadas 8 px que giran alrededor del bloque; el estado de giro
+	// va de 0 a 32 (una vuelta) y a 0 apunta hacia arriba. Gira a la derecha, o a la izquierda con ccw.
+	stepFirebar(enemy) {
+		const speed = enemy.fast ? FIREBAR_FAST : FIREBAR_SLOW;
+		enemy.spin = (enemy.spin + (enemy.ccw ? -speed : speed) + 32) % 32;
+		enemy.anim = (enemy.anim || 0) + 1;
+	}
+
+	// Posiciones en pantalla de las bolas de una barra de fuego (el centro de la primera es el del bloque)
+	firebarBalls(enemy) {
+		const k = this.tileScale, ts = this.tileSize;
+		const cx = enemy.x + this.mapOffset.x + ts / 2, cy = enemy.y + ts / 2;
+		const a = enemy.spin / 32 * Math.PI * 2, n = enemy.long ? 12 : 6;
+		const balls = [];
+		for (let i = 0; i < n; i++) {
+			const r = i * FIREBAR_BALL_STEP * k;
+			balls.push({ x: cx + Math.sin(a) * r, y: cy - Math.cos(a) * r });
+		}
+		return balls;
+	}
+
+	// El Podoboo sale de la lava, sube 7 px por cuadro frenándose y vuelve a caer; salta de nuevo cuando
+	// vence su temporizador, de 6 a 21 intervalos (entre salto y salto puede quedar un rato escondido)
+	stepPodoboo(enemy) {
+		const k = this.tileScale;
+		if (enemy.timer <= 0) {
+			enemy.y = this.engine.getCanvasHeight();
+			enemy.vy = -PODOBOO_SPEED * k;
+			enemy.timer = (6 + Math.floor(Math.random() * 16)) * PODOBOO_INTERVAL_STEPS;
+		}
+		enemy.timer--;
+		enemy.y += enemy.vy;
+		enemy.vy += PODOBOO_GRAVITY * k;
 	}
 
 	// Cheep-cheep y Bloober (MoveSwimmingCheepCheep / MoveBloober). El cheep-cheep avanza a la izquierda
@@ -1447,6 +1542,7 @@ class Game {
 
 	// El enemigo muere girando hacia abajo (golpe de caparazón, bola de fuego o estrella) y da puntos
 	defeatEnemy(enemy, points) {
+		if (UNKILLABLE.has(enemy.type)) return;
 		enemy.state = 'falling';
 		enemy.kicked = false;
 		enemy.vy = ENEMY_JUMP_SPEED * this.tileScale;
@@ -1499,6 +1595,13 @@ class Game {
 
 	// Choque de Mario con un enemigo, una vez por cuadro
 	playerVsEnemy(enemy, player) {
+		if (enemy.type === 'Firebar') {
+			const box = this.playerHitbox(player), h = FIREBAR_HIT * this.tileScale;
+			for (const b of this.firebarBalls(enemy)) {
+				if (this.rectsOverlap(box, { x: b.x - h, y: b.y - h, w: 2 * h, h: 2 * h })) { this.damagePlayer(); return; }
+			}
+			return;
+		}
 		const enemyScreenX = enemy.x + this.mapOffset.x;
 		const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
 		let enemyScreenY = enemy.y;
@@ -1508,7 +1611,7 @@ class Game {
 			enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
 		}
 		let enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
-		if (SWIMMERS.has(enemy.type)) { const m = 2 * this.tileScale; enemyRect = { x: enemyRect.x + m, y: enemyRect.y + m, w: enemyRect.w - 2 * m, h: enemyRect.h - 2 * m }; }
+		if (SWIMMERS.has(enemy.type) || enemy.type === 'Podoboo') { const m = 2 * this.tileScale; enemyRect = { x: enemyRect.x + m, y: enemyRect.y + m, w: enemyRect.w - 2 * m, h: enemyRect.h - 2 * m }; }
 
 		const playerRect = this.playerHitbox(player);
 
@@ -1533,12 +1636,14 @@ class Game {
 		// tiene que estar bastante por encima (12 px del NES)
 		const above = (playerRect.y + 12 * this.tileScale) < enemyRect.y;
 		let isStomping = (!this.isOnGround && this.velocityY > 0) || above;
-		if (enemy.type === 'Pakkun' || SWIMMERS.has(enemy.type)) isStomping = false;
+		if (enemy.type === 'Pakkun' || SWIMMERS.has(enemy.type) || enemy.type === 'Podoboo') isStomping = false;
 
 		if (isStomping) {
 			this.velocityY = SMB_STOMP_SPEED * this.tileScale;
 			this.engine.playAudioOverlap(audio["Player_Stomp"]);
-			if (enemy.type === 'Goomba') {
+			if (enemy.type === 'BulletBill') {
+				this.defeatEnemy(enemy, 200);
+			} else if (enemy.type === 'Goomba') {
 				enemy.state = 'stomped';
 				this.awardChain(1, enemyScreenX, enemy.y);
 			} else if (enemy.type.includes('Koopa')) {
@@ -1575,6 +1680,16 @@ class Game {
 			if (!enemy.active) continue;
 
 			const screenX = enemy.x + this.mapOffset.x;
+
+			if (enemy.type === 'Firebar') {
+				const frame = Math.floor((enemy.anim || 0) / 4) % 4;
+				for (const b of this.firebarBalls(enemy)) this.engine.drawSprite('Object_Fireball_Hit', frame, { x: b.x, y: b.y }, this.tileScale, false, 0, Pivot.Center);
+				continue;
+			}
+			if (enemy.type === 'Podoboo') {
+				this.engine.drawSprite('Enemy_Podoboo', enemy.vy > 0 ? 1 : 0, { x: screenX, y: enemy.y }, this.tileScale, false, 0, Pivot.Top_Left);
+				continue;
+			}
 
 			// El paratroopa pisado pierde las alas y pasa a ser un koopa común
 			const drawType = (enemy.type === 'Koopa_Winged' && !enemy.isWinged) ? 'Koopa' : enemy.type;

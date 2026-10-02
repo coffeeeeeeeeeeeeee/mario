@@ -233,6 +233,9 @@ async function init() {
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Green", "Enemy_Tall_Tiles", 8, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
+    js2d.defineSpriteFromTileset("Enemy_BulletBill", "Enemy_Short_Tiles", 7, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Podoboo", "Enemy_Fire_Tiles", 0, 0, 2, tileScale);
+
     // Enemigos de agua
     js2d.defineSpriteFromTileset("Enemy_Bloober", "Enemy_Water_Tiles", 0, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Cheep_Grey", "Enemy_Water_Tiles", 2, 0, 2, tileScale);
@@ -278,6 +281,7 @@ async function init() {
     js2d.createAnimatedSprite("Koopa_Shell_Green", "Koopa_Shell_Green", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Koopa_Shell_Red", "Koopa_Shell_Red", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Pakkun_Green", "Enemy_Pakkun_Green", { x: 0, y: 0 }, tileScale);
+    js2d.createAnimatedSprite("BulletBill", "Enemy_BulletBill", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Bloober", "Enemy_Bloober", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Cheep_Grey", "Enemy_Cheep_Grey", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Cheep_Red", "Enemy_Cheep_Red", { x: 0, y: 0 }, tileScale);
@@ -364,6 +368,7 @@ async function init() {
     js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Sliding", [0, 1], false, 16);
     js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Sliding", [0, 1], false, 16);
     js2d.addAnimationToSprite("Pakkun_Green", "Pakkun_Bite", [0, 1], true, 16);
+    js2d.addAnimationToSprite("BulletBill", "BulletBill_Walk", [0], true, 16);
     js2d.addAnimationToSprite("Bloober", "Bloober_Walk", [0, 1], true, 16);
     js2d.addAnimationToSprite("Cheep_Grey", "Cheep_Walk", [0, 1], true, 16);
     js2d.addAnimationToSprite("Cheep_Red", "Cheep_Walk", [0, 1], true, 16);
@@ -401,6 +406,7 @@ async function init() {
     js2d.setAnimationForSprite("Koopa_Winged_Red", "Koopa_Winged_Walk");
     js2d.setAnimationForSprite("Pakkun_Red", "Pakkun_Bite");
     js2d.setAnimationForSprite("Pakkun_Green", "Pakkun_Bite");
+    js2d.setAnimationForSprite("BulletBill", "BulletBill_Walk");
     js2d.setAnimationForSprite("Bloober", "Bloober_Walk");
     js2d.setAnimationForSprite("Cheep_Grey", "Cheep_Walk");
     js2d.setAnimationForSprite("Cheep_Red", "Cheep_Walk");

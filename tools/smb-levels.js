@@ -140,6 +140,7 @@ const ENEMY_TO_ENTITY = {
 	0x07: { type: 'Bloober' },
 	0x0a: { type: 'Cheep', color: 'Grey' },
 	0x0b: { type: 'Cheep', color: 'Red' },
+	0x0c: { type: 'Podoboo' },
 	0x0e: { type: 'Koopa_Winged', color: 'Green' },
 	0x0f: { type: 'Koopa_Winged', color: 'Red' },
 	0x10: { type: 'Koopa_Winged', color: 'Green' },
@@ -776,6 +777,12 @@ function buildMap(dec, report, label) {
 			const row = (v & 2) ? 7 : 11;
 			const count = (v & 1) ? 3 : 2;
 			for (let n = 0; n < count; n++) enemies.push({ ...ent, x: e.x - 3 + Math.round(n * 1.5), y: row - 1 + TOP_ROWS });
+			continue;
+		}
+		if (e.id >= 0x1b && e.id <= 0x1f) {
+			// Barras de fuego: $1b y $1c giran a la derecha (lenta y rápida), $1d y $1e a la izquierda, $1f es la larga.
+			// El centro es el bloque de la fila e.row - 2 (donde el original deja su bloque de apoyo)
+			enemies.push({ type: 'Firebar', fast: e.id === 0x1c || e.id === 0x1e, ccw: e.id === 0x1d || e.id === 0x1e, long: e.id === 0x1f, x: e.x, y: e.row - 2 + TOP_ROWS });
 			continue;
 		}
 		const m = ENEMY_TO_ENTITY[e.id];

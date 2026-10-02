@@ -162,7 +162,7 @@ function backgroundSheet(name, paletteLabel, { groundId, extras }) {
 		// Fila 2: caños
 		put(0, 2, 0x10); put(1, 2, 0x11); put(2, 2, 0x14); put(3, 2, 0x15);
 		put(4, 2, 0x1c); put(5, 2, 0x1f); put(6, 2, 0x1e); put(7, 2, 0x21); put(8, 2, 0x1d); put(9, 2, 0x20);
-		put(10, 2, 0x64); put(11, 2, 0x65);
+		put(10, 2, 0x64); put(11, 2, 0x65); put(12, 2, 0x66);   // cañón
 
 		// Fila 3: mástil y bandera
 		put(0, 3, 0x24); put(1, 3, 0x25);
@@ -255,7 +255,8 @@ fireSheet('Luigi');
 const GROUND = areaPalettes('GroundPaletteData');
 const eg = asmBytes('EnemyGraphicsTable');
 // Cada cuadro son 3 filas de [izq, der]; los cuadros están numerados en el orden de la tabla
-const ENEMY = { bloober1: 10, bloober2: 11, cheep1: 12, cheep2: 13, koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
+const ENEMY = { bulletBill: 39, bloober1: 10, bloober2: 11, cheep1: 12, cheep2: 13, koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
+const ENEMY_PODOBOO = 34;   // posición de "podoboo" en EnemyGraphicsTable
 const enemyRows = n => [0, 1, 2].map(j => [eg[n * 6 + j * 2], eg[n * 6 + j * 2 + 1]]);
 
 sheet('Enemy_Short_Tiles', 256, 16, 16, 16, (cv, ox, oy) => {
@@ -271,6 +272,8 @@ sheet('Enemy_Short_Tiles', 256, 16, 16, 16, (cv, ox, oy) => {
 	putSprite(cv, ...at(4), enemyRows(ENEMY.shellUp2).slice(1), GROUND.spr[1]);
 	putSprite(cv, ...at(5), enemyRows(ENEMY.shellUp1).slice(1), GROUND.spr[2]);
 	putSprite(cv, ...at(6), enemyRows(ENEMY.shellUp2).slice(1), GROUND.spr[2]);
+	// Bullet Bill, mirando a la izquierda, con la paleta 3 de sprites del agua (negro, blanco y gris)
+	putSprite(cv, ...at(7), enemyRows(ENEMY.bulletBill).slice(1), areaPalettes('WaterPaletteData').spr[3], { facingLeft: true });
 });
 
 sheet('Enemy_Tall_Tiles', 192, 24, 16, 24, (cv, ox, oy) => {
@@ -297,6 +300,22 @@ sheet('Enemy_Water_Tiles', 96, 24, 16, 24, (cv, ox, oy) => {
 		putSprite(cv, ...at(f + 1), enemyRows(ENEMY.cheep2), WATER.spr[p], { facingLeft: true });
 	});
 });
+
+// Podoboo (paleta 2 de sprites del castillo): subiendo y, para la caída, volteado en vertical
+{
+	const CASTLE = areaPalettes('CastlePaletteData');
+	sheet('Enemy_Fire_Tiles', 32, 16, 16, 16, (cv, ox, oy) => {
+		const [a, b] = [eg[ENEMY_PODOBOO * 6 + 2], eg[ENEMY_PODOBOO * 6 + 4]];
+		const put = (x, top, bottom, flipY) => {
+			[[top, 0], [bottom, 8]].forEach(([t, y]) => {
+				putTile(cv, x, oy + y, SPR, t, CASTLE.spr[2], { flipY });
+				putTile(cv, x + 8, oy + y, SPR, t, CASTLE.spr[2], { flipX: true, flipY });
+			});
+		};
+		put(ox, a, b, false);
+		put(ox + 16, b, a, true);
+	});
+}
 
 // --- Bolas de fuego ----------------------------------------------------------------------------
 
