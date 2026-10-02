@@ -114,7 +114,7 @@ El motor lee las coordenadas de cada sprite en las hojas de `atlas.js` (ver `bui
 
 ## Qué no cubre
 
-La música de apuro (no hay audio) y la fidelidad cuadro a cuadro de los movimientos de los enemigos, que están
+La fidelidad cuadro a cuadro de los movimientos de los enemigos, que están
 simplificados. Las cajas de choque de los enemigos sí usan las medidas de `BoundBoxCtrlData`: la del Goomba y los
 que usan `SmallBBox` es de 10x6 px, la de los koopas y Lakitu de 12x12, la del Hammer Bro de 8x20.
 

@@ -24,7 +24,8 @@ const audio = {
     "Level_Clear": js2d.loadAudio("assets/audios/level_clear.mp3"),
     "Shell": js2d.loadAudio("assets/audios/shell.mp3"),
     "Brick_Break": js2d.loadAudio("assets/audios/break.mp3"),
-    "Player_Fireball": js2d.loadAudio("assets/audios/fireball.mp3")
+    "Player_Fireball": js2d.loadAudio("assets/audios/fireball.mp3"),
+    "Hurry_Theme": js2d.loadAudio("assets/audios/hurry_overworld_theme.mp3")
 };
 
 function update(dt) {

@@ -252,6 +252,8 @@ const VINE_GROW_SPEED = 0.5, VINE_MAX = 96;   // la enredadera crece 1 px cada d
 const CLIMB_SPEED = 0.8;                     // px del NES por cuadro al trepar
 const LOOP_BACK_PAGES = 4;                         // el laberinto devuelve a Mario cuatro páginas atrás
 const LOOP_TOLERANCE = 3;                          // px del NES de margen en la altura de los pies
+const HURRY_TIME = 100;               // con este tiempo o menos suena la música apurada
+const HURRY_PLAYBACK_RATE = 1.25;    // cuánto se acelera la melodía en los niveles sin pista propia
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
 const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
@@ -1156,6 +1158,7 @@ class Game {
 		this.engine.stopAudio(audio["Underground_Theme"]);
 		this.engine.stopAudio(audio["Underwater_Theme"]);
 		this.engine.stopAudio(audio["Castle_Theme"]);
+		this.engine.stopAudio(audio["Hurry_Theme"]);
 	}
 
 	resetLevelState() {
@@ -4220,15 +4223,25 @@ class Game {
 		return dx * dx + dy * dy <= radius * radius;
 	}
 
+	// Música del nivel. Con 100 de tiempo o menos suena la versión apurada: en el exterior, una pista aparte; en
+	// los demás tipos de nivel, la misma melodía más rápida.
 	getCurrentThemeAudio() {
 		if (!this.currentMap) return null;
-		switch (this.currentMap.type) {
-			case World_Type.Overworld: return audio["Overworld_Theme"];
-			case World_Type.Underground: return audio["Underground_Theme"];
-			case World_Type.Underwater: return audio["Underwater_Theme"];
-			case World_Type.Castle: return audio["Castle_Theme"];
-			default: return null;
+		const hurry = this.state === Game_State.Playing && this.time > 0 && this.time <= HURRY_TIME;
+		if (hurry !== !!this.hurryActive) {
+			this.hurryActive = hurry;
+			this.stopAllMusic();
+			for (const t of [audio["Overworld_Theme"], audio["Underground_Theme"], audio["Underwater_Theme"], audio["Castle_Theme"]]) if (t) t.playbackRate = 1;
 		}
+		let theme = null;
+		switch (this.currentMap.type) {
+			case World_Type.Overworld: theme = hurry ? audio["Hurry_Theme"] : audio["Overworld_Theme"]; break;
+			case World_Type.Underground: theme = audio["Underground_Theme"]; break;
+			case World_Type.Underwater: theme = audio["Underwater_Theme"]; break;
+			case World_Type.Castle: theme = audio["Castle_Theme"]; break;
+		}
+		if (theme && hurry && this.currentMap.type !== World_Type.Overworld) theme.playbackRate = HURRY_PLAYBACK_RATE;
+		return theme;
 	}
 
 	toggleEditor() {
