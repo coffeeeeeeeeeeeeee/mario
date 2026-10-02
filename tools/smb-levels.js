@@ -122,8 +122,6 @@ const MT = {
 const METATILE_NOTES = {};
 for (let i = 0x16; i <= 0x1b; i++) METATILE_NOTES[i] = 'plataforma de árbol u hongo (se dibuja como bloque duro)';
 Object.assign(METATILE_NOTES, {
-	0x56: 'ladrillo con enredadera (el motor lo trata como hongo)', 0x5b: 'ladrillo con enredadera (el motor lo trata como hongo)',
-	0x57: 'ladrillo con estrella (el motor lo trata como hongo)', 0x5c: 'ladrillo con estrella (el motor lo trata como hongo)',
 });
 
 // Enemigo del original -> enemigo del motor (null si no existe y se descarta)
@@ -840,7 +838,9 @@ const KEY_WARP_ZONE = '1:15';    // L_GroundArea16: zona de atajos del 4-2
 const AREA_KEY_NOTES = { '1:11': 'nivel de nubes (se entra por enredadera)', '1:20': 'nivel de nubes (se entra por enredadera)' };
 // Áreas enteras a las que se entra por un caño y se generan como subnivel: letra del nombre
 // (w = zona de atajos del 4-2, s = salas de agua de 5-2, 6-2 y 8-4)
-const AREA_SUBS = { [KEY_WARP_ZONE]: 'w', '0:0': 's', '0:2': 's' };
+const AREA_SUBS = { [KEY_WARP_ZONE]: 'w', '0:0': 's', '0:2': 's', '1:11': 'c', '1:20': 'c' };
+// Niveles de nubes: se entran trepando una enredadera (c = nubes)
+const CLOUD_KEYS = new Set(['1:11', '1:20']);
 
 // Lee World{n}Areas y le da a cada área su nombre de nivel según el comentario de su etiqueta
 // (";level 1-3/5-3" sirve para el 1-3 y el 5-3). Las áreas sin nivel (pantalla del caño
@@ -987,7 +987,17 @@ function generate(lines, report) {
 			...dec.exitPipes.map(p => ({ x: p.col, y: p.row + TOP_ROWS, type: 'right' })),
 		];
 		for (const w of zoneWarps(dec)) addWarp(name, w);
-		for (const { entry, pipe } of linkWarps(dec.warpEntries, cands)) {
+		// Las entradas a niveles de nubes se enlazan con ladrillos con enredadera (0x56 y 0x5b), no con caños
+		const vineCands = [];
+		lv.map.forEach((id, i) => { if (id === 0x56 || id === 0x5b) vineCands.push({ x: i % lv.width, y: Math.floor(i / lv.width), type: 'vine' }); });
+		const cloudEntries = dec.warpEntries.filter(e => CLOUD_KEYS.has(pointerKey(e.pointer)));
+		const pipeEntries = dec.warpEntries.filter(e => !CLOUD_KEYS.has(pointerKey(e.pointer)));
+		for (const { entry, pipe } of linkWarps(cloudEntries, vineCands)) {
+			const sn = name + AREA_SUBS[pointerKey(entry.pointer)];
+			subs[sn] = { kind: 'area', parent: name, world: dec.worldNumber, pointer: entry.pointer & 0x7f, returnX: pipe.x };
+			addWarp(name, { type: 'vine', x: pipe.x, y: pipe.y, to: sn, spawn: { x: 2, y: 3, emerge: 'drop' } });
+		}
+		for (const { entry, pipe } of linkWarps(pipeEntries, cands)) {
 			const key = pointerKey(entry.pointer);
 			if (key === KEY_BONUS_ROOM) {
 				const sk = `${name}|${entry.entrancePage}`;
@@ -1029,7 +1039,8 @@ function generate(lines, report) {
 		} else {
 			const spec = { name, pointer: sub.pointer, world: sub.world, level: infoByName[sub.parent].level, areaNumber: 0 };
 			const lv = decodeLevel(lines, spec, report);
-			Object.assign(sub, { width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, areaType: lv.dec.areaType, night: lv.dec.night });
+			if (sub.returnX !== undefined) sub.exit = { to: sub.parent, spawn: { x: Math.max(0, sub.returnX - 1), y: 3, emerge: 'drop' } };
+			Object.assign(sub, { frenzy: lv.frenzy, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, areaType: lv.dec.areaType, night: lv.dec.night });
 			for (const w of zoneWarps(lv.dec)) addWarp(name, w);
 			// Las salidas de la sala: sus propias entradas de cambio de área
 			const cands = [
@@ -1049,7 +1060,7 @@ function generate(lines, report) {
 	}
 	for (const name of Object.keys(subs).sort()) {
 		const sub = subs[name];
-		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, scenery: sub.scenery, platforms: sub.platforms, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, scenery: sub.scenery, platforms: sub.platforms, frenzy: sub.frenzy, exit: sub.exit, warps: warpsOf[name] || [] });
 	}
 	return { out, levels, subs };
 }
@@ -1081,6 +1092,7 @@ function formatLevels(out) {
 		if (lv.halfway) L.push(`\t\thalfway: ${lv.halfway},`);
 		L.push(`\t\tdimensions: { width: ${lv.width}, height: ${MAP_HEIGHT} },`);
 		if (lv.axe) L.push(`\t\taxe: ${JSON.stringify(lv.axe)},`);
+		if (lv.exit) L.push(`\t\texit: ${JSON.stringify(lv.exit)},`);
 		if (lv.frenzy && lv.frenzy.length) L.push(`\t\tfrenzy: ${JSON.stringify(lv.frenzy)},`);
 		L.push(`\t\twarps: ${JSON.stringify(lv.warps)},`);
 		L.push('\t\tenemies: [');

@@ -177,8 +177,8 @@ for (let id = 0x55; id <= 0x59; id++) METATILE_SPRITE[id] = 'Block_Brick';      
 for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle';      // ídem (subterráneo y castillo)
 METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
 METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
-for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x67, 0x68, 0x88]) METATILE_SPRITE[id] = 'Block_Stairs';
-METATILE_SPRITE[0x63] = 'Block_Rope_Bridge'; METATILE_SPRITE[0x0b] = 'Block_Rope_Rail';
+for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x67, 0x68]) METATILE_SPRITE[id] = 'Block_Stairs';
+METATILE_SPRITE[0x88] = 'Block_Cloud_Platform'; METATILE_SPRITE[0x63] = 'Block_Rope_Bridge'; METATILE_SPRITE[0x0b] = 'Block_Rope_Rail';
 METATILE_SPRITE[MT.Axe] = 'Block_Axe'; METATILE_SPRITE[0x0c] = 'Block_Chain'; METATILE_SPRITE[0x89] = 'Block_Bridge';
 METATILE_SPRITE[0x64] = 'Block_Cannon_Top'; METATILE_SPRITE[0x65] = 'Block_Cannon_Mid'; METATILE_SPRITE[0x66] = 'Block_Cannon_Base';
 
@@ -195,7 +195,8 @@ const SCENERY_CELL = {
 // Qué entrega un bloque al golpearlo desde abajo
 const BLOCK_ITEM = {
 	[MT.QuestionPowerup]: 'powerup', [MT.QuestionCoin]: 'coin',
-	0x55: 'powerup', 0x56: 'powerup', 0x5a: 'powerup', 0x5b: 'powerup',   // el motor no tiene enredadera, da un hongo
+	0x55: 'powerup', 0x5a: 'powerup',
+	0x56: 'vine', 0x5b: 'vine',       // ladrillo con enredadera
 	0x57: 'star', 0x5c: 'star',
 	0x58: 'coins', 0x5d: 'coins',     // ladrillo con monedas (hasta 10)
 	0x59: '1up', 0x5e: '1up', [MT.Hidden1Up]: '1up',
@@ -244,6 +245,11 @@ const SPRING_BOUNCE = 7, SPRING_BOUNCE_HIGH = 12;  // px del NES por cuadro: reb
 const SPRING_FORCE = 0x70 / 256;                   // gravedad de Mario tras el rebote (VerticalForce)
 const FLY_CHEEP_GRAVITY = 0.1;                       // px del NES por cuadro al cuadrado de los cheep-cheeps que saltan
 const FRENZY_Y = [32, 16, 112, 48, 0, 64, 128, 80];   // alturas (desde la fila 0 del nivel) de Enemy17YPosData
+const FIREWORK_X = [0x00, 0x30, 0x60, 0x60, 0x00, 0x20];   // FireworksXPosData
+const FIREWORK_Y = [0x60, 0x40, 0x70, 0x40, 0x60, 0x30];   // FireworksYPosData
+const FIREWORK_FRAME_MS = 100;
+const VINE_GROW_SPEED = 0.5, VINE_MAX = 96;   // la enredadera crece 1 px cada dos cuadros hasta 96 px (VineHeightData)
+const CLIMB_SPEED = 0.8;                     // px del NES por cuadro al trepar
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
 const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
@@ -488,6 +494,7 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Axe", tilesetName, 13, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Rope_Bridge", tilesetName, 3, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Rope_Rail", tilesetName, 4, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Platform", tilesetName, 5, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
@@ -598,6 +605,7 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Axe", tilesetName, 13, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Rope_Bridge", tilesetName, 3, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Rope_Rail", tilesetName, 4, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Cloud_Platform", tilesetName, 5, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
@@ -756,6 +764,9 @@ class Game {
 			}
 		}
 		this.springs = this.currentMap.springDefs.map(d => ({ ...d, anim: 0, timer: 0, force: SPRING_BOUNCE }));
+		this.vines = [];
+		this.climbVine = null;
+		this.cameraY = 0;
 		this.hasLakitu = (this.currentMap.enemies || []).some(e => e.type === 'Lakitu');
 		this.lakituTimer = 0;
 		const base = (this.currentMap.platforms || []).map(d => {
@@ -1401,6 +1412,7 @@ class Game {
 		const screenRight = screenLeft + this.engine.getCanvasWidth();
 		this.updateCannons(player, screenLeft, screenRight);
 		this.updateFrenzy(player, screenLeft, screenRight);
+		this.updateVines(player);
 		if (this.hasLakitu && !this.enemies.some(e => e.type === 'Lakitu') && ++this.lakituTimer >= LAKITU_RESPAWN_STEPS * 0.5) {
 			// Si lo derrotan, otro Lakitu vuelve a aparecer por la derecha pasado un rato
 			this.lakituTimer = 0;
@@ -1504,6 +1516,82 @@ class Game {
 					this.defeatEnemy(other, SCORE_CHAIN[Math.min(4 + enemy.shellChain++, SCORE_CHAIN.length - 1)]);
 				}
 			}
+		}
+	}
+
+	// Lleva a Mario a otra área sin la animación del caño (enredadera o caída de una sala de nubes)
+	warpTo(warp, playerHeight) {
+		this.climbVine = null;
+		const tr = { warp, playerHeight, phase: 'exit' };
+		this.pipeTransition = tr;
+		this.state = Game_State.Pipe_Transition;
+		this.performPipeWarp(tr);
+	}
+
+	// --- Enredaderas ---------------------------------------------------------------------------
+
+	spawnVine(tx, ty) {
+		this.vines.push({ tx, ty, h: 0 });
+		this.engine.playAudioOverlap(audio["Powerup_Appears"]);
+	}
+
+	// Crece, y Mario se agarra si la toca apretando arriba o abajo; trepa con arriba y abajo y sube al nivel de nubes
+	updateVines(player) {
+		if (!this.vines || !this.vines.length) return;
+		const k = this.tileScale, ts = this.tileSize, pos = player.position;
+		const h = this.playerHeightPx();
+		const keys = this.engine.keysPressed;
+		const up = !!(keys['ArrowUp'] || keys['KeyW']), down = !!(keys['ArrowDown'] || keys['KeyS']);
+		const levelTop = this.tileToScreen(0, 2).y;
+		for (const v of this.vines) {
+			const base = this.tileToScreen(v.tx, v.ty);
+			for (let st = 0; st < this.physicsSteps; st++) if (v.h < (v.max ?? VINE_MAX)) v.h = Math.min(v.max ?? VINE_MAX, v.h + VINE_GROW_SPEED);
+			v.max = Math.min(VINE_MAX, (base.y - levelTop) / k);   // no pasa del borde de arriba del nivel
+			v.h = Math.min(v.h, v.max);
+			v.baseX = base.x; v.baseY = base.y;
+		}
+		if (this.state !== Game_State.Playing) return;
+		if (!this.climbVine) {
+			if (!up && !down) return;
+			const box = this.playerHitbox(player);
+			for (const v of this.vines) {
+				if (v.h < 16) continue;
+				const rect = { x: v.baseX + 4 * k, y: v.baseY - v.h * k, w: 8 * k, h: v.h * k };
+				if (this.rectsOverlap(box, rect)) { this.climbVine = v; this.climbSide = 0; pos.x = v.baseX; this.velocityY = 0; this.isOnGround = false; break; }
+			}
+			return;
+		}
+		// Trepando
+		const v = this.climbVine, top = v.baseY - v.h * k;
+		this.climbMoving = up !== down;
+		this.isOnGround = false; this.velocityY = 0;
+		for (let st = 0; st < this.physicsSteps; st++) {
+			if (up) pos.y -= CLIMB_SPEED * k; else if (down) pos.y += CLIMB_SPEED * k;
+			if (keys['ArrowLeft'] || keys['KeyA']) { this.facingDir = -1; this.climbSide++; }
+			else if (keys['ArrowRight'] || keys['KeyD']) { this.facingDir = 1; this.climbSide++; }
+			else this.climbSide = 0;
+		}
+		// Soltarse: bajar hasta el ladrillo, o apretar a un costado un rato
+		if (pos.y + h >= v.baseY || this.climbSide > 20) {
+			if (pos.y + h >= v.baseY) { pos.y = v.baseY - h; this.isOnGround = true; }
+			this.climbVine = null;
+			return;
+		}
+		// Llegar arriba: en el nivel con sala de nubes, Mario sube a ella
+		if (pos.y <= top - h * 0.3) {
+			const warp = (this.currentMap.warps || []).find(w => w.type === 'vine' && Math.abs(w.x - v.tx) <= 1);
+			if (warp && v.h >= v.max - 1) { this.warpTo(warp, h); return; }
+			pos.y = top - h * 0.3;
+		}
+	}
+
+	drawVines() {
+		const k = this.tileScale, w = this.engine.getCanvasWidth();
+		for (const v of this.vines || []) {
+			if (v.baseX === undefined || v.h < 8 || v.baseX + this.tileSize < 0 || v.baseX > w) continue;
+			const top = v.baseY - v.h * k;
+			const n = Math.ceil(v.h / 8);
+			for (let i = 0; i < n; i++) this.engine.drawSprite('Vine_Segment', i === 0 ? 1 : 0, { x: v.baseX + k, y: top + i * 8 * k }, k, false, 0, Pivot.Top_Left);
 		}
 	}
 
@@ -2143,6 +2231,7 @@ class Game {
 	}
 
 	drawEnemies() {
+		this.drawVines();
 		this.drawPlatforms();
 		this.drawSprings();
 		const pakkunGreenAnim = this.engine.animatedSprites['Pakkun_Green'];
@@ -2571,6 +2660,37 @@ class Game {
 		}
 	}
 
+	// Color de fondo del nivel actual (el mismo que usa drawBackground)
+	backgroundColor() {
+		switch (this.currentMap?.type ?? World_Type.Overworld) {
+			case World_Type.Underground: return this.UNDERGROUND_COLOR;
+			case World_Type.Underwater: return this.UNDERWATER_COLOR;
+			case World_Type.Castle: return this.CASTLE_COLOR;
+			default: return this.currentMap?.night ? this.NIGHT_COLOR : this.OVERWORLD_COLOR;
+		}
+	}
+
+	// Cámara vertical: la vista muestra el pie del nivel, pero al trepar una enredadera sube para seguir a Mario.
+	// Es sólo un desplazamiento al dibujar el mundo; la lógica sigue en coordenadas de pantalla.
+	beginWorldCamera() {
+		const ts = this.tileSize, ctx = this.engine.ctx;
+		const player = this.engine.animatedSprites[this.currentPlayerSpriteName()];
+		const hidden = Math.max(0, -this.tileToScreen(0, 0).y);   // lo que queda por encima de la pantalla (hasta la fila 0 del mapa)
+		const target = (this.climbVine && player) ? Math.min(hidden, Math.max(0, ts * 2.5 - player.position.y)) : 0;
+		this.cameraY = (this.cameraY || 0) + (target - (this.cameraY || 0)) * Math.min(1, 0.15 * this.fk);
+		if (Math.abs(this.cameraY - target) < 0.5) this.cameraY = target;
+		if (this.cameraY <= 0) { this.cameraShift = false; return; }
+		// El borde de arriba que queda al desplazar se pinta con el color de fondo
+		this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.backgroundColor());
+		ctx.save();
+		ctx.translate(0, this.cameraY);
+		this.cameraShift = true;
+	}
+
+	endWorldCamera() {
+		if (this.cameraShift) { this.engine.ctx.restore(); this.cameraShift = false; }
+	}
+
 	drawBackground() {
 		switch(this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Overworld:
@@ -2951,7 +3071,7 @@ class Game {
 			let isCrouching = false;
 			const oldPlayerHeight = isBig ? (this.wasCrouching ? this.tileSize : this.tileSize * 2) : this.tileSize;
 
-			if (isBig) {
+			if (isBig && !this.climbVine) {
 				const isPressingCrouchKey = this.engine.keysPressed['KeyS'] || this.engine.keysPressed['ArrowDown'];
 				const checkPos = { x: playerPos.x + this.tileSize / 2, y: playerPos.y - 1 };
 				const tileAbove = this.screenToTile(checkPos.x, checkPos.y);
@@ -3002,7 +3122,7 @@ class Game {
 			const inBounds = (x, y) => x >= 0 && x < mapWidth;
 			
 			// Física vertical en pasos fijos de 1/60 s (ver stepFrame), igual que el original, sin importar los Hz de la pantalla.
-			const physicsSteps = this.physicsSteps;
+			const physicsSteps = this.climbVine ? 0 : this.physicsSteps;
 
 			for (let physicsStep = 0; physicsStep < physicsSteps; physicsStep++) {
 			const newY = playerPos.y + this.velocityY;
@@ -3066,6 +3186,8 @@ class Game {
 							} else if (item === 'powerup') {
 								const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
 								this.spawnPowerup(blockX, blockY, powerupType);
+							} else if (item === 'vine') {
+								this.spawnVine(headCenterTile.x, headCenterTile.y);
 							} else if (item === 'star') {
 								this.spawnPowerup(blockX, blockY, Powerup_Type.Invincible);
 							} else if (item === '1up') {
@@ -3148,7 +3270,8 @@ class Game {
 			const isMoving = this.xSpeed !== 0;
 
 			const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
-			if (isCrouching) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Crouch`);
+			if (this.climbVine) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_${this.climbMoving ? 'Fall' : 'Slide'}`);
+			else if (isCrouching) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Crouch`);
 			else if (this.isThrowing) { this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Shoot`); } 
 			else if (this.isWater && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Swim`);
 			else if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
@@ -3257,7 +3380,9 @@ class Game {
 			// Verificar si el jugador cayó del mapa (usando coordenadas de mundo)
 			const playerTile = this.screenToTile(playerPos.x + this.tileSize / 2, playerPos.y + this.tileSize / 2);
 			if ((playerTile.y >= this.currentMap.dimensions.height || playerPos.y > this.engine.getCanvasHeight() + this.tileSize * 2) && this.state === Game_State.Playing) { 
-				this.killPlayer(); 
+				// Caerse de una sala de nubes lleva de vuelta al nivel; en cualquier otro lado, se muere
+				if (this.currentMap.exit) this.warpTo(this.currentMap.exit, playerHeight);
+				else this.killPlayer();
 			}
 
 
@@ -3490,6 +3615,8 @@ class Game {
 					// Fuegos artificiales si la última cifra del tiempo con que se llegó es 1, 3 o 6
 					const digit = this.levelTimeAtFlag % 10;
 					this.fireworksLeft = (digit === 1 || digit === 3 || digit === 6) ? digit : 0;
+					this.fireworksTotal = this.fireworksLeft;
+					this.fireworkBursts = [];
 					this.levelCompleteState = 'fireworks';
 					this.bonusTimer = 0;
 				}
@@ -3499,6 +3626,15 @@ class Game {
 			case 'fireworks':
 				this.bonusTimer += dt;
 				if (this.fireworksLeft > 0 && this.bonusTimer > 400) {
+					// Cada cohete explota en un lugar distinto sobre el castillo, en el orden de las tablas del original
+					const i = (this.fireworksTotal - this.fireworksLeft) % FIREWORK_X.length;
+					const ts = this.tileSize, k = this.tileScale;
+					this.fireworkBursts.push({
+						x: this.flagpoleInfo.castleDoorX + (FIREWORK_X[i] - 0x30) * k,
+						y: ts * 1.0 + (FIREWORK_Y[i] - 0x28) / 0x48 * ts * 3.2,
+						t: 0,
+					});
+					this.engine.playAudioOverlap(audio["Player_Bump"]);
 					this.fireworksLeft--;
 					this.score += 500;
 					this.bonusTimer = 0;
@@ -3528,6 +3664,20 @@ class Game {
 			this.engine.drawAnimatedSprite(currentSpriteName, this.frameDt, Pivot.Top_Left);
 		}
 		if (this.levelCompleteState === 'axe_message') this.drawAxeMessage();
+		this.drawFireworks(dt);
+	}
+
+	// Explosiones de los fuegos artificiales: tres cuadros, al doble de tamaño
+	drawFireworks(dt) {
+		if (!this.fireworkBursts || !this.fireworkBursts.length) return;
+		const sprite = this.engine.sprites['Object_Fireball'];
+		for (const b of this.fireworkBursts) {
+			b.t += dt;
+			const frame = Math.floor(b.t / FIREWORK_FRAME_MS);
+			if (frame > 2 || !sprite) continue;
+			this.engine.drawSprite('Object_Fireball', frame, { x: b.x, y: b.y }, sprite.scale * 2, false, 0, Pivot.Center);
+		}
+		this.fireworkBursts = this.fireworkBursts.filter(b => b.t < FIREWORK_FRAME_MS * 3);
 	}
 
 	updateAndDrawGrowingPlayer(dt) {

@@ -134,6 +134,7 @@ function update(dt) {
             smb.updateCoins();
             smb.updateAndDrawScorePopups();
 
+            smb.beginWorldCamera();
             smb.drawBackground();
             smb.drawPowerups();
             smb.updateAndDrawFireballs();
@@ -144,6 +145,7 @@ function update(dt) {
             smb.drawEnemies(dt);
             smb.drawPlayer(PlayerName[smb.player], dt);
             smb.drawForegroundBlocks();
+            smb.endWorldCamera();
             smb.drawUI();
             break;
 
@@ -234,6 +236,7 @@ async function init() {
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
     for (let i = 0; i < 4; i++) js2d.defineSpriteFromTileset(`Platform_Tile_${i}`, "Platform_Tiles", i, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Vine_Segment", "Vine_Tiles", 0, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Spring", "Spring_Tiles", 0, 0, 3, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Koopa_Buzzy", "Enemy_Extra_Tiles", 0, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Koopa_Shell_Buzzy", "Enemy_Extra_Tiles", 2, 0, 2, tileScale);

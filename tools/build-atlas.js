@@ -168,6 +168,7 @@ function backgroundSheet(name, paletteLabel, { groundId, extras }) {
 		// Fila 3: mástil y bandera
 		put(0, 3, 0x24); put(1, 3, 0x25);
 		put(3, 3, 0x63); put(4, 3, 0x0b);   // puente de cuerda y su baranda
+		put(5, 3, 0x88);                      // plataforma de nube de los niveles de nubes
 		{
 			// La bandera son tres sprites (triángulo, calavera, triángulo) con la paleta 1 de sprites
 			const [x, y] = cell(ox, oy, 16, 16, 2, 3);
@@ -391,6 +392,16 @@ sheet('Platform_Tiles', 32, 8, 8, 8, (cv, ox, oy) => {
 // Resorte: 3 cuadros de 16x24 (extendido, a medias y comprimido), con la paleta 1 de sprites del exterior
 sheet('Spring_Tiles', 48, 24, 16, 24, (cv, ox, oy) => {
 	[ENEMY.spring1, ENEMY.spring2, ENEMY.spring3].forEach((n, i) => putSprite(cv, ox + i * 16, oy, enemyRows(n), GROUND.spr[1]));
+});
+
+// Enredadera: un tramo (dos tiles $e1, el segundo espejado y corrido 6 px, que dan la forma de hojas alternadas)
+// y la punta ($e0), con la paleta 1 de sprites del exterior
+sheet('Vine_Tiles', 32, 8, 16, 8, (cv, ox, oy) => {
+	const pal = GROUND.spr[1];
+	putTile(cv, ox, oy, SPR, 0xe1, pal);
+	putTile(cv, ox + 6, oy, SPR, 0xe1, pal, { flipX: true });
+	putTile(cv, ox + 16, oy, SPR, 0xe0, pal);
+	putTile(cv, ox + 22, oy, SPR, 0xe1, pal, { flipX: true });
 });
 
 // --- Bolas de fuego ----------------------------------------------------------------------------
