@@ -1788,8 +1788,11 @@ class Game {
 			let playerHeight = isBig ? (isCrouching ? this.tileSize : this.tileSize * 2) : this.tileSize;
 
 
-			if (oldPlayerHeight < playerHeight) {
-				playerPos.y -= (playerHeight - oldPlayerHeight);
+			// Al agacharse o levantarse cambia la altura de la caja, pero los pies tienen que quedar
+			// donde estaban. Antes solo se compensaba al levantarse, así que agacharse en el aire y
+			// soltar subía a Mario un tile gratis por cada ciclo.
+			if (oldPlayerHeight !== playerHeight) {
+				playerPos.y += oldPlayerHeight - playerHeight;
 			}
 			this.wasCrouching = isCrouching;
 
