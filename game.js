@@ -29,6 +29,7 @@ const audio = {
 
 function update(dt) {
     if (!smb) return;
+    smb.frameDt = dt / 1000;
 
     if (js2d.keysPressed['KeyP']) {
         js2d.keysPressed['KeyP'] = false; // Consumir la tecla
@@ -131,7 +132,7 @@ function update(dt) {
             smb.updateCoins();
             smb.updateAndDrawScorePopups();
 
-            Object.values(js2d.animatedSprites).forEach(sprite => sprite.frameCounter++);
+            Object.values(js2d.animatedSprites).forEach(sprite => sprite.frameCounter = (sprite.frameCounter || 0) + 1);
 
             smb.drawBackground();
             smb.drawPowerups();

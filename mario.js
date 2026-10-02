@@ -184,6 +184,7 @@ class Game {
 	scorePopups = [];
 	brickParticles = [];
 	activeFireballs = [];
+	frameDt = 0; // segundos del frame actual, para js2d.drawAnimatedSprite(name, dt, pivot)
 	touchControls = null;
 	virtualKeysState = {};
 	virtualKeysDown = new Set();
@@ -494,7 +495,7 @@ class Game {
 	screenToTile(x, y) {
 		const mapWidth = this.currentMap.dimensions.width;
 		const mapHeight = this.currentMap.dimensions.height;
-		const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+		const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
 		const worldX = x - this.mapOffset.x;
 		const worldY = y - this.mapOffset.y + offsetY;
 		const tx = Math.floor(worldX / this.tileSize);
@@ -521,7 +522,7 @@ class Game {
 
 	tileToScreen(tx, ty) {
 		const mapHeight = this.currentMap.dimensions.height;
-		const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+		const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
 		const x = Math.round(tx * this.tileSize + this.mapOffset.x);
 		const y = Math.round(ty * this.tileSize + this.mapOffset.y - offsetY);
 		return { x, y };
@@ -940,7 +941,7 @@ class Game {
 			let enemyScreenY = enemy.y;
 			if (enemy.type === 'Pakkun') {
 				 const mapHeight = this.currentMap.dimensions.height;
-				 const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+				 const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
 				 // Aplicamos el offset para convertir coordenadas de mundo a pantalla
 				 enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
 			}
@@ -987,7 +988,7 @@ class Game {
 				}
 			}
 
-			if (enemy.state === 'falling' && enemy.y > this.engine.canvas.height) {
+			if (enemy.state === 'falling' && enemy.y > this.engine.getCanvasHeight()) {
 				this.enemies.splice(i, 1);
 			}
 		}
@@ -1021,7 +1022,7 @@ class Game {
 			if (enemy.type === 'Pakkun') {
 
 				const mapHeight = this.currentMap.dimensions.height;
-				const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+				const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
 				const screenY = enemy.y + this.mapOffset.y - offsetY;
 
 				const baseSpriteName = `Enemy_Pakkun_${enemy.color}`;
@@ -1046,7 +1047,7 @@ class Game {
 					 if(shellSprite) {
 						shellSprite.position = { x: screenX, y: enemy.y };
 						this.engine.setAnimationForSprite(shellSpriteName, enemy.vx === 0 ? 'Shell_Idle' : 'Shell_Sliding');
-						this.engine.drawAnimatedSprite(shellSpriteName, Pivot.Top_Left);
+						this.engine.drawAnimatedSprite(shellSpriteName, this.frameDt, Pivot.Top_Left);
 					 }
 				} else {
 					 this.engine.setAnimationForSprite(spriteNameToDraw, `${enemy.type.includes("Winged") ? `${enemy.type}_Walk` : `${enemy.type}_Walk`}`);
@@ -1055,7 +1056,7 @@ class Game {
 				if (enemy.state !== 'shell') {
 					animSprite.position = { x: screenX, y: enemy.y };
 					animSprite.flipped = enemy.vx > 0;
-					this.engine.drawAnimatedSprite(spriteNameToDraw, Pivot.Top_Left);
+					this.engine.drawAnimatedSprite(spriteNameToDraw, this.frameDt, Pivot.Top_Left);
 				}
 			}
 		}
@@ -1108,7 +1109,7 @@ class Game {
 		const titleMaxY = 0.60;
 		const titleSprite = this.engine.sprites["UI_Title_Image"];
 		const titleImg = titleSprite.image;
-		const titlePosX = this.engine.canvas.width / 2;
+		const titlePosX = this.engine.getCanvasWidth() / 2;
 		const titlePosY = this.tileSize * 1.5;
 		const titleScale = (this.engine.getCanvasHeight() * 0.40) / titleImg.height;
 		const titleWidth = titleImg.width * titleScale;
@@ -1132,14 +1133,14 @@ class Game {
 		};
 
 		const numButtons = menuButtons.length;
-		const menuGap = this.engine.canvas.height * 0.1 / numButtons;
+		const menuGap = this.engine.getCanvasHeight() * 0.1 / numButtons;
 		const getMenuSelectionFromPointer = () => {
 			const mousePos = this.engine.getMousePosition();
 			if (!mousePos) return this.currentSelection;
 			let closestIndex = this.currentSelection;
 			let closestDistance = Infinity;
 			for (let i = 0; i < numButtons; i++) {
-				const menuPosY = this.engine.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + TEXT_SIZE;
+				const menuPosY = this.engine.getCanvasHeight() * titleMaxY + menuGap * i + menuGap / 2 + TEXT_SIZE;
 				const distance = Math.abs(mousePos.y - menuPosY);
 				if (distance < closestDistance) {
 					closestDistance = distance;
@@ -1190,7 +1191,7 @@ class Game {
 
 		this.currentSelection = ((this.currentSelection % numButtons) + numButtons) % numButtons;
 		for(let i = 0; i < numButtons; i++){
-			const menuPosY = this.engine.canvas.height * titleMaxY + menuGap * i + menuGap / 2 + TEXT_SIZE;
+			const menuPosY = this.engine.getCanvasHeight() * titleMaxY + menuGap * i + menuGap / 2 + TEXT_SIZE;
 			const textPos = { x: this.engine.getCanvasWidth() / 2, y: menuPosY };
 			const buttonLabel = menuButtons[i].name;
 			const textWidth = this.engine.measureTextCustom(font, buttonLabel, TEXT_SIZE);
@@ -1208,7 +1209,7 @@ class Game {
 		const topScore = "TOP - " + this.highscore.toString().padStart(6, "0");
 		const topScorePos = {
 			x: this.engine.getCanvasWidth() / 2,
-			y: this.engine.canvas.height * 0.65 + menuGap * numButtons + menuGap / 2 + TEXT_SIZE
+			y: this.engine.getCanvasHeight() * 0.65 + menuGap * numButtons + menuGap / 2 + TEXT_SIZE
 		};
 		this.engine.drawTextCustom(font, topScore, TEXT_SIZE, "#ffffff", topScorePos, "center");
 
@@ -1232,7 +1233,7 @@ class Game {
 		const titleText = "SETTINGS";
 		const titlePos = {
 			x: this.engine.getCanvasWidth() / 2,
-			y: this.engine.canvas.height * 0.15
+			y: this.engine.getCanvasHeight() * 0.15
 		};
 		this.engine.drawTextCustom(font, titleText, TEXT_SIZE * 2, "#ffffff", titlePos, "center");
 
@@ -1243,8 +1244,8 @@ class Game {
 			{ label: "BACK", values: [], getValue: () => "", setValue: null }
 		];
 
-		const menuStartY = this.engine.canvas.height * 0.35;
-		const menuGap = this.engine.canvas.height * 0.12;
+		const menuStartY = this.engine.getCanvasHeight() * 0.35;
+		const menuGap = this.engine.getCanvasHeight() * 0.12;
 
 		for (let i = 0; i < settingsOptions.length; i++) {
 			const option = settingsOptions[i];
@@ -1371,7 +1372,7 @@ class Game {
 
 				const offsetX = this.mapOffset.x;
 				const numObjects = Math.ceil(this.currentMap.dimensions.width * 0.35);
-				const groundY = this.engine.canvas.height - this.tileSize * 2;
+				const groundY = this.engine.getCanvasHeight() - this.tileSize * 2;
 
 				const cloudY = 80;
 				for (let i = 0; i < numObjects; i++) {
@@ -1381,7 +1382,7 @@ class Game {
 						y: cloudY + (i % 3) * 40
 					};
 
-					if (cloudPos.x + cloudWidth * this.tileSize < 0 || cloudPos.x > this.engine.canvas.width) continue;
+					if (cloudPos.x + cloudWidth * this.tileSize < 0 || cloudPos.x > this.engine.getCanvasWidth()) continue;
 
 					const cloudPattern = [
 						['TL', ...Array(cloudWidth - 2).fill('TM'), 'TR'],
@@ -1401,7 +1402,7 @@ class Game {
 						y: groundY - (pattern.length - 1) * this.tileSize
 					};
 
-					if (hillPos.x + hillWidth * this.tileSize < 0 || hillPos.x > this.engine.canvas.width) continue;
+					if (hillPos.x + hillWidth * this.tileSize < 0 || hillPos.x > this.engine.getCanvasWidth()) continue;
 
 					this.drawCompositeObject(hillPos, pattern, this.HILL_SPRITE_MAP);
 				}
@@ -1413,7 +1414,7 @@ class Game {
 						y: groundY + this.tileSize / 2
 					};
 
-					if (bushPos.x + bushWidth * this.tileSize < 0 || bushPos.x > this.engine.canvas.width) continue;
+					if (bushPos.x + bushWidth * this.tileSize < 0 || bushPos.x > this.engine.getCanvasWidth()) continue;
 
 					const bushPattern = [
 						['L', ...Array(bushWidth - 2).fill('M'), 'R']
@@ -1537,7 +1538,7 @@ class Game {
 					this.engine.setAnimationForSprite("Fireball", "Explode", true);
 				}
 
-				this.engine.drawAnimatedSprite("Fireball", Pivot.Center);
+				this.engine.drawAnimatedSprite("Fireball", this.frameDt, Pivot.Center);
 
 				fb.animTimer++;
 				const explosionAnim = hitSprite.animations.Explode;
@@ -1583,7 +1584,7 @@ class Game {
     
 			    if (enemy.type === 'Pakkun') {
 			        const mapHeight = this.currentMap.dimensions.height;
-			        const offsetY = mapHeight * this.tileSize - this.engine.canvas.height;
+			        const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
 			        // Convertir coordenada de mundo a pantalla
 			        enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
 			    }
@@ -1606,7 +1607,7 @@ class Game {
 				const moveSprite = this.engine.animatedSprites["Fireball_Hit"];
 				moveSprite.position = screenPos;
 				
-				this.engine.drawAnimatedSprite("Fireball_Hit", Pivot.Center);
+				this.engine.drawAnimatedSprite("Fireball_Hit", this.frameDt, Pivot.Center);
 			}
 		}
 	}
@@ -1639,7 +1640,7 @@ class Game {
 
 		const coinSprite = this.engine.animatedSprites["Coin"];
 		const coinAnim = coinSprite.animations["Coin_Shine"];
-		coinSprite.frameCounter++;
+		coinSprite.frameCounter = (coinSprite.frameCounter || 0) + 1;
 		if (coinSprite.frameCounter % coinAnim.frameSpeed === 0) {
 			coinSprite.currentFrame = (coinSprite.currentFrame + 1) % coinAnim.frames.length;
 		}
@@ -1812,7 +1813,7 @@ class Game {
 				const drawPos = { x: playerPos.x - offset, y: playerPos.y - offset };
 				this.velocityY += this.gravity * 60 * dt_sec;
 				playerPos.y += this.velocityY * 60 * dt_sec;
-				if (playerPos.y > this.engine.canvas.height + this.tileSize) {
+				if (playerPos.y > this.engine.getCanvasHeight() + this.tileSize) {
 					this.handleDeath();
 				}
 				const deathFrameIndex = 6;
@@ -1966,7 +1967,7 @@ class Game {
 				} else {
 					// Mover al jugador (replicando la lógica de la cámara)
 					if (this.slideVelocityX > 0) { // Deslizando a la derecha
-						if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX;
+						if (playerPos.x < (this.engine.getCanvasWidth() / 2)) playerPos.x = newX;
 						else { this.mapOffset.x -= this.slideVelocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); }
 					} else { // Deslizando a la izquierda
 						// Solo bloquear si intenta salir del borde izquierdo de la pantalla
@@ -2038,14 +2039,14 @@ class Game {
 							break;
 						}
 					}
-					if (!blocked) { if (playerPos.x < (this.engine.canvas.width / 2)) playerPos.x = newX; else { this.mapOffset.x -= velocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); } }
+					if (!blocked) { if (playerPos.x < (this.engine.getCanvasWidth() / 2)) playerPos.x = newX; else { this.mapOffset.x -= velocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); } }
 				}
 			}
 			if ((this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']) && this.isOnGround) { this.velocityY = this.jumpPower; this.isOnGround = false; this.engine.playAudioOverlap(isTurbo ? audio["Player_Jump_Turbo"] : audio["Player_Jump"]); }
 			
 			// Verificar si el jugador cayó del mapa (usando coordenadas de mundo)
 			const playerTile = this.screenToTile(playerPos.x + this.tileSize / 2, playerPos.y + this.tileSize / 2);
-			if ((playerTile.y >= this.currentMap.dimensions.height || playerPos.y > this.engine.canvas.height + this.tileSize * 2) && this.state === Game_State.Playing) { 
+			if ((playerTile.y >= this.currentMap.dimensions.height || playerPos.y > this.engine.getCanvasHeight() + this.tileSize * 2) && this.state === Game_State.Playing) { 
 				this.killPlayer(); 
 			}
 
@@ -2068,7 +2069,7 @@ class Game {
 				player.position.y -= this.tileSize;
 			}
 
-			this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
+			this.engine.drawAnimatedSprite(currentSpriteName, this.frameDt, Pivot.Top_Left);
 
 			player.position.y = originalY;
 
@@ -2192,7 +2193,7 @@ class Game {
 
 		if (this.playerIsVisible) {
 
-			this.engine.drawAnimatedSprite(currentSpriteName, Pivot.Top_Left);
+			this.engine.drawAnimatedSprite(currentSpriteName, this.frameDt, Pivot.Top_Left);
 		}
 	}
 
@@ -2214,7 +2215,7 @@ class Game {
 
 		if (currentFlash % 2 === 0) {
 
-			this.engine.drawAnimatedSprite(PlayerName[this.player], Pivot.Top_Left);
+			this.engine.drawAnimatedSprite(PlayerName[this.player], this.frameDt, Pivot.Top_Left);
 		} else {
 
 			const bigSpritePos = {
@@ -2588,8 +2589,8 @@ class Game {
 
 	getTouchPoint(touch) {
 		const rect = this.engine.canvas.getBoundingClientRect();
-		const scaleX = this.engine.canvas.width / rect.width;
-		const scaleY = this.engine.canvas.height / rect.height;
+		const scaleX = this.engine.getCanvasWidth() / rect.width;
+		const scaleY = this.engine.getCanvasHeight() / rect.height;
 		return {
 			x: (touch.clientX - rect.left) * scaleX,
 			y: (touch.clientY - rect.top) * scaleY

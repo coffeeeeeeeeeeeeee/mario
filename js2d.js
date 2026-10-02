@@ -1,4 +1,6 @@
-Color = {
+// js2d.js — motor de canvas 2D genérico, versión 1.1
+
+const Color = {
 	WHITE:   "#ffffff",
 	BLACK:   "#000000",
 	GRAY:    "#f1f1f1",
@@ -118,14 +120,14 @@ Color = {
 	}
 }
 
-Line_Cap = {
+const Line_Cap = {
 	Butt: "butt",
 	Round: "round",
 	Square: "square"
 
 }
 
-Pivot = {
+const Pivot = {
 	Top_Left:      0,
 	Top_Center:    1,
 	Top_Right:     2,
@@ -137,7 +139,7 @@ Pivot = {
 	Bottom_Right:  8
 }
 
-IMAGE_SMOOTHING = false;
+const IMAGE_SMOOTHING = false;
 
 class SpriteFont {
 	constructor(image, charWidth, charHeight, charMap) {
@@ -149,11 +151,27 @@ class SpriteFont {
 }
 
 class Js2d {
+	static VERSION = "1.1";
+
 	canvas = null;
 	ctx = null;
 	audioCtx = null;
 	keysPressed = {};
 	masterVolume = 1.0;
+
+	// --- Entrada de texto por teclado ---
+	// El motor dibuja sobre un canvas: no hay <input> al que el navegador le mande las teclas,
+	// así que para escribir hay que juntar los caracteres a mano. Mientras la captura está
+	// prendida (startTextCapture) las teclas NO pasan a keysPressed: si pasaran, escribir una
+	// frase manejaría también la navegación por teclado del juego (Tab/Enter/Espacio/flechas,
+	// ver update en game.js) y un Escape en medio de una palabra abriría el menú de pausa.
+	textCapture = false;
+	textBuffer = '';
+	textMaxLength = 0;
+	// Se consumen de a uno (consumeTextSubmit/consumeTextCancel): el keydown pasa cuando pasa,
+	// y quien lo lee es el update del cuadro siguiente.
+	#textSubmitted = false;
+	#textCancelled = false;
 
 	static clamp(value, min, max) {
 		return Math.max(min, Math.min(max, value));
@@ -162,7 +180,18 @@ class Js2d {
 	static lerp(a, b, t) {
 		return a + (b - a) * t;
 	}
-	
+
+	// Suavizado exponencial frame-rate independiente: persigue `target` desde `current` sin
+	// importar el framerate real (a diferencia de un lerp con un `t` fijo por cuadro, que
+	// converge distinto según cuántos cuadros por segundo corra el juego). `speed` más alto
+	// alcanza el objetivo más rápido. Mismo patrón que ya reimplementan a mano los juegos que
+	// usan este motor para animar barras de progreso, precios, o cualquier valor que no debe
+	// saltar de golpe cuando cambia — acá queda una sola vez, reusable.
+	static smooth(current, target, speed, dt) {
+		const t = 1 - Math.exp(-speed * dt);
+		return Js2d.lerp(current, target, t);
+	}
+
 	static inverseLerp(a, b, value) {
 		return (value - a) / (b - a);
 	}
@@ -241,16 +270,27 @@ class Js2d {
 
 	mousePos = { x: 0, y: 0 };
     mouseButtons = [false, false, false]; // [izquierdo, medio, derecho]
+    touchEventHandlers = { start: [], move: [], end: [], cancel: [] };
     mouseWheelDelta = 0;
-	touchEventHandlers = {
-		start: [],
-		move: [],
-		end: [],
-		cancel: []
-	};
+
+	// Cámara: `cameraX`/`cameraY` es el punto del mundo que queda en el centro de la
+	// pantalla, `cameraZoom` la escala (1 = sin zoom). Ver beginCamera()/endCamera() más
+	// abajo — sin cámara activa (el caso por defecto) todo se sigue dibujando 1:1 como
+	// siempre, no cambia nada para un juego que no la use.
+	cameraX = 0;
+	cameraY = 0;
+	cameraZoom = 1;
+	
+	// Propiedades para el contador de FPS. `#lastFrameTime` marca el arranque de la ventana de
+	// un segundo con la que se cuentan los cuadros, no el cuadro anterior.
 	#lastFrameTime = 0;
 	#frameCount = 0;
 	#fps = 0;
+
+	// Tiempo del cuadro anterior (para el delta) y el delta en sí, en SEGUNDOS. Separado del
+	// contador de FPS porque ese acumula de a un segundo y acá hace falta cuadro a cuadro.
+	#lastTickTime = 0;
+	#frameTime = 1 / 60;
 	
 	// --- Propiedades para Simplex Noise ---
 	#p = [151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140, 36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120, 234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33, 88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71, 134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133, 230, 220, 105, 92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161, 1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196, 135, 130, 116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250, 124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227, 47, 16, 58, 17, 182, 189, 28, 42, 223, 183, 170, 213, 119, 248, 152, 2, 44, 154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9, 129, 22, 39, 253, 19, 98, 108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228, 251, 34, 242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14, 239, 107, 49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121, 50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243, 141, 128, 195, 78, 66, 215, 61, 156, 180];
@@ -266,14 +306,15 @@ class Js2d {
 		this.canvas = canvas;
 		this.ctx = canvas.getContext('2d');
 		this.tilesets = {};
-		this.touchEventHandlers = {
-			start: [],
-			move: [],
-			end: [],
-			cancel: []
+		
+		// Resolución base para mantener proporción 16:9
+		this.baseResolution = {
+			width: 1366,
+			height: 768
 		};
 
 		this.initListeners();
+		this.resizeCanvas(); // Establecer tamaño inicial del canvas
 		
 		// Inicializar tablas de permutación para Simplex Noise
 		for (let i = 0; i < 512; i++) {
@@ -291,108 +332,145 @@ class Js2d {
 				console.error("[Js2d] Web Audio API no es soportada en este navegador.", e);
 			}
 		}
+		// algunos navegadores lo crean 'suspended' hasta un gesto del usuario
+		if (this.audioCtx && this.audioCtx.state === "suspended") {
+			this.audioCtx.resume().catch(() => {});
+		}
 	}
 
 	initListeners() {
-		const updateMouseFromClient = (clientX, clientY) => {
-			const rect = this.canvas.getBoundingClientRect();
-			const scaleX = this.canvas.width / rect.width;
-			const scaleY = this.canvas.height / rect.height;
-			this.mousePos.x = (clientX - rect.left) * scaleX;
-			this.mousePos.y = (clientY - rect.top) * scaleY;
-		};
-
 		const emitTouch = (type, event) => {
-			if (!this.touchEventHandlers) return;
 			const handlers = this.touchEventHandlers[type];
 			if (!handlers) return;
-			for (let i = 0; i < handlers.length; i++) {
-				const handler = handlers[i];
-				if (handler) handler(event);
-			}
+			for (let i = 0; i < handlers.length; i++) handlers[i](event);
 		};
 
+		const updateMouseFromClient = (clientX, clientY) => {
+			const rect = this.canvas.getBoundingClientRect();
+			this.mousePos.x = clientX - rect.left;
+			this.mousePos.y = clientY - rect.top;
+		};
+
+		// Cada listener se registra a través de #on() en vez de addEventListener directo, para
+		// poder desregistrarlos todos desde destroy() (ver ahí) — necesario para cualquier
+		// juego que quiera reiniciar el motor (por ejemplo, "volver al menú" reconstruyendo
+		// todo) sin recargar la página entera y sin ir acumulando listeners fantasma.
+
 		// Mover mouse
-		this.canvas.addEventListener('mousemove', e => {
-	        updateMouseFromClient(e.clientX, e.clientY);
-	    });
+		this.#on(this.canvas, 'mousemove', e => {
+			updateMouseFromClient(e.clientX, e.clientY);
+		});
 
 	    // Clics (presionar)
-		window.addEventListener('mousedown', () => this.initAudio(), { once: true });
-		window.addEventListener('touchstart', () => this.initAudio(), { once: true });
-	    this.canvas.addEventListener('mousedown', e => {
+		this.#on(window, 'mousedown', () => this.initAudio(), { once: true });
+		this.#on(window, 'touchstart', () => this.initAudio(), { once: true });
+	    this.#on(this.canvas, 'mousedown', e => {
 	        if (e.button >= 0 && e.button < 3) { // 0: izq, 1: medio, 2: der
 	            this.mouseButtons[e.button] = true;
 	        }
 	    });
 
 	    // Clics (soltar)
-	    this.canvas.addEventListener('mouseup', e => {
+	    this.#on(this.canvas, 'mouseup', e => {
 	        if (e.button >= 0 && e.button < 3) {
 	            this.mouseButtons[e.button] = false;
 	        }
 	    });
 
 	    // Rueda del ratón
-	    this.canvas.addEventListener('wheel', e => {
+	    this.#on(this.canvas, 'wheel', e => {
 	        e.preventDefault(); // Evita que la página haga scroll
 	        this.mouseWheelDelta = Math.sign(e.deltaY); // -1/1
 	    });
 
 	    // Clic derecho
-	    this.canvas.addEventListener('contextmenu', e => e.preventDefault());
+	    this.#on(this.canvas, 'contextmenu', e => e.preventDefault());
 
 		const updateMouseFromTouch = touch => {
 			if (!touch) return;
 			updateMouseFromClient(touch.clientX, touch.clientY);
 		};
 
-		this.canvas.addEventListener('touchstart', e => {
+		this.#on(this.canvas, 'touchstart', e => {
 			if (e.cancelable) e.preventDefault();
 			const touch = e.touches[0] || e.changedTouches[0];
+			if (!touch) return;
 			updateMouseFromTouch(touch);
 			this.mouseButtons[0] = true;
 			emitTouch('start', e);
 		}, { passive: false });
 
-		this.canvas.addEventListener('touchmove', e => {
+		this.#on(this.canvas, 'touchmove', e => {
 			if (e.cancelable) e.preventDefault();
 			const touch = e.touches[0] || e.changedTouches[0];
 			updateMouseFromTouch(touch);
 			emitTouch('move', e);
 		}, { passive: false });
 
-		const handleTouchEnd = e => {
+		const endTouch = (type, e) => {
 			if (e.cancelable) e.preventDefault();
 			const touch = e.changedTouches[0];
 			updateMouseFromTouch(touch);
-			if (e.touches.length === 0) {
-				this.mouseButtons[0] = false;
-			}
+			this.mouseButtons[0] = false;
+			emitTouch(type, e);
 		};
 
-		this.canvas.addEventListener('touchend', e => {
-			handleTouchEnd(e);
-			emitTouch('end', e);
-		}, { passive: false });
-
-		this.canvas.addEventListener('touchcancel', e => {
-			handleTouchEnd(e);
-			emitTouch('cancel', e);
-		}, { passive: false });
+		this.#on(this.canvas, 'touchend', e => endTouch('end', e), { passive: false });
+		this.#on(this.canvas, 'touchcancel', e => endTouch('cancel', e), { passive: false });
 
 		// Teclado
-		window.addEventListener('keydown', e => {
+		this.#on(window, 'keydown', e => {
 			this.initAudio();
+
+			// Con la captura de texto prendida, el teclado escribe y nada más: no se toca
+			// keysPressed, así que ni la navegación por teclado ni los atajos del juego ven
+			// estas teclas (ver el comentario de textCapture).
+			if (this.textCapture) {
+				this.#handleTextKey(e);
+				return;
+			}
+
 			this.keysPressed[e.code] = true;
-			
+
 			if (e.code === 'Tab') {
 				e.preventDefault();
 			}
 		});
-    	window.addEventListener('keyup', e => { delete this.keysPressed[e.code]; });
+    	this.#on(window, 'keyup', e => { delete this.keysPressed[e.code]; });
 
-		window.addEventListener('resize', () => this.resizeCanvas());
+		// Manejar cambios de tamaño en desktop y móviles
+		this.#on(window, 'resize', () => this.resizeCanvas());
+
+		// Manejar cambios de orientación en dispositivos móviles
+		this.#on(window, 'orientationchange', () => {
+			// Esperar un momento para que la orientación se complete
+			setTimeout(() => this.resizeCanvas(), 100);
+		});
+
+		// Usar visualViewport API si está disponible (mejor para móviles)
+		if (window.visualViewport) {
+			this.#on(window.visualViewport, 'resize', () => this.resizeCanvas());
+		}
+	}
+
+	// Registro con seguimiento: guarda target/tipo/handler/options para poder desregistrar
+	// todo de una en destroy(). Mismos argumentos que addEventListener, nada más.
+	#listenerRefs = [];
+	#on(target, type, handler, options) {
+		target.addEventListener(type, handler, options);
+		this.#listenerRefs.push({ target, type, handler, options });
+	}
+
+	// Saca todos los listeners cableados en initListeners() (mouse, touch, teclado, resize,
+	// orientationchange, visualViewport). Pensado para un juego que necesite reiniciar el
+	// motor sin recargar la página (por ejemplo, un "volver al menú" que reconstruye todo) o
+	// para escenarios de hot-reload en desarrollo — hoy nada dentro de este archivo lo llama,
+	// es responsabilidad de quien instancia Js2d invocarlo si lo necesita.
+	destroy() {
+		for (const { target, type, handler, options } of this.#listenerRefs) {
+			target.removeEventListener(type, handler, options);
+		}
+		this.#listenerRefs.length = 0;
 	}
 
 	addTouchListener(type, handler) {
@@ -403,9 +481,7 @@ class Js2d {
 		return () => {
 			const handlers = this.touchEventHandlers[type];
 			const index = handlers.indexOf(handler);
-			if (index >= 0) {
-				handlers.splice(index, 1);
-			}
+			if (index >= 0) handlers.splice(index, 1);
 		};
 	}
 
@@ -418,7 +494,68 @@ class Js2d {
 	    this.mouseWheelDelta = 0;
 	    return delta;
 	}
-	
+
+	//
+	// Cámara: offset + zoom sobre una escena más grande que la pantalla (un mapa, una grilla
+	// que panea con el mouse, etc.) — sin esto, cada juego que lo necesita termina calculando
+	// a mano el traslado/escala y su conversión pantalla↔mundo, como el paneo de la grilla de
+	// módulos en bot-factory. `setCamera` fija los tres valores de una; `moveCamera` los
+	// desplaza en delta (útil para arrastrar con el mouse, en píxeles de pantalla — ya
+	// divide por el zoom para que el arrastre se sienta igual de rápido sea cual sea el
+	// zoom actual).
+	//
+
+	setCamera(x, y, zoom = this.cameraZoom) {
+		this.cameraX = x;
+		this.cameraY = y;
+		this.cameraZoom = zoom;
+	}
+
+	moveCamera(dx, dy) {
+		this.cameraX += dx / this.cameraZoom;
+		this.cameraY += dy / this.cameraZoom;
+	}
+
+	// Traslada + escala el contexto para que lo que se dibuje después de esto, y hasta el
+	// próximo endCamera(), quede en espacio de mundo (coordenadas relativas a cameraX/Y, sin
+	// preocuparse del zoom). Guarda el estado del contexto — endCamera() lo restaura, dejando
+	// todo lo que se dibuje después otra vez en espacio de pantalla normal.
+	beginCamera() {
+		this.ctx.save();
+		this.ctx.translate(this.getCanvasWidth() / 2, this.getCanvasHeight() / 2);
+		this.ctx.scale(this.cameraZoom, this.cameraZoom);
+		this.ctx.translate(-this.cameraX, -this.cameraY);
+	}
+
+	endCamera() {
+		this.ctx.restore();
+	}
+
+	// Conversión pantalla↔mundo: para saber qué punto del mundo cayó bajo el mouse (clicks
+	// sobre algo paneado/escalado) o dónde en pantalla cae un punto del mundo (por ejemplo,
+	// para saber si conviene dibujarlo, o para posicionar UI que sigue a un objeto de la
+	// escena). No dependen de que la cámara esté "activa" en este momento (no hace falta
+	// llamarlas entre beginCamera/endCamera).
+	worldToScreen(point) {
+		return {
+			x: (point.x - this.cameraX) * this.cameraZoom + this.getCanvasWidth() / 2,
+			y: (point.y - this.cameraY) * this.cameraZoom + this.getCanvasHeight() / 2,
+		};
+	}
+
+	screenToWorld(point) {
+		return {
+			x: (point.x - this.getCanvasWidth() / 2) / this.cameraZoom + this.cameraX,
+			y: (point.y - this.getCanvasHeight() / 2) / this.cameraZoom + this.cameraY,
+		};
+	}
+
+	// Atajo para el caso más común: dónde cayó el mouse en espacio de mundo.
+	getMouseWorldPosition() {
+		return this.screenToWorld(this.mousePos);
+	}
+
+
 	peekMouseWheelDelta() {
 	    return this.mouseWheelDelta;
 	}
@@ -430,17 +567,21 @@ class Js2d {
 	getCanvasRectangle(){
 		return {
 			x: 0, y: 0,
-			width: js2d.getCanvasWidth(),
-			height: js2d.getCanvasHeight()
+			width: this.getCanvasWidth(),
+			height: this.getCanvasHeight()
 		};
 	}
 
+	// Tamaño en píxeles CSS (lógicos) — es con lo que trabajan las cámaras y los juegos.
 	getCanvasWidth(){
-		return this.canvas.width;
+		return this.cssWidth || this.canvas.width;
 	}
 	getCanvasHeight(){
-		return this.canvas.height;
+		return this.cssHeight || this.canvas.height;
 	}
+	// Tamaño real del buffer, en píxeles físicos.
+	getPixelWidth(){ return this.canvas.width; }
+	getPixelHeight(){ return this.canvas.height; }
 
 	async setClipboardText(text) {
 		try {
@@ -482,10 +623,154 @@ class Js2d {
 		return this.keysPressed[key] === true;
 	}
 
-	resizeCanvas() {
-		this.canvas.width = window.innerWidth;
-		this.canvas.height = window.innerHeight;
+	// Como isKeyPressed, pero la tecla queda CONSUMIDA: nadie más la ve. Hace falta cuando dos
+	// cosas encimadas escuchan la misma tecla —Escape cierra el panel que está abierto, no el que
+	// quedó abajo— porque si no las dos reaccionan al mismo toque y se cierra todo junto.
+	consumeKeyPressed(key) {
+		if (this.keysPressed[key] !== true) return false;
+		delete this.keysPressed[key];
+		return true;
 	}
+
+	// --- Entrada de texto por teclado ---
+
+	// Una tecla mientras se está escribiendo. Los atajos del navegador (Ctrl/Cmd/Alt) pasan de
+	// largo sin preventDefault: recargar o pegar con el chat abierto tiene que seguir andando.
+	#handleTextKey(e) {
+		if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+		if (e.key === 'Enter')       { this.#textSubmitted = true; e.preventDefault(); return; }
+		if (e.key === 'Escape')      { this.#textCancelled = true; e.preventDefault(); return; }
+		if (e.key === 'Backspace')   { this.textBuffer = this.textBuffer.slice(0, -1); e.preventDefault(); return; }
+		// Tab movería el foco fuera del canvas y no habría forma de volver escribiendo.
+		if (e.key === 'Tab')         { e.preventDefault(); return; }
+
+		// Un solo carácter es lo que distingue algo escribible ("a", "ñ", "7", " ") de una tecla
+		// con nombre ("Shift", "ArrowLeft", "F5"), que es lo que hay que dejar pasar.
+		if (typeof e.key === 'string' && e.key.length === 1) {
+			if (this.textBuffer.length < this.textMaxLength) this.textBuffer += e.key;
+			// La barra espaciadora scrollea la página si no se la frena, y el juego vive dentro
+			// de un iframe en itch.io donde eso se nota.
+			e.preventDefault();
+		}
+	}
+
+	// Prende la captura: a partir de acá el teclado escribe en textBuffer en vez de manejar el
+	// juego. Devuelve el motor para poder encadenar.
+	startTextCapture({ maxLength = 200, initial = '' } = {}) {
+		this.textCapture = true;
+		this.textMaxLength = maxLength;
+		this.textBuffer = String(initial).slice(0, maxLength);
+		this.#textSubmitted = false;
+		this.#textCancelled = false;
+		// Las teclas que quedaron apretadas al abrir el chat (el Enter con el que lo abrió, sin ir
+		// más lejos) seguirían "presionadas" al cerrarlo, porque el keyup se lo come la captura.
+		this.keysPressed = {};
+		return this;
+	}
+
+	stopTextCapture() {
+		this.textCapture = false;
+		this.textBuffer = '';
+		this.#textSubmitted = false;
+		this.#textCancelled = false;
+		this.keysPressed = {};
+	}
+
+	getTextBuffer() {
+		return this.textBuffer;
+	}
+
+	// Para las teclas que no vienen del teclado físico: el teclado en pantalla (ver
+	// OnScreenKeyboard en game.js) y cualquier botón que quiera escribir por su cuenta.
+	setTextBuffer(texto) {
+		this.textBuffer = String(texto == null ? '' : texto).slice(0, this.textMaxLength);
+	}
+
+	// ¿Se apretó Enter desde la última vez que se preguntó? Se consume: la respuesta es true una
+	// sola vez, así un mismo Enter no manda el mensaje dos veces.
+	consumeTextSubmit() {
+		const hubo = this.#textSubmitted;
+		this.#textSubmitted = false;
+		return hubo;
+	}
+
+	consumeTextCancel() {
+		const hubo = this.#textCancelled;
+		this.#textCancelled = false;
+		return hubo;
+	}
+
+	// Cambiar canvas.width/height acá adentro borra todo lo dibujado al instante, por espec
+	// del canvas — y esto se llama desde tres eventos distintos (window "resize", window
+	// "orientationchange" con un setTimeout de 100ms, y visualViewport "resize" para
+	// mobile/zoom, ver initListeners). Si el juego que usa este motor dibuja a un framerate
+	// limitado (por ejemplo un loop() que tira cuadros para bajar el uso de CPU), ese cuadro
+	// en blanco puede quedar visible unos cuadros — arrastrando el borde de la ventana se ve
+	// como parpadeos negros.
+	//
+	// La forma correcta de evitarlo NO es agregar otro listener de "resize" en el juego (no
+	// cubre visualViewport ni orientationchange, y duplica lógica que ya vive acá) — es
+	// envolver este método una vez, después de crear la instancia:
+	//
+	//   const originalResizeCanvas = js2d.resizeCanvas.bind(js2d);
+	//   js2d.resizeCanvas = function () {
+	//       originalResizeCanvas();
+	//       // recomputar layout y volver a dibujar en el mismo evento sincrónico
+	//       draw();
+	//   };
+	//
+	// Funciona porque los tres listeners de acá arriba llaman a `this.resizeCanvas()` (no a
+	// una referencia capturada al método original), así que resuelven la versión pisada en
+	// tiempo de ejecución sea cual sea el que dispare el resize.
+	resizeCanvas() {
+		// Piso mínimo, sin tope máximo (tiene que poder llenar una pantalla completa).
+		//
+		// El piso de ALTO era 480 y hacía daño en el caso más común de un celular: acostado, un
+		// teléfono tiene unos 390px de alto, así que el canvas quedaba MÁS ALTO QUE LA VENTANA y
+		// los últimos noventa píxeles —donde están la botonera y la mano— no se veían nunca. No
+		// había forma de llegar a "Irse al Mazo". Ahora el piso es cuadrado y chico: lo que
+		// garantiza que se pueda leer y tocar no es el tamaño del canvas sino los pisos en
+		// píxeles de la interfaz (ver botoneraLayout en game.js), que es donde corresponde.
+		const minWidth = 320;
+		const minHeight = 320;
+
+		// El canvas ocupa la ventana entera, sea cual sea su proporción. Antes se forzaba a 16:9
+		// y se centraba, lo que dejaba franjas negras en cualquier ventana que no fuera de esa
+		// forma (una de 1920x937, con la barra de marcadores, perdía 127px de cada lado). Lo que
+		// se dibuja adentro se acomoda solo: las posiciones salen del ancho y el alto reales, y
+		// el tamaño de las piezas lo da scaleFactor (ver updateScaleFactor en game.js, que mira
+		// las dos dimensiones para que en una ventana angosta no quede todo gigante).
+		const width = Math.max(minWidth, window.innerWidth);
+		const height = Math.max(minHeight, window.innerHeight);
+
+		// Rasterizado nítido en pantallas de alta densidad: el buffer del canvas tiene
+		// `dpr` píxeles físicos por píxel CSS, y el contexto se escala por `dpr` al
+		// principio de cada cuadro (ver clearBg). El resto del motor sigue trabajando en
+		// píxeles lógicos: getCanvasWidth()/Height() y las cámaras devuelven el tamaño CSS.
+		const dpr = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+		this.dpr = dpr;
+		this.cssWidth = width;
+		this.cssHeight = height;
+
+		this.canvas.width = Math.round(width * dpr);
+		this.canvas.height = Math.round(height * dpr);
+
+		this.canvas.style.width = width + 'px';
+		this.canvas.style.height = height + 'px';
+		this.canvas.style.position = 'absolute';
+		this.canvas.style.left = '50%';
+		this.canvas.style.top = '50%';
+		this.canvas.style.transform = 'translate(-50%, -50%)';
+
+		if (this.ctx) this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+	}
+
+	// Tope del delta, en segundos. Cuando la pestaña queda en segundo plano el navegador frena
+	// el requestAnimationFrame, y al volver el primer cuadro traería un salto de varios segundos:
+	// sin este techo, todo lo que se mueve por dt se teletransportaría de una. Es preferible que
+	// el juego "pierda" ese tiempo a que dé un salto.
+	static MAX_FRAME_TIME = 0.1;
 
 	tick(timestamp) {
 		if (!this.#lastFrameTime) {
@@ -498,11 +783,30 @@ class Js2d {
 			this.#frameCount = 0;
 			this.#lastFrameTime = timestamp;
 		}
+
+		// Delta real del cuadro. El primero no tiene con qué compararse: se le da un cuadro de
+		// 60 fps para no arrancar con 0 (que congelaría todo por un cuadro) ni con el timestamp
+		// entero, que es el tiempo desde que cargó la página.
+		this.#frameTime = this.#lastTickTime
+			? Math.min((timestamp - this.#lastTickTime) / 1000, Js2d.MAX_FRAME_TIME)
+			: 1 / 60;
+		this.#lastTickTime = timestamp;
+	}
+
+	// Cuánto duró el último cuadro, en segundos. Es lo que hay que pasarle a los update() para
+	// que el juego se mueva a la misma velocidad en cualquier pantalla: con un dt fijo, un
+	// monitor de 144 Hz corre todo 2,4 veces más rápido que uno de 60.
+	getFrameTime() {
+		return this.#frameTime;
 	}
 	
 	clearBg(color) {
+		// Restablece la transformación base del cuadro (escala por dpr) y limpia el área
+		// lógica completa. Todo lo que se dibuje después queda en píxeles CSS y se rasteriza
+		// a la densidad real de la pantalla.
+		this.ctx.setTransform(this.dpr || 1, 0, 0, this.dpr || 1, 0, 0);
 		this.ctx.fillStyle = color;
-		this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		this.ctx.fillRect(0, 0, this.getCanvasWidth(), this.getCanvasHeight());
 	}
 
 	drawFPS() {
@@ -672,7 +976,7 @@ class Js2d {
 		this.ctx.beginPath();
 		this.ctx.moveTo(points[0].x, points[0].y);
 
-		for (var i = 1; i < points.length; i += 1) {
+		for (let i = 1; i < points.length; i += 1) {
 			this.ctx.lineTo(points[i].x, points[i].y);
 		}
 
@@ -735,6 +1039,25 @@ class Js2d {
 		this.ctx.fill()
 		this.ctx.restore()
 	}
+	// Círculo con halo: útil para luces, faros, marcadores encendidos. `glow` es el radio
+	// del desenfoque del halo (0 = sin halo). El halo usa el mismo color que el relleno.
+	drawGlowCircle(center, radius, color = Color.WHITE, glow = radius) {
+		this.ctx.save()
+		this.ctx.fillStyle = color
+		if (glow > 0) {
+			this.ctx.shadowColor = color
+			this.ctx.shadowBlur = glow
+		}
+		this.ctx.beginPath()
+		this.ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI)
+		this.ctx.fill()
+		// segundo pase para intensificar el halo sin engordar el círculo
+		if (glow > 0) {
+			this.ctx.fill()
+		}
+		this.ctx.restore()
+	}
+
 	drawCircleLines(center, radius, thickness, color = Color.BLACK, dashArray = null) {
 		this.ctx.save()
 		this.ctx.lineWidth = thickness
@@ -791,7 +1114,12 @@ class Js2d {
 	endClipping(){
 		this.ctx.restore();
 	}
-	drawTextCustom(font, text, size, color, pos, alignment = "left") {
+	// `outline` dibuja un contorno alrededor de las letras, para que un texto claro se lea sobre
+	// cualquier fondo sin tener que ponerle un panel detrás. Puede ser un color ("black") o
+	// { color, width }; sin ancho, se usa un sexto del tamaño de la letra, que aguanta bien el
+	// escalado. Se traza ANTES del relleno: al revés, el contorno se comería medio trazo de cada
+	// letra y el texto saldría más flaco.
+	drawTextCustom(font, text, size, color, pos, alignment = "left", outline = null) {
 		this.ctx.save();
 
 		if (!font || !font.fontFamily) {
@@ -804,6 +1132,19 @@ class Js2d {
 		}
 
 		this.ctx.textAlign = alignment;
+
+		if (outline) {
+			const { color: colorBorde = Color.BLACK, width } = (typeof outline === 'string')
+				? { color: outline }
+				: outline;
+			this.ctx.lineWidth = width || Math.max(2, size / 6);
+			this.ctx.strokeStyle = colorBorde;
+			// Sin esto, los vértices agudos de la tipografía sacan púas al engrosar el trazo.
+			this.ctx.lineJoin = 'round';
+			this.ctx.miterLimit = 2;
+			this.ctx.strokeText(text, pos.x, pos.y);
+		}
+
 		this.ctx.fillStyle = color;
 		this.ctx.fillText(text, pos.x, pos.y);
 		this.ctx.restore();
@@ -846,8 +1187,14 @@ class Js2d {
 			})
 	}
 	
-	createSpriteFont(path, characters, charWidth, charHeight) {
-		const image = this.loadImage(path);
+	// loadImage() es async — antes esto le asignaba la Promise directo a `image` sin esperarla,
+	// así que spriteFont.image terminaba siendo una Promise en vez de un HTMLImageElement.
+	// drawSpriteText() chequea spriteFont.image._loaded, que en una Promise es siempre
+	// undefined: el sprite font quedaba roto en silencio, sin dibujar nada y sin tirar ningún
+	// error. Por eso este método es async: hay que esperar la imagen antes de armar el
+	// SpriteFont, y quien lo llame tiene que hacer `await` (o `.then()`).
+	async createSpriteFont(path, characters, charWidth, charHeight) {
+		const image = await this.loadImage(path);
 		const charMap = {};
 
 		for (let i = 0; i < characters.length; i++) {
@@ -858,8 +1205,7 @@ class Js2d {
 			};
 		}
 
-		const spriteFont = new SpriteFont(image, charWidth, charHeight, charMap);
-		return spriteFont;
+		return new SpriteFont(image, charWidth, charHeight, charMap);
 	}
 	measureSpriteText(spriteFont, text, size) {
 		if (!spriteFont) {
@@ -972,17 +1318,18 @@ class Js2d {
 			ctx.font = `${fontSize}px "${font.fontFamily}"`;
 		}
 
+		// Misma lógica de wrap que drawTextWrapped (línea con espacio final incluido,
+		// corte en n > 0) para que el conteo de líneas siempre coincida con lo dibujado.
 		const words = text.split(' ');
 		let currentLine = '';
 		let numLines = 1;
 
 		for (let i = 0; i < words.length; i++) {
-			const word = words[i];
-			const testLine = currentLine.length === 0 ? word : currentLine + ' ' + word;
+			const testLine = currentLine + words[i] + ' ';
 			const metrics = ctx.measureText(testLine);
-			if (metrics.width > maxWidth && currentLine.length > 0) {
+			if (metrics.width > maxWidth && i > 0) {
 				numLines++;
-				currentLine = word;
+				currentLine = words[i] + ' ';
 			} else {
 				currentLine = testLine;
 			}
@@ -1092,29 +1439,32 @@ class Js2d {
 		const dHeight = sHeight * effectiveScale;
 
 		this.ctx.save();
-		
-		let translateX = pos.x;
-		let translateY = pos.y;
-
-		switch(pivot) {
-			case Pivot.Top_Left: break;
-			case Pivot.Top_Center: translateX += dWidth / 2; break;
-			case Pivot.Top_Right: translateX += dWidth; break;
-			case Pivot.Center_Left: translateY += dHeight / 2; break;
-			case Pivot.Center: translateX += dWidth / 2; translateY += dHeight / 2; break;
-			case Pivot.Center_Right: translateX += dWidth; translateY += dHeight / 2; break;
-			case Pivot.Bottom_Left: translateY += dHeight; break;
-			case Pivot.Bottom_Center: translateX += dWidth / 2; translateY += dHeight; break;
-			case Pivot.Bottom_Right: translateX += dWidth; translateY += dHeight; break;
-		}
-
-		this.ctx.translate(translateX, translateY);
+		this.ctx.translate(pos.x, pos.y);
 		if (rotation !== 0) {
 			this.ctx.rotate(this.toRadians(rotation));
 		}
-		
-		this.ctx.drawImage(imageElement, 0, 0, sWidth, sHeight, -dWidth / 2, -dHeight / 2, dWidth, dHeight);
-		
+
+		// Offset del dibujo relativo al punto ya trasladado (pos): en Top_Left el offset
+		// queda en (0,0) porque el dibujo arranca ahí mismo; el resto de los pivots
+		// retrocede la mitad/el total del ancho/alto según qué lado de la imagen deba
+		// caer sobre `pos`. Mismo criterio que usa drawSprite() más abajo.
+		let drawOffsetX = 0;
+		let drawOffsetY = 0;
+
+		switch(pivot) {
+			case Pivot.Top_Left: break;
+			case Pivot.Top_Center: drawOffsetX = -dWidth / 2; break;
+			case Pivot.Top_Right: drawOffsetX = -dWidth; break;
+			case Pivot.Center_Left: drawOffsetY = -dHeight / 2; break;
+			case Pivot.Center: drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight / 2; break;
+			case Pivot.Center_Right: drawOffsetX = -dWidth; drawOffsetY = -dHeight / 2; break;
+			case Pivot.Bottom_Left: drawOffsetY = -dHeight; break;
+			case Pivot.Bottom_Center: drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight; break;
+			case Pivot.Bottom_Right: drawOffsetX = -dWidth; drawOffsetY = -dHeight; break;
+		}
+
+		this.ctx.drawImage(imageElement, 0, 0, sWidth, sHeight, drawOffsetX, drawOffsetY, dWidth, dHeight);
+
 		this.ctx.restore();
 	}
 
@@ -1266,7 +1616,9 @@ class Js2d {
 		this.masterVolume = Math.max(0, Math.min(1, volume));
 	}
 
-	playSoundEffect({ frequency = 440, duration = 0.1, volume = 0.5, type = 'sine', attack = 0.01, release = 0.1 }) {
+	// `endFrequency` hace un glide de tono; `curve: 'exp'` usa una caída exponencial
+	// (más natural para sonidos percusivos). Sin esos dos, el comportamiento es el de antes.
+	playSoundEffect({ frequency = 440, endFrequency = null, duration = 0.1, volume = 0.5, type = 'sine', attack = 0.01, release = 0.1, curve = 'linear' }) {
 		if (!this.audioCtx) return null;
 
 		const now = this.audioCtx.currentTime;
@@ -1277,52 +1629,65 @@ class Js2d {
 
 		gainNode.gain.setValueAtTime(0, now);
 		gainNode.gain.linearRampToValueAtTime(finalVolume, now + attack);
-		
+
 		const releaseStart = Math.max(now + attack, now + duration - release);
 		gainNode.gain.setValueAtTime(finalVolume, releaseStart);
-		gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
+		if (curve === 'exp') {
+			gainNode.gain.exponentialRampToValueAtTime(0.0001, releaseStart + release);
+		} else {
+			gainNode.gain.linearRampToValueAtTime(0, releaseStart + release);
+		}
 
 		const oscillator = this.audioCtx.createOscillator();
 		oscillator.type = type;
 		oscillator.frequency.setValueAtTime(frequency, now);
+		if (endFrequency != null && endFrequency > 0) {
+			oscillator.frequency.exponentialRampToValueAtTime(endFrequency, now + duration);
+		}
 
 		oscillator.connect(gainNode);
 		oscillator.start(now);
+		oscillator.stop(now + duration + release);
 
-		oscillator.stop(now + duration);
-		
 		return { oscillator, gainNode };
 	}
 
-	animations = {}
+	// Ráfaga de ruido blanco con envolvente y lowpass opcional (para golpes de aire,
+	// arena, whooshes). `lowpass` en Hz o null.
+	playNoise({ duration = 0.2, volume = 0.4, lowpass = null, attack = 0.005, release = 0.12 }) {
+		if (!this.audioCtx) return null;
 
-	setSpriteAnimation(name, position, speed, loop = true) {
-		if (this.animations[name] == undefined || this.animations[name] == null) {
-			this.animations[name] = {}
+		const now = this.audioCtx.currentTime;
+		const frames = Math.max(1, Math.floor(this.audioCtx.sampleRate * duration));
+		const buffer = this.audioCtx.createBuffer(1, frames, this.audioCtx.sampleRate);
+		const data = buffer.getChannelData(0);
+		for (let i = 0; i < frames; i++) data[i] = Math.random() * 2 - 1;
+
+		const src = this.audioCtx.createBufferSource();
+		src.buffer = buffer;
+
+		const gainNode = this.audioCtx.createGain();
+		const finalVolume = volume * this.masterVolume;
+		gainNode.gain.setValueAtTime(0, now);
+		gainNode.gain.linearRampToValueAtTime(finalVolume, now + attack);
+		const releaseStart = Math.max(now + attack, now + duration - release);
+		gainNode.gain.setValueAtTime(finalVolume, releaseStart);
+		gainNode.gain.exponentialRampToValueAtTime(0.0001, releaseStart + release);
+
+		let node = src;
+		if (lowpass) {
+			const filter = this.audioCtx.createBiquadFilter();
+			filter.type = 'lowpass';
+			filter.frequency.setValueAtTime(lowpass, now);
+			src.connect(filter);
+			node = filter;
 		}
+		node.connect(gainNode);
+		gainNode.connect(this.audioCtx.destination);
 
-		this.animations[name].position = position
-		this.animations[name].speed = speed
-		this.animations[name].loop = loop // Store loop setting
-	}
-
-	addFramesToAnimation(name, frames) {
-		if (this.animations[name] == undefined || this.animations[name] == null) {
-			this.animations[name] = {}
-		}
-
-		if (this.animations[name].frames == undefined || this.animations[name].frames == null) {
-			this.animations[name].frames = []
-		}
-
-		for (const frame of frames) {
-			this.animations[name].frames.push(frame)
-		}
-	}
-
-	animate(name, dt) {
-		this.animations[name].position.x += dt * this.animations[name].speed.x
-		this.animations[name].position.y += dt * this.animations[name].speed.y
+		src.start(now);
+		src.stop(now + duration + release);
+		return { src, gainNode };
 	}
 
 	sprites = {}
@@ -1457,16 +1822,9 @@ class Js2d {
 		
 		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
 
-		const dWidth = Math.round(sWidth * scale);
-		const dHeight = Math.round(sHeight * scale);
+		const dWidth = sWidth * scale;
+		const dHeight = sHeight * scale;
 
-		this.ctx.save();
-		this.ctx.translate(Math.round(pos.x), Math.round(pos.y));
-
-		if (rotation !== 0) {
-			this.ctx.rotate(this.toRadians(rotation));
-		}
-		
 		let drawOffsetX = 0;
 		let drawOffsetY = 0;
 
@@ -1479,6 +1837,26 @@ class Js2d {
 			case Pivot.Bottom_Left:   drawOffsetY = -dHeight; break;
 			case Pivot.Bottom_Center: drawOffsetX = -dWidth / 2; drawOffsetY = -dHeight; break;
 			case Pivot.Bottom_Right:  drawOffsetX = -dWidth; drawOffsetY = -dHeight; break;
+		}
+
+		// Sin rotación ni espejado se ajustan los bordes del rectángulo a píxeles físicos. Redondear
+		// posición y tamaño por separado deja una rendija de 1px entre tiles contiguos cuando la
+		// escala es fraccionaria; con bordes absolutos, dos tiles vecinos comparten el mismo borde.
+		if (rotation === 0 && !flipped) {
+			const dpr = this.dpr || 1;
+			const x0 = Math.round((pos.x + drawOffsetX) * dpr) / dpr;
+			const y0 = Math.round((pos.y + drawOffsetY) * dpr) / dpr;
+			const x1 = Math.round((pos.x + drawOffsetX + dWidth) * dpr) / dpr;
+			const y1 = Math.round((pos.y + drawOffsetY + dHeight) * dpr) / dpr;
+			this.ctx.drawImage(image, sx, sy, sWidth, sHeight, x0, y0, x1 - x0, y1 - y0);
+			return;
+		}
+
+		this.ctx.save();
+		this.ctx.translate(Math.round(pos.x), Math.round(pos.y));
+
+		if (rotation !== 0) {
+			this.ctx.rotate(this.toRadians(rotation));
 		}
 
 		if (flipped) {
@@ -1507,7 +1885,7 @@ class Js2d {
 			scale: scale,
 			currentAnimation: null,
 			currentFrame: 0,
-			frameCounter: 0,
+			frameElapsed: 0, // segundos acumulados en el frame actual — ver drawAnimatedSprite
 			frameSpeed: 16,
 			flipped: false,
 			animations: {},
@@ -1550,12 +1928,19 @@ class Js2d {
 			
 			if (resetFrame) {
 				this.animatedSprites[spriteName].currentFrame = 0
-				this.animatedSprites[spriteName].frameCounter = 0
+				this.animatedSprites[spriteName].frameElapsed = 0
 			}
 		}
 	}
 
-	drawAnimatedSprite(name, pivot = Pivot.Center) {
+	// `dt` es obligatorio (ver getFrameTime()): antes esto avanzaba un frame cada N llamadas
+	// a drawAnimatedSprite, así que la velocidad de la animación dependía de cuántas veces
+	// por segundo se llamaba a este método (el framerate real del juego) en vez de tiempo
+	// real — la misma animación corría distinto en una pantalla de 144Hz que en una de 60Hz,
+	// o si el juego limita su propio framerate. `frameSpeed` se sigue interpretando en las
+	// mismas unidades que ya usaban los juegos existentes ("cuadros a 60fps de referencia"),
+	// así que los valores de frameSpeed que ya se hayan elegido no hace falta retocarlos.
+	drawAnimatedSprite(name, dt, pivot = Pivot.Center) {
 		const sprite = this.animatedSprites[name]
 		if (!sprite || !sprite.currentAnimation) return
 
@@ -1563,20 +1948,19 @@ class Js2d {
 		if (!animation) return
 
 		const frameSpeed = animation.frameSpeed || sprite.frameSpeed
+		const frameDuration = frameSpeed / 60
 
-		if (sprite.frameCounter % frameSpeed === 0) {
+		sprite.frameElapsed += dt
+		while (sprite.frameElapsed >= frameDuration) {
+			sprite.frameElapsed -= frameDuration
 			if (animation.loop) {
 				sprite.currentFrame = (sprite.currentFrame + 1) % animation.frames.length
-			} else {
-				if (sprite.currentFrame < animation.frames.length - 1) {
-					sprite.currentFrame++
-				}
+			} else if (sprite.currentFrame < animation.frames.length - 1) {
+				sprite.currentFrame++
 			}
 		}
-		sprite.frameCounter++
 
 		// Dibujo
-		const spriteData = this.sprites[sprite.spriteName]
 		const frame = animation.frames[sprite.currentFrame]
 
 		this.drawSprite(sprite.spriteName, frame, sprite.position, sprite.scale, sprite.flipped, 0, pivot)
@@ -1611,10 +1995,97 @@ class Js2d {
 		const ca = document.cookie.split(';');
 		for(let i = 0; i < ca.length; i++) {
 			let c = ca[i];
-			while (c.charAt(0) == ' ') c = c.substring(1, c.length); // Quita espacios en blanco
-			if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+			while (c.charAt(0) === ' ') c = c.substring(1, c.length); // Quita espacios en blanco
+			if (c.indexOf(nameEQ) === 0) return c.substring(nameEQ.length, c.length);
 		}
 		return null;
+	}
+
+	//
+	// Memoria del navegador (configuración, progreso). setCookie/getCookie de acá arriba son el
+	// depósito crudo; lo que hay que usar es saveData/loadData.
+	//
+	// Son DOS depósitos y no uno porque ninguno de los dos anda siempre, y de maneras distintas:
+	//
+	//   - Adentro de un iframe de otro sitio —que es exactamente cómo se juega en itch.io: el
+	//     juego se sirve desde html-classic.itch.zone dentro de la página de itch.io— las cookies
+	//     son "de tercera parte". Safari las bloquea desde hace años y Chrome va en ese camino.
+	//     Lo peor del caso es que escribir NO falla: se traga el dato y no queda nada.
+	//   - localStorage aguanta en más de esos casos, pero tiene la trampa opuesta: en Safari,
+	//     tocarlo dentro de un iframe bloqueado TIRA EXCEPCIÓN. No devuelve null: revienta. Sin
+	//     el try/catch, leer la configuración se llevaba puesto el arranque del juego entero.
+	//
+	// Así que se escribe en los dos y se lee del primero que conteste. Nada de esto es una
+	// garantía: si el navegador bloquea todo, no se guarda nada y el juego tiene que seguir
+	// andando igual — para avisarlo está storageAvailable().
+	saveData(name, value) {
+		const texto = String(value === undefined || value === null ? "" : value);
+		try {
+			if (typeof localStorage !== 'undefined' && localStorage) localStorage.setItem(name, texto);
+		} catch (e) { /* bloqueado o lleno: queda la cookie */ }
+		try { this.setCookie(name, texto, 365); } catch (e) { /* idem, queda localStorage */ }
+	}
+
+	loadData(name) {
+		try {
+			if (typeof localStorage !== 'undefined' && localStorage) {
+				const guardado = localStorage.getItem(name);
+				if (guardado !== null) return guardado;
+			}
+		} catch (e) { /* ver arriba: tocarlo puede tirar */ }
+
+		const enCookie = this.getCookie(name);
+		// Lo que venía guardado de antes, cuando todo iba a la cookie: se copia a localStorage al
+		// leerlo para que no dependa de ella la próxima vez. Sin esto, a quien ya tenía su
+		// configuración guardada no lo alcanzaría nunca la mejora.
+		if (enCookie !== null) {
+			try {
+				if (typeof localStorage !== 'undefined' && localStorage) localStorage.setItem(name, enCookie);
+			} catch (e) { /* no se pudo migrar; se sigue leyendo de la cookie */ }
+		}
+		return enCookie;
+	}
+
+	clearData(name) {
+		try {
+			if (typeof localStorage !== 'undefined' && localStorage) localStorage.removeItem(name);
+		} catch (e) { /* nada que hacer */ }
+		this.setCookie(name, "", -1); // fecha en el pasado: así se borra una cookie
+	}
+
+	// ¿Este navegador está guardando algo de verdad? No alcanza con preguntar si existe
+	// localStorage ni con mirar si la escritura falló: una cookie bloqueada se escribe sin
+	// protestar y desaparece. La única forma de saberlo es escribir algo y volver a leerlo.
+	// Se contesta una sola vez por sesión (la respuesta no cambia sola).
+	storageAvailable() {
+		if (this._storageOk !== undefined) return this._storageOk;
+		const clave = '__js2d_probe';
+		try {
+			this.saveData(clave, '1');
+			this._storageOk = this.loadData(clave) === '1';
+			this.clearData(clave);
+		} catch (e) {
+			this._storageOk = false;
+		}
+		return this._storageOk;
+	}
+
+	// Wrapper de saveData/loadData para objetos: cada juego nuevo termina reimplementando
+	// JSON.stringify/parse + relleno de campos faltantes a mano (bot-factory tiene
+	// buildSaveData/applySavedData para justamente esto). loadJSON() nunca tira: si no hay
+	// nada guardado o el JSON quedó corrupto, devuelve `fallback` tal cual.
+	saveJSON(name, obj) {
+		this.saveData(name, JSON.stringify(obj));
+	}
+
+	loadJSON(name, fallback = null) {
+		const raw = this.loadData(name);
+		if (raw === null || raw === undefined || raw === "") return fallback;
+		try {
+			return JSON.parse(raw);
+		} catch (e) {
+			return fallback;
+		}
 	}
 
 	getFileExtention(filename) {
@@ -1654,7 +2125,7 @@ class Js2d {
 	}
 
 	Vector2(p1, p2) {
-		var v = {}
+		const v = {}
 
 		v.x = p2.x - p1.x
 		v.y = p2.y - p1.y
@@ -1696,6 +2167,26 @@ class Js2d {
 
 		return distanceSquared < (circle.radius * circle.radius);
 	}
+	checkCollisionPointCircle(point, circle) {
+		const dx = point.x - circle.x;
+		const dy = point.y - circle.y;
+		return (dx * dx) + (dy * dy) < (circle.radius * circle.radius);
+	}
+	// Ray casting: cuenta cuántas veces un rayo horizontal desde `point` hacia la derecha
+	// cruza los bordes del polígono — adentro si el total es impar. `points` es un array de
+	// {x, y}, mismo formato que devuelve getPolygonPoints() (no hace falta cerrarlo repitiendo
+	// el primer punto al final, el módulo ya envuelve al último borde de vuelta al primero).
+	checkCollisionPointPolygon(point, points) {
+		let inside = false;
+		for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+			const pi = points[i];
+			const pj = points[j];
+			const intersects = ((pi.y > point.y) !== (pj.y > point.y)) &&
+				(point.x < (pj.x - pi.x) * (point.y - pi.y) / (pj.y - pi.y) + pi.x);
+			if (intersects) inside = !inside;
+		}
+		return inside;
+	}
 
 
 	getPolygonPoints(center, sides, radius, rotation = 0) {
@@ -1709,7 +2200,7 @@ class Js2d {
 		points.push(p1)
 
 		let point
-		for (var i = 1; i < sides; i += 1) {
+		for (let i = 1; i < sides; i += 1) {
 			point = {
 				x: center.x + radius * Math.cos(i * 2 * Math.PI / sides + rotationInRadians),
 				y: center.y + radius * Math.sin(i * 2 * Math.PI / sides + rotationInRadians)
@@ -1732,7 +2223,7 @@ class Js2d {
 
 		p1 = points[len - 1]
 
-		for (var i = 0; i < len; i++) {
+		for (let i = 0; i < len; i++) {
 			p2 = points[(i) % len]
 			p3 = points[(i + 1) % len]
 
@@ -1778,8 +2269,8 @@ class Js2d {
 				cRadius = radius
 			}
 
-			var x = p2.x + v2.nx * lenOut
-			var y = p2.y + v2.ny * lenOut
+			let x = p2.x + v2.nx * lenOut
+			let y = p2.y + v2.ny * lenOut
 
 			x += -v2.ny * cRadius * radDirection
 			y += v2.nx * cRadius * radDirection
