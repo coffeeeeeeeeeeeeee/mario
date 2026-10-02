@@ -257,6 +257,8 @@ const LOOP_BACK_PAGES = 4;                         // el laberinto devuelve a Ma
 const LOOP_TOLERANCE = 3;                          // px del NES de margen en la altura de los pies
 const HURRY_TIME = 100;               // con este tiempo o menos suena la música apurada
 const TIME_WARNING_MS = 3000;           // lo que dura el aviso de poco tiempo antes de la música apurada
+const SHELL_REVIVE = 0x10 * 21, SHELL_REVIVE_HARD = 0x0b * 21;   // cuadros hasta que un caparazón pisado se levanta (RevivalRateData)
+const SHELL_WIGGLE = 63;                                       // los últimos cuadros se sacude antes de volver
 const HURRY_PLAYBACK_RATE = 1.25;    // cuánto se acelera la melodía en los niveles sin pista propia
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
@@ -420,7 +422,7 @@ class Game {
 		// Settings Menu
 		this.currentSettingsSelection = 0;
 		const savedDifficulty = this.engine.getCookie("smb_difficulty");
-		this.difficulty = savedDifficulty || "Normal"; // Easy, Normal, Hard
+		this.difficulty = (savedDifficulty || "NORMAL").toUpperCase(); // EASY, NORMAL, HARD; HARD es el modo difícil primario del original
 		const savedSFX = this.engine.getCookie("smb_sfx");
 		this.sfxEnabled = savedSFX !== "false";
 
@@ -798,7 +800,8 @@ class Game {
 		for (let i = 0; i < mapIds.length; i++) {
 			if (mapIds[i] === 0x64) this.cannons.push({ tx: i % mw, ty: Math.floor(i / mw), timer: CANNON_MIN_STEPS + Math.floor(Math.random() * CANNON_RANGE_STEPS) });
 		}
-		for (const e of this.currentMap.enemies || []) {
+		for (const e0 of this.currentMap.enemies || []) {
+			const e = (this.primaryHard && e0.type === 'Goomba') ? { ...e0, type: 'Koopa', color: 'Buzzy' } : e0;
 			const screenPos = this.tileToScreen(e.x, e.y);
 			if (e.type === 'Bowser') {
 				const k = this.tileScale;
@@ -837,7 +840,7 @@ class Game {
 					x: screenPos.x - this.mapOffset.x,
 					y: screenPos.y,
 					dir: -1,
-					vx: -ENEMY_WALK_SPEED * this.tileScale,
+					vx: -this.enemyWalkSpeed() * this.tileScale,
 					vy: 0,
 					state: "walking",
 					stompTimer: 0,
@@ -1484,8 +1487,17 @@ class Game {
 		const height = this.enemyHeight(enemy);
 		const jumper = !!enemy.isWinged;
 
+		// Un caparazón quieto se sacude y vuelve a ser un koopa que camina hacia un lado al azar
+		if (enemy.state === 'shell' && !enemy.kicked && enemy.reviveTimer !== undefined) {
+			if (--enemy.reviveTimer <= 0) {
+				enemy.state = 'walking';
+				enemy.dir = Math.random() < 0.5 ? -1 : 1;
+				enemy.reviveTimer = undefined;
+			}
+		}
+
 		// Velocidad horizontal según el estado: camina, el caparazón pateado corre y el quieto no se mueve
-		const speed = enemy.state === 'shell' ? (enemy.kicked ? ENEMY_SHELL_SPEED : 0) : (enemy.walkSpeed ?? ENEMY_WALK_SPEED);
+		const speed = enemy.state === 'shell' ? (enemy.kicked ? ENEMY_SHELL_SPEED : 0) : (enemy.walkSpeed ?? this.enemyWalkSpeed());
 		enemy.vx = enemy.dir * speed * k;
 
 		// Vertical: primero se mueve y después se suma la gravedad, como ImposeGravity
@@ -2000,9 +2012,16 @@ class Game {
 		}
 	}
 
+	// Modo difícil primario (el de la segunda vuelta del original): los enemigos caminan a 3/4 px por cuadro, los Goombas
+	// se vuelven Buzzy Beetles, los caparazones se reviven antes y más rápido, y rige también el secundario
+	get primaryHard() { return this.difficulty === 'HARD'; }
+
+	enemyWalkSpeed() { return this.primaryHard ? 0.75 : ENEMY_WALK_SPEED; }
+
 	// Modo difícil secundario del original: rige desde el 5-3 y acelera el Hammer Bro, a las llamas de Bowser y a los
 	// cheep-cheeps, y achica las plataformas grandes
 	get secondaryHard() {
+		if (this.primaryHard) return true;
 		const m = /^(\d)-(\d)/.exec(this.currentMap?.world || '');
 		if (!m) return false;
 		const w = +m[1], l = +m[2];
@@ -2363,6 +2382,7 @@ class Game {
 				} else {
 					enemy.state = 'shell';
 					enemy.kicked = false;
+					enemy.reviveTimer = this.primaryHard ? SHELL_REVIVE_HARD : SHELL_REVIVE;
 					this.awardChain(1, enemyScreenX, enemy.y);
 				}
 			}
@@ -2466,7 +2486,8 @@ class Game {
 					 const shellSpriteName = `Koopa_Shell_${enemy.color}`;
 					 const shellSprite = this.engine.animatedSprites[shellSpriteName];
 					 if(shellSprite) {
-						shellSprite.position = { x: screenX, y: enemy.y };
+						const wiggle = (!enemy.kicked && enemy.reviveTimer !== undefined && enemy.reviveTimer < SHELL_WIGGLE) ? (Math.floor(enemy.reviveTimer / 4) % 2 ? -1 : 1) * this.tileScale : 0;   // se sacude antes de levantarse
+						shellSprite.position = { x: screenX + wiggle, y: enemy.y };
 						this.engine.setAnimationForSprite(shellSpriteName, enemy.kicked ? 'Shell_Sliding' : 'Shell_Idle');
 						this.engine.drawAnimatedSprite(shellSpriteName, this.frameDt, Pivot.Top_Left);
 					 }
