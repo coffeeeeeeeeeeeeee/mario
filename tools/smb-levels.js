@@ -81,6 +81,13 @@ const HOLE_METATILES = [0x87, 0x00, 0x00, 0x00];
 const TERRAIN_METATILES = [0x69, 0x54, 0x52, 0x62];
 const BRICK_Q_BLOCK_METATILES = [0xc1, 0xc0, 0x5f, 0x60, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e];
 const VERTICAL_PIPE_DATA = [0x11, 0x10, 0x15, 0x14, 0x13, 0x12, 0x15, 0x14];
+// CastleMetatiles: 11 filas de 5 columnas (el castillo del final del nivel)
+const CASTLE_METATILES = [
+	0x00, 0x45, 0x45, 0x45, 0x00,  0x00, 0x48, 0x47, 0x46, 0x00,  0x45, 0x49, 0x49, 0x49, 0x45,
+	0x47, 0x47, 0x4a, 0x47, 0x47,  0x47, 0x47, 0x4b, 0x47, 0x47,  0x49, 0x49, 0x49, 0x49, 0x49,
+	0x47, 0x4a, 0x47, 0x4a, 0x47,  0x47, 0x4b, 0x47, 0x4b, 0x47,  0x47, 0x47, 0x47, 0x47, 0x47,
+	0x4a, 0x47, 0x4a, 0x47, 0x4a,  0x4b, 0x47, 0x4b, 0x47, 0x4b,
+];
 const SIDE_PIPE_SHAFT_DATA = [0x15, 0x14, 0x00, 0x00];
 const SIDE_PIPE_TOP_PART = [0x15, 0x1e, 0x1d, 0x1c];
 const SIDE_PIPE_BOTTOM_PART = [0x15, 0x21, 0x20, 0x1f];
@@ -130,6 +137,9 @@ const ENEMY_TO_ENTITY = {
 	0x03: { type: 'Koopa', color: 'Red' },
 	0x05: { type: 'Koopa', color: 'Red', note: 'Hammer Bro -> Koopa rojo' },
 	0x06: { type: 'Goomba' },
+	0x07: { type: 'Bloober' },
+	0x0a: { type: 'Cheep', color: 'Grey' },
+	0x0b: { type: 'Cheep', color: 'Red' },
 	0x0e: { type: 'Koopa_Winged', color: 'Green' },
 	0x0f: { type: 'Koopa_Winged', color: 'Red' },
 	0x10: { type: 'Koopa_Winged', color: 'Green' },
@@ -174,6 +184,9 @@ class AreaDecoder {
 
 		// Memoria del motor original
 		this.mt = new Array(13).fill(0);
+		this.sceneryCol = new Array(13).fill(0);
+		this.sceneryColumns = [];   // escenografía de fondo (nubes, colinas, arbustos, árboles...) por columna
+		this.mtKeep = new Array(13).fill(false);   // filas con piezas decorativas que igual se guardan (castillo)
 		this.areaObjectLength = [-1, -1, -1];
 		this.areaObjOffsetBuffer = [0, 0, 0];
 		this.areaDataOffset = 0;
@@ -404,6 +417,20 @@ class AreaDecoder {
 	}
 
 	// Boca de caño de los niveles de agua: dos celdas (0x6b, 0x6c); entrar por ella termina el nivel
+	// CastleObject: una columna del castillo por vez, de la fila inicial hasta el piso. El ladrillo que
+	// el original pone en la puerta para frenar a Mario y la bandera estrella no hacen falta acá.
+	castleObject(x) {
+		const startRow = this.getLrgObjAttrib(x);
+		this.chkLrgObjFixedLength(x, 4);
+		let y = this.areaObjectLength[x], row = startRow, limit = 0x0b;
+		do {
+			this.mt[row] = CASTLE_METATILES[y];
+			this.mtKeep[row] = true;
+			row++;
+			if (limit !== 0) { y += 5; limit--; }
+		} while (row !== 0x0b);
+	}
+
 	waterPipe(x) {
 		this.getLrgObjAttrib(x);
 		this.mt[this.d07] = 0x6b;
@@ -476,7 +503,7 @@ class AreaDecoder {
 			case 15: return this.questionBlockRow(x, 7);
 			case 0x10: return this.renderUnderPart(0, 0x0f, 0x40); // soga
 			case 0x11: return this.renderUnderPart(1, 0x0f, 0x44);
-			case 0x12: return this.chkLrgObjFixedLength(x, 4);     // castillo (decoración)
+			case 0x12: return this.castleObject(x);
 			case 0x13: return this.staircaseObject(x);
 			case 0x14: return this.exitPipe(x);
 			case 0x15: return;
@@ -591,6 +618,7 @@ class AreaDecoder {
 
 	renderSceneryTerrain() {
 		this.mt.fill(0);
+		this.mtKeep.fill(false);
 		if (this.backgroundScenery !== 0) {
 			let p = this.currentPageLoc;
 			while (p >= 3) p -= 3;
@@ -612,6 +640,7 @@ class AreaDecoder {
 				if (this.foreData[y]) this.mt[xx] = this.foreData[y];
 			}
 		}
+		this.sceneryCol = this.mt.slice();
 		let terrain = this.areaType === AREA_TYPE.Water && this.worldNumber === 7 ? 0x62 : TERRAIN_METATILES[this.areaType];
 		if (this.cloudTypeOverride) terrain = 0x88;
 		let rx = 0;
@@ -636,9 +665,10 @@ class AreaDecoder {
 		for (let i = 0; i < 13; i++) {
 			const mt = this.mt[i];
 			const grp = (mt & 0xc0) >> 6;
-			col[i] = mt >= BLOCK_BUFF_LOW_BOUNDS[grp] ? mt : 0;
+			col[i] = (mt >= BLOCK_BUFF_LOW_BOUNDS[grp] || this.mtKeep[i]) ? mt : 0;
 		}
 		this.columns.push(col);
+		this.sceneryColumns.push(this.sceneryCol);
 	}
 
 	run() {
@@ -763,8 +793,19 @@ function buildMap(dec, report, label) {
 	}
 	for (const [id, n] of Object.entries(unsupported)) note(`${label}: enemigo $${Number(id).toString(16)} sin equivalente, descartado (x${n})`);
 
+	// Escenografía de fondo: lo que el original dibuja en su búfer pero no guarda como bloque. Va en una
+	// lista plana x, y, id, y no se repite donde ya hay un bloque.
+	const scenery = [];
+	for (let x = 0; x < width; x++) {
+		for (let r = 0; r < 13; r++) {
+			const id = dec.sceneryColumns[x][r];
+			if (!id || dec.columns[x][r]) continue;
+			scenery.push(x, r + TOP_ROWS, id);
+		}
+	}
+
 	enemies.sort((a, b) => a.x - b.x || a.y - b.y);
-	return { width, map, enemies };
+	return { width, map, enemies, scenery };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -835,7 +876,6 @@ function decodeLevel(lines, spec, report) {
 		report[`${name}: hacha del castillo -> mástil de bandera (x1)`] = 1;
 		delete report[`${name}: ${METATILE_NOTES[MT.Axe]}`];
 	}
-	if (dec.areaType === AREA_TYPE.Water) report[`${name}: nivel de agua, el motor no tiene natación (x1)`] = 1;
 	return { name, dec, time: GAME_TIMER_BY_SETTING[dec.gameTimerSetting], halfway: halfwayPage(lines, spec.world, spec.level), ...built };
 }
 
@@ -844,7 +884,12 @@ function sliceLevel(level, x0, x1) {
 	const width = x1 - x0 + 1;
 	const map = new Array(width * MAP_HEIGHT);
 	for (let r = 0; r < MAP_HEIGHT; r++) for (let x = 0; x < width; x++) map[r * width + x] = level.map[r * level.width + x0 + x];
-	return { width, map, enemies: [] };
+	const scenery = [];
+	for (let i = 0; i < level.scenery.length; i += 3) {
+		const x = level.scenery[i];
+		if (x >= x0 && x <= x1) scenery.push(x - x0, level.scenery[i + 1], level.scenery[i + 2]);
+	}
+	return { width, map, enemies: [], scenery };
 }
 
 // Primer caño (de cualquier tipo) dentro de una página: es por donde el original hace salir a Mario.
@@ -973,7 +1018,7 @@ function generate(lines, report) {
 		} else {
 			const spec = { name, pointer: sub.pointer, world: sub.world, level: infoByName[sub.parent].level, areaNumber: 0 };
 			const lv = decodeLevel(lines, spec, report);
-			Object.assign(sub, { width: lv.width, map: lv.map, enemies: lv.enemies, areaType: lv.dec.areaType, night: lv.dec.night });
+			Object.assign(sub, { width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, areaType: lv.dec.areaType, night: lv.dec.night });
 			for (const w of zoneWarps(lv.dec)) addWarp(name, w);
 			// Las salidas de la sala: sus propias entradas de cambio de área
 			const cands = [
@@ -989,11 +1034,11 @@ function generate(lines, report) {
 
 	const out = [];
 	for (const [name, lv] of Object.entries(levels)) {
-		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, warps: warpsOf[name] || [] });
 	}
 	for (const name of Object.keys(subs).sort()) {
 		const sub = subs[name];
-		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, scenery: sub.scenery, warps: warpsOf[name] || [] });
 	}
 	return { out, levels, subs };
 }
@@ -1004,7 +1049,8 @@ function formatLevels(out) {
 	L.push('// No editar a mano: volver a correr `node tools/smb-levels.js --out levels_smb.js`.');
 	L.push('//');
 	L.push('// map: grilla de números de metatile originales (0 = vacío), fila por fila, con 2 filas vacías');
-	L.push('// arriba. enemies: { type, color, x, y }, con x, y la celda que ocupa el enemigo; las plantas');
+	L.push('// arriba. scenery: lista plana x, y, id de la escenografía de fondo (nubes, colinas, arbustos,');
+	L.push('// árboles, vallas), que no es sólida y va detrás de los bloques. enemies: { type, color, x, y }, con x, y la celda que ocupa el enemigo; las plantas');
 	L.push('// piraña van sobre la boca del caño.');
 	L.push('//');
 	L.push('// warps: caños que llevan a otro nivel. type "down" se entra parado sobre el caño apretando');
@@ -1026,6 +1072,9 @@ function formatLevels(out) {
 		L.push(`\t\twarps: ${JSON.stringify(lv.warps)},`);
 		L.push('\t\tenemies: [');
 		for (const e of lv.enemies) L.push('\t\t\t' + JSON.stringify(e) + ',');
+		L.push('\t\t],');
+		L.push('\t\tscenery: [');
+		for (let i = 0; i < lv.scenery.length; i += 30) L.push('\t\t\t' + lv.scenery.slice(i, i + 30).join(',') + ',');
 		L.push('\t\t],');
 		L.push('\t\tmap: [');
 		for (let r = 0; r < MAP_HEIGHT; r++) {

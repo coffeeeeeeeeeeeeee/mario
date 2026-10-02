@@ -233,6 +233,11 @@ async function init() {
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Green", "Enemy_Tall_Tiles", 8, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
+    // Enemigos de agua
+    js2d.defineSpriteFromTileset("Enemy_Bloober", "Enemy_Water_Tiles", 0, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Cheep_Grey", "Enemy_Water_Tiles", 2, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Cheep_Red", "Enemy_Water_Tiles", 4, 0, 2, tileScale);
+
     await js2d.loadSprite("UI_Title_Image", atlasSheetImage("Title_Image"), tileScale);
     js2d.defineSpriteFromTileset("Player_Mario_Grow", "Player_Mario_Grow_Tiles", 0, 0, 3, tileScale);
     js2d.defineSpriteFromTileset("Player_Luigi_Grow", "Player_Luigi_Grow_Tiles", 0, 0, 3, tileScale);
@@ -273,6 +278,9 @@ async function init() {
     js2d.createAnimatedSprite("Koopa_Shell_Green", "Koopa_Shell_Green", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Koopa_Shell_Red", "Koopa_Shell_Red", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Pakkun_Green", "Enemy_Pakkun_Green", { x: 0, y: 0 }, tileScale);
+    js2d.createAnimatedSprite("Bloober", "Enemy_Bloober", { x: 0, y: 0 }, tileScale);
+    js2d.createAnimatedSprite("Cheep_Grey", "Enemy_Cheep_Grey", { x: 0, y: 0 }, tileScale);
+    js2d.createAnimatedSprite("Cheep_Red", "Enemy_Cheep_Red", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Pakkun_Red", "Enemy_Pakkun_Red", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Fireball", "Object_Fireball", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Fireball_Hit", "Object_Fireball_Hit", { x: 0, y: 0 }, tileScale);
@@ -356,6 +364,9 @@ async function init() {
     js2d.addAnimationToSprite("Koopa_Shell_Red", "Shell_Sliding", [0, 1], false, 16);
     js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Sliding", [0, 1], false, 16);
     js2d.addAnimationToSprite("Pakkun_Green", "Pakkun_Bite", [0, 1], true, 16);
+    js2d.addAnimationToSprite("Bloober", "Bloober_Walk", [0, 1], true, 16);
+    js2d.addAnimationToSprite("Cheep_Grey", "Cheep_Walk", [0, 1], true, 16);
+    js2d.addAnimationToSprite("Cheep_Red", "Cheep_Walk", [0, 1], true, 16);
     js2d.addAnimationToSprite("Pakkun_Red", "Pakkun_Bite", [0, 1], true, 16);
 
     // Fireball
@@ -390,6 +401,9 @@ async function init() {
     js2d.setAnimationForSprite("Koopa_Winged_Red", "Koopa_Winged_Walk");
     js2d.setAnimationForSprite("Pakkun_Red", "Pakkun_Bite");
     js2d.setAnimationForSprite("Pakkun_Green", "Pakkun_Bite");
+    js2d.setAnimationForSprite("Bloober", "Bloober_Walk");
+    js2d.setAnimationForSprite("Cheep_Grey", "Cheep_Walk");
+    js2d.setAnimationForSprite("Cheep_Red", "Cheep_Walk");
     js2d.setAnimationForSprite("Koopa_Shell_Green", "Shell_Idle");
     js2d.setAnimationForSprite("Koopa_Shell_Red", "Shell_Idle");
     js2d.setAnimationForSprite("Fireball", "Spin");

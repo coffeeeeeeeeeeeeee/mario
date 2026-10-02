@@ -172,6 +172,11 @@ function backgroundSheet(name, paletteLabel, { groundId, extras }) {
 			putTile(cv, x, y, SPR, 0x7e, spr[1]); putTile(cv, x + 8, y, SPR, 0x7f, spr[1]); putTile(cv, x + 8, y + 8, SPR, 0x7e, spr[1]);
 		}
 
+		// Fila 5: piezas del castillo del final del nivel (0x45 a 0x4b)
+		for (let id = 0x45; id <= 0x4b; id++) put(id - 0x45, 5, id);
+		// ...y el resto de la escenografía de fondo: valla, tronco, árboles, ola y relleno de agua
+		[0x4d, 0x4e, 0x0d, 0x0e, 0x0f, 0x86, 0x87].forEach((id, k) => put(7 + k, 5, id));
+
 		// Fila 4: nubes, colina y arbustos (sólo tienen sentido en el exterior, pero ocupan lo mismo)
 		[0x80, 0x81, 0x82, 0x83, 0x84, 0x85].forEach((id, k) => put(k, 4, id));
 		[0x05, 0x06, 0x0a, 0x09, 0x08, 0x07].forEach((id, k) => put(6 + k, 4, id));
@@ -250,7 +255,7 @@ fireSheet('Luigi');
 const GROUND = areaPalettes('GroundPaletteData');
 const eg = asmBytes('EnemyGraphicsTable');
 // Cada cuadro son 3 filas de [izq, der]; los cuadros están numerados en el orden de la tabla
-const ENEMY = { koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
+const ENEMY = { bloober1: 10, bloober2: 11, cheep1: 12, cheep2: 13, koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
 const enemyRows = n => [0, 1, 2].map(j => [eg[n * 6 + j * 2], eg[n * 6 + j * 2 + 1]]);
 
 sheet('Enemy_Short_Tiles', 256, 16, 16, 16, (cv, ox, oy) => {
@@ -259,11 +264,13 @@ sheet('Enemy_Short_Tiles', 256, 16, 16, 16, (cv, ox, oy) => {
 	putSprite(cv, ...at(0), enemyRows(ENEMY.goomba).slice(1), GROUND.spr[3]);
 	putSprite(cv, ...at(1), enemyRows(ENEMY.goomba).slice(1), GROUND.spr[3], { facingLeft: true });
 	putSprite(cv, ...at(2), enemyRows(ENEMY.goombaFlat).slice(1), GROUND.spr[3]);
-	// Caparazones: verde (paleta 1) y rojo (paleta 2), dos cuadros cada uno
-	putSprite(cv, ...at(3), enemyRows(ENEMY.shell1).slice(1), GROUND.spr[1]);
-	putSprite(cv, ...at(4), enemyRows(ENEMY.shell2).slice(1), GROUND.spr[1]);
-	putSprite(cv, ...at(5), enemyRows(ENEMY.shell1).slice(1), GROUND.spr[2]);
-	putSprite(cv, ...at(6), enemyRows(ENEMY.shell2).slice(1), GROUND.spr[2]);
+	// Caparazones: verde (paleta 1) y rojo (paleta 2), dos cuadros cada uno. El original los llama "al revés"
+	// (filas 6e/6d arriba y 6f abajo) porque el juego los voltea para el caparazón patas arriba; así, sin
+	// voltear, forman el caparazón normal
+	putSprite(cv, ...at(3), enemyRows(ENEMY.shellUp1).slice(1), GROUND.spr[1]);
+	putSprite(cv, ...at(4), enemyRows(ENEMY.shellUp2).slice(1), GROUND.spr[1]);
+	putSprite(cv, ...at(5), enemyRows(ENEMY.shellUp1).slice(1), GROUND.spr[2]);
+	putSprite(cv, ...at(6), enemyRows(ENEMY.shellUp2).slice(1), GROUND.spr[2]);
 });
 
 sheet('Enemy_Tall_Tiles', 192, 24, 16, 24, (cv, ox, oy) => {
@@ -276,6 +283,19 @@ sheet('Enemy_Tall_Tiles', 192, 24, 16, 24, (cv, ox, oy) => {
 	// Planta piraña verde y roja
 	[[8, ENEMY.piranha1, 1], [9, ENEMY.piranha2, 1], [10, ENEMY.piranha1, 2], [11, ENEMY.piranha2, 2]]
 		.forEach(([f, n, p]) => putSprite(cv, ...at(f), enemyRows(n), GROUND.spr[p]));
+});
+
+// Peces de las áreas de agua: Bloober (paleta 3) y cheep-cheep gris (paleta 1) y rojo (paleta 2),
+// con la paleta de sprites del agua; los cheep-cheep miran a la izquierda
+const WATER = areaPalettes('WaterPaletteData');
+sheet('Enemy_Water_Tiles', 96, 24, 16, 24, (cv, ox, oy) => {
+	const at = f => [ox + f * 16, oy];
+	putSprite(cv, ...at(0), enemyRows(ENEMY.bloober1), WATER.spr[3]);
+	putSprite(cv, ...at(1), enemyRows(ENEMY.bloober2), WATER.spr[3]);
+	[[2, 1], [4, 2]].forEach(([f, p]) => {
+		putSprite(cv, ...at(f), enemyRows(ENEMY.cheep1), WATER.spr[p], { facingLeft: true });
+		putSprite(cv, ...at(f + 1), enemyRows(ENEMY.cheep2), WATER.spr[p], { facingLeft: true });
+	});
 });
 
 // --- Bolas de fuego ----------------------------------------------------------------------------

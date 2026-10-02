@@ -171,11 +171,22 @@ const METATILE_SPRITE = {
 	0xc0: 'Block_Question', 0xc1: 'Block_Question', 0xc2: 'Object_Coin', 0xc3: 'Object_Coin',
 	0xc4: 'Block_Used',          // bloque vacío liso (el 'Block_Question_Used' es un cuadro de la animación de la pregunta)
 };
+for (let id = 0x45; id <= 0x4b; id++) METATILE_SPRITE[id] = `Block_Castle_${id.toString(16)}`;   // castillo del final del nivel
 for (let id = 0x55; id <= 0x59; id++) METATILE_SPRITE[id] = 'Block_Brick';             // ladrillos con contenido (exterior)
 for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle';      // ídem (subterráneo y castillo)
 METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
 METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
 for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x88, 0x89]) METATILE_SPRITE[id] = 'Block_Stairs';
+
+// Celda (columna, fila) de la hoja de cada pieza de escenografía de fondo (no sólida), por número de metatile.
+// Las piezas del castillo (0x45 a 0x4b) y el coral (0x69) salen de METATILE_SPRITE.
+const SCENERY_CELL = {
+	0x80: [0, 4], 0x81: [1, 4], 0x82: [2, 4], 0x83: [3, 4], 0x84: [4, 4], 0x85: [5, 4],       // nube
+	0x05: [6, 4], 0x06: [7, 4], 0x0a: [8, 4], 0x09: [9, 4], 0x08: [10, 4], 0x07: [11, 4],     // colina
+	0x02: [12, 4], 0x03: [13, 4], 0x04: [14, 4],                                              // arbusto
+	0x4d: [7, 5], 0x4e: [8, 5], 0x0d: [9, 5], 0x0e: [10, 5], 0x0f: [11, 5],                   // valla, tronco, árboles
+	0x86: [12, 5], 0x87: [13, 5],                                                             // superficie y relleno del agua
+};
 
 // Qué entrega un bloque al golpearlo desde abajo
 const BLOCK_ITEM = {
@@ -190,10 +201,14 @@ const PLAIN_BRICKS = new Set([MT.Brick, MT.BrickUnderground]);
 const HIDDEN_BLOCKS = new Set([MT.HiddenCoin, MT.Hidden1Up]);   // sólo se golpean desde abajo
 const NON_SOLID_BLOCKS = new Set([MT.FlagpoleTop, MT.HiddenCoin, MT.Hidden1Up, MT.Coin, MT.CoinWater]);
 const FOREGROUND_METATILES = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21]; // Mario pasa por detrás
+for (let id = 0x45; id <= 0x4b; id++) NON_SOLID_BLOCKS.add(id);   // castillo: decoración
 const isSolidMetatile = id => id > 0 && id < 0x100 && !NON_SOLID_BLOCKS.has(id);
 const isCoinMetatile = id => id === MT.Coin || id === MT.CoinWater;
 
 // Marcadores de enemigo del editor: ids fuera del rango de metatiles, para colocarlos en la grilla.
+const SWIMMERS = new Set(['Bloober', 'Cheep']);
+const BLOOBER_FLOAT_STEPS = 32;   // cuadros que flota hacia abajo antes de volver a mirar a Mario
+
 const ENEMY_MARKERS = [
 	{ id: 0x100, type: 'Goomba', sprite: 'Enemy_Goomba' },
 	{ id: 0x101, type: 'Koopa', color: 'Green', sprite: 'Enemy_Koopa_Green' },
@@ -316,7 +331,7 @@ class Game {
 
 	OVERWORLD_COLOR = "#5C94FC";
 	UNDERGROUND_COLOR = "#000000";
-	UNDERWATER_COLOR = "#5C94FC";
+	UNDERWATER_COLOR = "#4240FF";
 	CASTLE_COLOR = "#000000";
 	NIGHT_COLOR = "#000000";
 
@@ -422,6 +437,8 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Coral", tilesetName, 5, 0, 1, tileScale);
+		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
+		for (const [id, [c, r]] of Object.entries(SCENERY_CELL)) js2d.defineSpriteFromTileset(`Scenery_${Number(id).toString(16)}`, tilesetName, c, r, 1, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Question",				tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coinbox_Multiple",	tilesetName, 0, 1, 3, tileScale);
@@ -522,6 +539,8 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Brick", tilesetName, 3, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Brick_Middle", tilesetName, 4, 0, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Coral", tilesetName, 5, 0, 1, tileScale);
+		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
+		for (const [id, [c, r]] of Object.entries(SCENERY_CELL)) js2d.defineSpriteFromTileset(`Scenery_${Number(id).toString(16)}`, tilesetName, c, r, 1, tileScale);
 
 		js2d.defineSpriteFromTileset("Block_Question",				tilesetName, 0, 1, 3, tileScale);
 		js2d.defineSpriteFromTileset("Object_Coinbox_Multiple",	tilesetName, 0, 1, 3, tileScale);
@@ -695,6 +714,13 @@ class Game {
 					kicked: false,
 					shellChain: 0,
 					active: false,
+					// Peces: altura original, sentido del vaivén y ciclo de brazadas del Bloober
+					origY: screenPos.y,
+					bobDown: e.x % 2 === 0,
+					swimPhase: 0,
+					force: 0,
+					floatTimer: 0,
+					frame: 0,
 				});
 			}
 		}
@@ -896,7 +922,7 @@ class Game {
 			absSpeed = 0;
 		}
 		this.isSkidding = onGround && dir !== 0 && dir !== this.movingDir && absSpeed >= 0x0b;
-		if (onGround && dir !== 0) this.facingDir = dir;
+		if ((onGround || this.isWater) && dir !== 0) this.facingDir = dir;   // en el agua también se gira
 
 		// El choque con una pared del cuadro anterior anula el sentido en que se empujaba
 		const pushed = (dir !== 0 && dir === this.blockedDir) ? 0 : dir;
@@ -1290,6 +1316,7 @@ class Game {
 		const solidAt = (worldX, screenY) => isSolidMetatile(tiles[this.engine.coordsToIndex(this.screenToTile(worldX + off, screenY), W)]);
 
 		if (enemy.type === 'Pakkun') { this.stepPiranha(enemy, player); return; }
+		if (SWIMMERS.has(enemy.type)) { this.stepSwimmer(enemy, player); return; }
 
 		if (enemy.state === 'stomped') {
 			enemy.stompTimer++;
@@ -1347,6 +1374,43 @@ class Game {
 				}
 			}
 		}
+	}
+
+	// Cheep-cheep y Bloober (MoveSwimmingCheepCheep / MoveBloober). El cheep-cheep avanza a la izquierda
+	// 1/4 px por cuadro (gris) o 1/2 (rojo) y sube y baja 15 px alrededor de su altura inicial. El Bloober
+	// acelera y frena a brazadas (fuerza 0, 1, 2, 1, 0), sube y avanza hacia Mario con esa fuerza, y después
+	// se deja caer de a medio píxel hasta quedar al nivel de Mario. Mario no los pisa: lo lastiman.
+	stepSwimmer(enemy, player) {
+		const k = this.tileScale;
+		if (enemy.state === 'falling') {
+			enemy.y += enemy.vy;
+			enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
+			return;
+		}
+		enemy.frame++;
+		if (enemy.type === 'Cheep') {
+			enemy.vx = -1;
+			enemy.x -= (enemy.color === 'Red' ? 0.5 : 0.25) * k;
+			enemy.y += (enemy.bobDown ? 1 : -1) * 0.125 * k;
+			if (Math.abs(enemy.y - enemy.origY) >= 15 * k) enemy.bobDown = enemy.y < enemy.origY;
+			return;
+		}
+
+		const player_ = player.position;
+		// De vez en cuando se vuelve hacia Mario
+		if (Math.random() < 1 / 64) enemy.dir = (player_.x - this.mapOffset.x) < enemy.x ? -1 : 1;
+		const every8 = enemy.frame % 8 === 0;
+		if (enemy.swimPhase === 0) {
+			if (every8 && ++enemy.force === 2) enemy.swimPhase = 1;
+		} else if (enemy.swimPhase === 1) {
+			if (every8 && --enemy.force === 0) { enemy.swimPhase = 2; enemy.floatTimer = BLOOBER_FLOAT_STEPS; }
+		} else {
+			if (enemy.floatTimer > 0) enemy.floatTimer--;
+			if (enemy.frame % 2 === 0 && (enemy.floatTimer > 0 || enemy.y + 16 * k < player_.y)) enemy.y += k;
+			else if (enemy.floatTimer === 0 && enemy.y + 16 * k >= player_.y) enemy.swimPhase = 0;
+		}
+		enemy.y = Math.max(enemy.y - enemy.force * k, this.tileToScreen(0, 2).y);
+		enemy.x += enemy.dir * enemy.force * k;
 	}
 
 	// La planta piraña sale y se esconde cada 64 cuadros, y no sale si Mario está cerca
@@ -1443,7 +1507,8 @@ class Game {
 			// Se pasa de coordenadas de mundo a pantalla
 			enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
 		}
-		const enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
+		let enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
+		if (SWIMMERS.has(enemy.type)) { const m = 2 * this.tileScale; enemyRect = { x: enemyRect.x + m, y: enemyRect.y + m, w: enemyRect.w - 2 * m, h: enemyRect.h - 2 * m }; }
 
 		const playerRect = this.playerHitbox(player);
 
@@ -1468,7 +1533,7 @@ class Game {
 		// tiene que estar bastante por encima (12 px del NES)
 		const above = (playerRect.y + 12 * this.tileScale) < enemyRect.y;
 		let isStomping = (!this.isOnGround && this.velocityY > 0) || above;
-		if (enemy.type === 'Pakkun') isStomping = false;
+		if (enemy.type === 'Pakkun' || SWIMMERS.has(enemy.type)) isStomping = false;
 
 		if (isStomping) {
 			this.velocityY = SMB_STOMP_SPEED * this.tileScale;
@@ -1511,14 +1576,12 @@ class Game {
 
 			const screenX = enemy.x + this.mapOffset.x;
 
-			let spriteNameToDraw = enemy.type;
+			// El paratroopa pisado pierde las alas y pasa a ser un koopa común
+			const drawType = (enemy.type === 'Koopa_Winged' && !enemy.isWinged) ? 'Koopa' : enemy.type;
+			let spriteNameToDraw = drawType;
 
 			if (enemy.color) {
-				spriteNameToDraw = `${enemy.type}_${enemy.color}`;
-			}
-
-			if (enemy.type === 'Koopa' && enemy.isWinged) {
-				 spriteNameToDraw = `Koopa_Winged_${enemy.color}`;
+				spriteNameToDraw = `${drawType}_${enemy.color}`;
 			}
 
 			if (enemy.type === 'Pakkun') {
@@ -1542,7 +1605,7 @@ class Game {
 				if (!animSprite) continue;
 
 				if (enemy.state === 'stomped') {
-					this.engine.setAnimationForSprite(spriteNameToDraw, `${enemy.type}_Stomped`);
+					this.engine.setAnimationForSprite(spriteNameToDraw, `${drawType}_Stomped`);
 				} else if (enemy.state === 'shell') {
 					 const shellSpriteName = `Koopa_Shell_${enemy.color}`;
 					 const shellSprite = this.engine.animatedSprites[shellSpriteName];
@@ -1552,11 +1615,12 @@ class Game {
 						this.engine.drawAnimatedSprite(shellSpriteName, this.frameDt, Pivot.Top_Left);
 					 }
 				} else {
-					 this.engine.setAnimationForSprite(spriteNameToDraw, `${enemy.type.includes("Winged") ? `${enemy.type}_Walk` : `${enemy.type}_Walk`}`);
+					 this.engine.setAnimationForSprite(spriteNameToDraw, `${drawType}_Walk`);
 				}
 
 				if (enemy.state !== 'shell') {
-					animSprite.position = { x: screenX, y: enemy.y };
+					// Los peces se dibujan en celdas de 16x24 alineadas por abajo con su caja de 16x16
+					animSprite.position = { x: screenX, y: SWIMMERS.has(enemy.type) ? enemy.y - this.tileSize / 2 : enemy.y };
 					animSprite.flipped = enemy.vx > 0;
 					this.engine.drawAnimatedSprite(spriteNameToDraw, this.frameDt, Pivot.Top_Left);
 				}
@@ -1867,10 +1931,26 @@ class Game {
 		}
 	}
 
+	// Escenografía de fondo del nivel, tal como la deja el original: fija en el mapa y sin parallax
+	drawScenery() {
+		const list = this.currentMap?.scenery;
+		if (!list) return;
+		const ts = this.tileSize, w = this.engine.getCanvasWidth();
+		for (let i = 0; i < list.length; i += 3) {
+			const pos = this.tileToScreen(list[i], list[i + 1]);
+			if (pos.x + ts < 0 || pos.x > w) continue;
+			const id = list[i + 2];
+			const name = SCENERY_CELL[id] ? `Scenery_${id.toString(16)}` : METATILE_SPRITE[id];
+			const sprite = name && this.engine.sprites[name];
+			if (sprite) this.engine.drawSprite(name, 0, pos, sprite.scale, false, 0, Pivot.Top_Left);
+		}
+	}
+
 	drawBackground() {
 		switch(this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Overworld:
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.currentMap?.night ? this.NIGHT_COLOR : this.OVERWORLD_COLOR);
+				if (this.currentMap?.scenery) break;   // los niveles traen su propia escenografía; el parallax es para el menú
 
 				const parallaxSpeedClouds = 0.5;
 				const parallaxSpeedHills = 0.8;
@@ -1943,6 +2023,7 @@ class Game {
 				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.OVERWORLD_COLOR);
 				break;
 		}
+		this.drawScenery();
 	}
 
 	drawBlocks(){
@@ -2631,7 +2712,7 @@ class Game {
 				this.score += points;
 				this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
 				
-				player.flipped = true;
+				player.flipped = false;   // mira hacia el mástil
 				
 				const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 				this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Slide`);
