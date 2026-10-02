@@ -2,12 +2,13 @@
 //
 // Lee tools/smbdis.asm (el desensamblado, que no se versiona) y reproduce el algoritmo de
 // DecodeAreaData / ProcessAreaData del juego original para generar los mapas en el formato de
-// assets.js (grilla de ids de BlockType + enemigos como ids en la grilla).
+// assets.js: una grilla de metatiles y una lista de enemigos por nivel.
 //
 // Uso:  node tools/smb-levels.js [--ascii] [--out levels_smb.js]
 //
-// Los objetos del original que el motor no tiene se reemplazan por algo equivalente; ver
-// METATILE_TO_BLOCK y ENEMY_TO_BLOCK. Al final se imprime un informe de qué se reemplazó o descartó.
+// Los mapas guardan los números de metatile originales. Los objetos del original que el motor no
+// tiene se reemplazan por algo equivalente; ver METATILE_NOTES y ENEMY_TO_ENTITY. Al final se
+// imprime un informe de qué se reemplazó o descartó.
 
 const fs = require('fs');
 const path = require('path');
@@ -98,82 +99,43 @@ const TERRAIN_RENDER_BITS = [
 const BLOCK_BUFF_LOW_BOUNDS = [0x10, 0x51, 0x88, 0xc0];
 
 // ---------------------------------------------------------------------------------------------
-// Metatile del original -> id de BlockType del juego
+// Metatiles y enemigos
 // ---------------------------------------------------------------------------------------------
-// Lo que no figura acá (decoración: nubes, arbustos, montañas, árboles de fondo, castillo,
-// sogas, cadenas, agua) se descarta: el juego dibuja su propio fondo con parallax.
-// El segundo valor de cada entrada es la nota para el informe de reemplazos.
+// Los mapas usan los números de metatile originales del juego de NES, tal cual (sólo se guardan los
+// que el original guarda en su búfer de bloques: los de decoración, como nubes, arbustos o árboles
+// de fondo, no figuran y el juego dibuja su propio fondo con parallax). El motor decide cómo
+// dibuja y qué hace cada metatile; acá sólo se anotan, para el informe, los que el motor
+// aproxima con otra cosa.
 
-const B = {
-	Empty: 0, Ground: 1, Brick: 2, Question: 3, QuestionUsed: 4, PipeTopLeft: 5, PipeTopRight: 6,
-	PipeBodyLeft: 7, PipeBodyRight: 8, Coin: 9, Goomba: 10, KoopaGreen: 11, PakkunGreen: 12,
-	Flagpole: 13, Stairs: 24, Invisible: 25, FlagpoleTop: 26, BrickMiddle: 27, CoinboxMultiple: 34,
-	KoopaWingedRed: 37, KoopaWingedGreen: 38, KoopaRed: 39, PakkunRed: 40, QuestionCoin: 41,
-	PipeStartTop: 42, PipeStartBottom: 43, PipeBodyTop: 44, PipeBodyBottom: 45, PipeEndTop: 46,
-	PipeEndBottom: 47,
+const MT = {
+	PipeTopLeft: 0x10, PipeTopRight: 0x11, DecoPipeTopLeft: 0x12, DecoPipeTopRight: 0x13,
+	FlagpoleTop: 0x24, Flagpole: 0x25, Hard: 0x61, Axe: 0xc5,
 };
 
-function metatileToBlock(mt, areaType) {
-	const under = areaType === AREA_TYPE.Underground;
-	switch (mt) {
-		case 0x00: return null;
-		// Caños verticales
-		case 0x10: case 0x12: return [B.PipeTopLeft];
-		case 0x11: case 0x13: return [B.PipeTopRight];
-		case 0x14: return [B.PipeBodyLeft];
-		case 0x15: return [B.PipeBodyRight];
-		// Caño lateral (salida horizontal): boca, cuerpo y empalme, arriba y abajo
-		case 0x1c: return [B.PipeStartTop];
-		case 0x1f: return [B.PipeStartBottom];
-		case 0x1d: return [B.PipeBodyTop];
-		case 0x20: return [B.PipeBodyBottom];
-		case 0x1e: return [B.PipeEndTop];
-		case 0x21: return [B.PipeEndBottom];
-		// Plataformas de árbol y de hongo: sólidas en el original
-		case 0x16: case 0x17: case 0x18: case 0x19: case 0x1a: case 0x1b:
-			return [B.Stairs, 'plataforma de árbol u hongo -> bloque duro'];
-		// Mástil de la bandera
-		case 0x24: return [B.FlagpoleTop];
-		case 0x25: return [B.Flagpole];
-		// Terreno y ladrillos
-		case 0x51: return [B.Brick];
-		case 0x52: return [under ? B.BrickMiddle : B.BrickMiddle];
-		case 0x54: return [B.Ground];
-		// Bloques con contenido (ladrillos que ocultan algo)
-		case 0x55: case 0x5a: return [B.Question, 'ladrillo con hongo/flor -> bloque de pregunta'];
-		case 0x56: case 0x5b: return [B.Question, 'ladrillo con enredadera -> bloque de pregunta'];
-		case 0x57: case 0x5c: return [B.Question, 'ladrillo con estrella -> bloque de pregunta'];
-		case 0x58: case 0x5d: return [B.CoinboxMultiple];
-		case 0x59: case 0x5e: return [B.Invisible, 'ladrillo con 1UP -> bloque invisible con 1UP'];
-		case 0x5f: return [B.QuestionCoin, 'bloque oculto con moneda -> bloque de pregunta visible'];
-		case 0x60: return [B.Invisible];
-		// Bloques duros, puentes, cañones, resorte
-		case 0x61: case 0x62: return [B.Stairs];
-		case 0x63: case 0x89: return [B.Stairs, 'puente -> bloque duro'];
-		case 0x64: case 0x65: case 0x66: return [B.Stairs, 'cañón de Bullet Bill -> bloque duro'];
-		case 0x67: case 0x68: return [B.Stairs, 'resorte -> bloque duro'];
-		// Bloques de la paleta 3
-		case 0xc0: return [B.QuestionCoin];
-		case 0xc1: return [B.Question];
-		case 0xc2: case 0xc3: return [B.Coin];
-		case 0xc4: return [B.QuestionUsed];
-		case 0xc5: return [null, 'hacha del castillo -> descartada'];
-		default: return null;
-	}
-}
+const METATILE_NOTES = {};
+for (let i = 0x16; i <= 0x1b; i++) METATILE_NOTES[i] = 'plataforma de árbol u hongo (se dibuja como bloque duro)';
+Object.assign(METATILE_NOTES, {
+	0x56: 'ladrillo con enredadera (el motor lo trata como hongo)', 0x5b: 'ladrillo con enredadera (el motor lo trata como hongo)',
+	0x57: 'ladrillo con estrella (el motor lo trata como hongo)', 0x5c: 'ladrillo con estrella (el motor lo trata como hongo)',
+	0x62: 'ladrillo de castillo (se dibuja como bloque duro)',
+	0x63: 'puente (se dibuja como bloque duro)', 0x89: 'puente (se dibuja como bloque duro)',
+	0x64: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x65: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x66: 'cañón de Bullet Bill (bloque duro, sin disparos)',
+	0x67: 'resorte (bloque duro)', 0x68: 'resorte (bloque duro)',
+	0xc5: 'hacha del castillo',
+});
 
-// Identificadores de enemigo del original -> id del juego (o null si se descarta).
-const ENEMY_TO_BLOCK = {
-	0x00: { id: B.KoopaGreen },
-	0x02: { id: B.Goomba, note: 'Buzzy Beetle -> Goomba' },
-	0x03: { id: B.KoopaRed },
-	0x05: { id: B.KoopaRed, note: 'Hammer Bro -> Koopa rojo' },
-	0x06: { id: B.Goomba },
-	0x0e: { id: B.KoopaWingedGreen },
-	0x0f: { id: B.KoopaWingedRed },
-	0x10: { id: B.KoopaWingedGreen },
-	0x12: { id: B.Goomba, note: 'Spiny -> Goomba' },
-	0x2d: { id: B.KoopaRed, note: 'Bowser -> Koopa rojo' },
+// Enemigo del original -> enemigo del motor (null si no existe y se descarta)
+const ENEMY_TO_ENTITY = {
+	0x00: { type: 'Koopa', color: 'Green' },
+	0x02: { type: 'Goomba', note: 'Buzzy Beetle -> Goomba' },
+	0x03: { type: 'Koopa', color: 'Red' },
+	0x05: { type: 'Koopa', color: 'Red', note: 'Hammer Bro -> Koopa rojo' },
+	0x06: { type: 'Goomba' },
+	0x0e: { type: 'Koopa_Winged', color: 'Green' },
+	0x0f: { type: 'Koopa_Winged', color: 'Red' },
+	0x10: { type: 'Koopa_Winged', color: 'Green' },
+	0x12: { type: 'Goomba', note: 'Spiny -> Goomba' },
+	0x2d: { type: 'Koopa', color: 'Red', note: 'Bowser -> Koopa rojo' },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -721,52 +683,55 @@ const MAP_HEIGHT = 13 + TOP_ROWS;
 function buildMap(dec, report, label) {
 	const width = dec.columns.length;
 	const map = new Array(width * MAP_HEIGHT).fill(0);
+	const enemies = [];
 	const set = (x, y, id) => { if (x >= 0 && x < width && y >= 0 && y < MAP_HEIGHT) map[y * width + x] = id; };
-	const get = (x, y) => map[y * width + x];
-
 	const note = (txt) => { report[txt] = (report[txt] || 0) + 1; };
 
 	for (let x = 0; x < width; x++) {
 		for (let r = 0; r < 13; r++) {
 			const mt = dec.columns[x][r];
 			if (!mt) continue;
-			const res = metatileToBlock(mt, dec.areaType);
-			if (!res || res[0] === null) { if (res && res[1]) note(`${label}: ${res[1]}`); continue; }
-			if (res[1]) note(`${label}: ${res[1]}`);
-			set(x, r + TOP_ROWS, res[0]);
+			if (METATILE_NOTES[mt]) note(`${label}: ${METATILE_NOTES[mt]}`);
+			if (mt === MT.Axe) continue;
+			set(x, r + TOP_ROWS, mt);
 		}
 	}
 
-	// Piranhas: arriba de la boca del caño
-	const pakkun = dec.areaType === AREA_TYPE.Underground ? B.PakkunRed : B.PakkunGreen;
-	for (const p of dec.piranhas) set(p.col, p.row - 1 + TOP_ROWS, pakkun);
+	// Plantas piraña: arriba de la boca del caño, en la columna izquierda
+	const pakkunColor = dec.areaType === AREA_TYPE.Underground ? 'Red' : 'Green';
+	for (const p of dec.piranhas) enemies.push({ type: 'Pakkun', color: pakkunColor, x: p.col, y: p.row - 1 + TOP_ROWS });
 
-	// Enemigos
+	// Enemigos. En el original una fila de datos r deja al enemigo parado sobre la fila r del
+	// terreno, o sea que ocupa la celda de arriba (r - 1).
 	const unsupported = {};
 	for (const e of dec.enemies) {
 		const cellRow = e.row - 1 + TOP_ROWS;
 		if (e.id >= 0x37 && e.id <= 0x3e) {
+			// Grupos de 2 o 3, separados 24 px, que el original genera al borde derecho de la pantalla
 			const v = e.id - 0x37;
-			const base = v < 4 ? B.Goomba : B.KoopaGreen;
+			const ent = v < 4 ? { type: 'Goomba' } : { type: 'Koopa', color: 'Green' };
 			const row = (v & 2) ? 7 : 11;
 			const count = (v & 1) ? 3 : 2;
-			for (let n = 0; n < count; n++) set(e.x - 3 + Math.round(n * 1.5), row - 1 + TOP_ROWS, base);
+			for (let n = 0; n < count; n++) enemies.push({ ...ent, x: e.x - 3 + Math.round(n * 1.5), y: row - 1 + TOP_ROWS });
 			continue;
 		}
-		const m = ENEMY_TO_BLOCK[e.id];
+		const m = ENEMY_TO_ENTITY[e.id];
 		if (m) {
 			if (m.note) note(`${label}: ${m.note}`);
-			set(e.x, cellRow, m.id);
+			const ent = { type: m.type };
+			if (m.color) ent.color = m.color;
+			enemies.push({ ...ent, x: e.x, y: cellRow });
 		} else if (e.id >= 0x24 && e.id <= 0x2c) {
 			note(`${label}: plataforma móvil -> fila de bloques duros fija`);
-			for (let n = 0; n < 3; n++) set(e.x + n, e.row + TOP_ROWS, B.Stairs);
+			for (let n = 0; n < 3; n++) set(e.x + n, e.row + TOP_ROWS, MT.Hard);
 		} else {
 			unsupported[e.id] = (unsupported[e.id] || 0) + 1;
 		}
 	}
 	for (const [id, n] of Object.entries(unsupported)) note(`${label}: enemigo $${Number(id).toString(16)} sin equivalente, descartado (x${n})`);
 
-	return { width, map };
+	enemies.sort((a, b) => a.x - b.x || a.y - b.y);
+	return { width, map, enemies };
 }
 
 const WORLD_AREAS = {
@@ -798,12 +763,12 @@ function decodeLevel(lines, name, spec, report) {
 		const c = dec.axe.col;
 		const put = (row, id) => { map[(row + TOP_ROWS) * width + c] = id; };
 		for (let r = 0; r < 13; r++) put(r, 0);
-		put(0, B.FlagpoleTop);
-		for (let r = 1; r <= 8; r++) put(r, B.Flagpole);
-		put(10, B.Stairs);
+		put(0, MT.FlagpoleTop);
+		for (let r = 1; r <= 8; r++) put(r, MT.Flagpole);
+		put(10, MT.Hard);
 		dec.flagpole = { col: c };
 		report[`${name}: hacha del castillo -> mástil de bandera (x1)`] = 1;
-		delete report[`${name}: hacha del castillo -> descartada`];
+		delete report[`${name}: ${METATILE_NOTES[MT.Axe]}`];
 	}
 	return { name, dec, ...built };
 }
@@ -813,13 +778,13 @@ function sliceLevel(level, x0, x1) {
 	const width = x1 - x0 + 1;
 	const map = new Array(width * MAP_HEIGHT);
 	for (let r = 0; r < MAP_HEIGHT; r++) for (let x = 0; x < width; x++) map[r * width + x] = level.map[r * level.width + x0 + x];
-	return { width, map };
+	return { width, map, enemies: [] };
 }
 
 // Primer caño (de cualquier tipo) dentro de una página: es por donde el original hace salir a Mario.
 function findPipeInPage(level, page) {
 	for (let x = page * 16; x < Math.min(level.width, page * 16 + 16); x++) {
-		for (let r = 0; r < MAP_HEIGHT; r++) if (level.map[r * level.width + x] === B.PipeTopLeft) return { x, y: r };
+		for (let r = 0; r < MAP_HEIGHT; r++) { const id = level.map[r * level.width + x]; if (id === MT.PipeTopLeft || id === MT.DecoPipeTopLeft) return { x, y: r }; }
 	}
 	return null;
 }
@@ -901,10 +866,10 @@ function generate(lines, report) {
 
 	const out = [];
 	for (const [name, lv] of Object.entries(levels)) {
-		out.push({ world: name, nextWorld: WORLD_AREAS[name].next, hidden: false, type: toWorldType(lv.dec.areaType), width: lv.width, map: lv.map, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: WORLD_AREAS[name].next, hidden: false, type: toWorldType(lv.dec.areaType), width: lv.width, map: lv.map, enemies: lv.enemies, warps: warpsOf[name] || [] });
 	}
 	for (const [name, sub] of Object.entries(subs)) {
-		out.push({ world: name, nextWorld: sub.spec.parent, hidden: true, type: toWorldType(sub.areaType), width: sub.width, map: sub.map, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: sub.spec.parent, hidden: true, type: toWorldType(sub.areaType), width: sub.width, map: sub.map, enemies: sub.enemies, warps: warpsOf[name] || [] });
 	}
 	return { out, levels, subs };
 }
@@ -913,6 +878,10 @@ function formatLevels(out) {
 	const L = [];
 	L.push('// Generado por tools/smb-levels.js a partir del desensamblado de Super Mario Bros.');
 	L.push('// No editar a mano: volver a correr `node tools/smb-levels.js --out levels_smb.js`.');
+	L.push('//');
+	L.push('// map: grilla de números de metatile originales (0 = vacío), fila por fila, con 2 filas vacías');
+	L.push('// arriba. enemies: { type, color, x, y }, con x, y la celda que ocupa el enemigo; las plantas');
+	L.push('// piraña van sobre la boca del caño.');
 	L.push('//');
 	L.push('// warps: caños que llevan a otro nivel. type "down" se entra parado sobre el caño apretando');
 	L.push('// abajo; type "right" se entra caminando a la derecha contra la boca de un caño lateral.');
@@ -928,6 +897,9 @@ function formatLevels(out) {
 		L.push(`\t\ttype: ${lv.type},`);
 		L.push(`\t\tdimensions: { width: ${lv.width}, height: ${MAP_HEIGHT} },`);
 		L.push(`\t\twarps: ${JSON.stringify(lv.warps)},`);
+		L.push('\t\tenemies: [');
+		for (const e of lv.enemies) L.push('\t\t\t' + JSON.stringify(e) + ',');
+		L.push('\t\t],');
 		L.push('\t\tmap: [');
 		for (let r = 0; r < MAP_HEIGHT; r++) {
 			L.push('\t\t\t' + lv.map.slice(r * lv.width, (r + 1) * lv.width).join(',') + ',');
@@ -941,19 +913,27 @@ function formatLevels(out) {
 }
 
 function ascii(level) {
+	// Leyenda: . vacío; P/p caño; = caño lateral; # bloque duro y terreno; B ladrillo; ? bloques de
+	// pregunta o con contenido; C moneda; F bandera; ~ el resto
 	const ch = v => {
 		if (v === 0) return '.';
-		if (v < 10) return String(v);
-		if (v < 36) return String.fromCharCode(55 + v);
-		return { 41: 'q', 34: 'M', 37: 'w', 38: 'x', 39: 'y', 40: 'z', 42: 'a', 43: 'b', 44: 'c', 45: 'd', 46: 'e', 47: 'f' }[v] || '#';
+		if (v === 0x10 || v === 0x12) return 'P';
+		if (v === 0x11 || v === 0x13) return 'p';
+		if (v === 0x14 || v === 0x15) return '|';
+		if (v >= 0x1c && v <= 0x21) return '=';
+		if (v === 0x24 || v === 0x25) return 'F';
+		if (v === 0x51 || v === 0x52) return 'B';
+		if (v === 0x54 || v === 0x61 || v === 0x62) return '#';
+		if (v === 0xc2 || v === 0xc3) return 'C';
+		if ((v >= 0x55 && v <= 0x60) || v === 0xc0 || v === 0xc1 || v === 0xc4) return '?';
+		return '~';
 	};
-	const out = [];
-	for (let r = 0; r < MAP_HEIGHT; r++) {
-		let s = '';
-		for (let x = 0; x < level.width; x++) s += ch(level.map[r * level.width + x]);
-		out.push(String(r).padStart(2) + ' ' + s);
+	const grid = Array.from({ length: MAP_HEIGHT }, (_, r) => Array.from({ length: level.width }, (_, x) => ch(level.map[r * level.width + x])));
+	for (const e of level.enemies || []) {
+		const c = { Goomba: 'g', Koopa: 'k', Koopa_Winged: 'w', Pakkun: 'v' }[e.type] || 'e';
+		if (grid[e.y] && grid[e.y][e.x] !== undefined) grid[e.y][e.x] = c;
 	}
-	return out.join('\n');
+	return grid.map((row, r) => String(r).padStart(2) + ' ' + row.join('')).join('\n');
 }
 
 if (require.main === module) {
@@ -964,7 +944,7 @@ if (require.main === module) {
 		for (const lv of out) {
 			const src = levels[lv.world] || subs[lv.world];
 			console.log(`\n== ${lv.world}  ${lv.width}x${MAP_HEIGHT}  type=${lv.type}${lv.hidden ? ' (subnivel)' : ''}`);
-			console.log(ascii({ width: lv.width, map: lv.map }));
+			console.log(ascii(lv));
 			console.log('warps', JSON.stringify(lv.warps));
 		}
 	}
@@ -978,4 +958,4 @@ if (require.main === module) {
 	for (const [k, v] of Object.entries(report)) console.log(`  ${k}${/\(x\d+\)$/.test(k) ? '' : ` (x${v})`}`);
 }
 
-module.exports = { loadAsm, AreaDecoder, buildMap, decodeLevel, generate, formatLevels, ascii, WORLD_AREAS, AREA_TYPE, MAP_HEIGHT, TOP_ROWS, B };
+module.exports = { loadAsm, AreaDecoder, buildMap, decodeLevel, generate, formatLevels, ascii, WORLD_AREAS, AREA_TYPE, MAP_HEIGHT, TOP_ROWS, MT };

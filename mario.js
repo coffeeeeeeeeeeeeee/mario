@@ -100,59 +100,60 @@ const Black_Screen_Type = {
 	Time_Up: 2,
 };
 
-const BlockType = [
-	'Block_Empty',					// 	0
-	'Block_Ground',					// 	1
-	'Block_Brick',					// 	2
-	'Block_Question',				// 	3
-	'Block_Question_Used',			// 	4
-	'Block_Pipe_Top_Left',			// 	5
-	'Block_Pipe_Top_Right',			// 	6
-	'Block_Pipe_Body_Left',			// 	7
-	'Block_Pipe_Body_Right',		// 	8
-	'Object_Coin',					// 	9
-	'Enemy_Goomba',					// 10
-	'Enemy_Koopa_Green',			// 11
-	'Enemy_Pakkun_Green',			// 12
-	'Block_Flagpole',				// 13
-	'Block_Cloud_Left',				// 14
-	'Block_Cloud_Middle',			// 15
-	'Block_Cloud_Right',			// 16
-	'Block_Bush_Left',				// 17
-	'Block_Bush_Middle',			// 18
-	'Block_Bush_Right',				// 19
-	'Block_Hill_Top',				// 20
-	'Block_Hill_Left',				// 21
-	'Block_Hill_Right',				// 22
-	'Block_Hill_Dots',				// 23
-	'Block_Stairs',					// 24
-	'Block_Invisible',				// 25
-	'Block_Flagpole_Top',			// 26
-	'Block_Brick_Middle',			// 27
-	'Block_Brick_Zigzag',			// 28
-	'Block_Brick_Zigzag_Filled',	// 29
-	'Block_Brick_Break',			// 30
-	'Block_Brick_Cut',				// 31
-	'Block_Brick_Arch',				// 32
-	'Block_Black',					// 33
-	'Object_Coinbox_Multiple',		// 34
-	'Block_Used',					// 35
-	'Block_Life_Used',				// 36
-	'Enemy_Koopa_Winged_Red',		// 37
-	'Enemy_Koopa_Winged_Green',		// 38
-	'Enemy_Koopa_Red',				// 39
-	'Enemy_Pakkun_Red',				// 40
-	'Block_Question',				// 41 (Coin version)
-	'Block_Pipe_Start_Top',			// 42
-	'Block_Pipe_Start_Bottom',		// 43
-	'Block_Pipe_Body_Top',			// 44
-	'Block_Pipe_Body_Bottom',		// 45
-	'Block_Pipe_End_Top',			// 46
-	'Block_Pipe_End_Bottom',		// 47
-	'Block_Pipe_Top_Center',		// 48
-	'Block_Pipe_Body_Center',		// 49
-	'Block_Pipe_End_Center',		// 50
+// Metatiles del Super Mario Bros original: los mapas usan los mismos números que el juego de NES
+// (ver tools/smb-levels.js). Sólo se nombran los que el motor trata de forma especial.
+const MT = {
+	Empty: 0x00,
+	PipeTopLeft: 0x10, PipeTopRight: 0x11, PipeBodyLeft: 0x14, PipeBodyRight: 0x15,
+	FlagpoleTop: 0x24, Flagpole: 0x25,
+	Brick: 0x51, BrickUnderground: 0x52, Ground: 0x54,
+	HiddenCoin: 0x5f, Hidden1Up: 0x60, Hard: 0x61,
+	QuestionCoin: 0xc0, QuestionPowerup: 0xc1, Coin: 0xc2, CoinWater: 0xc3, Used: 0xc4,
+};
+
+// Sprite con el que se dibuja cada metatile. Lo que no figura y es sólido se dibuja como bloque duro.
+const METATILE_SPRITE = {
+	0x10: 'Block_Pipe_Top_Left', 0x12: 'Block_Pipe_Top_Left', 0x11: 'Block_Pipe_Top_Right', 0x13: 'Block_Pipe_Top_Right',
+	0x14: 'Block_Pipe_Body_Left', 0x15: 'Block_Pipe_Body_Right',
+	0x1c: 'Block_Pipe_Start_Top', 0x1d: 'Block_Pipe_Body_Top', 0x1e: 'Block_Pipe_End_Top',
+	0x1f: 'Block_Pipe_Start_Bottom', 0x20: 'Block_Pipe_Body_Bottom', 0x21: 'Block_Pipe_End_Bottom',
+	0x24: 'Block_Flagpole_Top', 0x25: 'Block_Flagpole',
+	0x51: 'Block_Brick', 0x52: 'Block_Brick_Middle', 0x54: 'Block_Ground',
+	0xc0: 'Block_Question', 0xc1: 'Block_Question', 0xc2: 'Object_Coin', 0xc3: 'Object_Coin',
+	0xc4: 'Block_Question_Used',
+};
+for (let id = 0x55; id <= 0x59; id++) METATILE_SPRITE[id] = 'Block_Brick';             // ladrillos con contenido (exterior)
+for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle';      // ídem (subterráneo y castillo)
+METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
+METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
+for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x88, 0x89]) METATILE_SPRITE[id] = 'Block_Stairs';
+
+// Qué entrega un bloque al golpearlo desde abajo
+const BLOCK_ITEM = {
+	[MT.QuestionPowerup]: 'powerup', [MT.QuestionCoin]: 'coin',
+	0x55: 'powerup', 0x56: 'powerup', 0x57: 'powerup', 0x5a: 'powerup', 0x5b: 'powerup', 0x5c: 'powerup',   // el motor no tiene enredadera ni estrella
+	0x58: 'coins', 0x5d: 'coins',     // ladrillo con monedas (hasta 10)
+	0x59: '1up', 0x5e: '1up', [MT.Hidden1Up]: '1up',
+	[MT.HiddenCoin]: 'coin',
+};
+const PLAIN_BRICKS = new Set([MT.Brick, MT.BrickUnderground]);
+const HIDDEN_BLOCKS = new Set([MT.HiddenCoin, MT.Hidden1Up]);   // sólo se golpean desde abajo
+const NON_SOLID_BLOCKS = new Set([MT.FlagpoleTop, MT.HiddenCoin, MT.Hidden1Up, MT.Coin, MT.CoinWater]);
+const FOREGROUND_METATILES = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21]; // Mario pasa por detrás
+const isSolidMetatile = id => id > 0 && id < 0x100 && !NON_SOLID_BLOCKS.has(id);
+const isCoinMetatile = id => id === MT.Coin || id === MT.CoinWater;
+
+// Marcadores de enemigo del editor: ids fuera del rango de metatiles, para colocarlos en la grilla.
+const ENEMY_MARKERS = [
+	{ id: 0x100, type: 'Goomba', sprite: 'Enemy_Goomba' },
+	{ id: 0x101, type: 'Koopa', color: 'Green', sprite: 'Enemy_Koopa_Green' },
+	{ id: 0x102, type: 'Pakkun', color: 'Green', sprite: 'Enemy_Pakkun_Green' },
+	{ id: 0x103, type: 'Koopa_Winged', color: 'Red', sprite: 'Enemy_Koopa_Winged_Red' },
+	{ id: 0x104, type: 'Koopa_Winged', color: 'Green', sprite: 'Enemy_Koopa_Winged_Green' },
+	{ id: 0x105, type: 'Koopa', color: 'Red', sprite: 'Enemy_Koopa_Red' },
+	{ id: 0x106, type: 'Pakkun', color: 'Red', sprite: 'Enemy_Pakkun_Red' },
 ];
+
 
 class Game {
 	engine = null;
@@ -234,23 +235,13 @@ class Game {
 	editorCursorPos = { x: 0, y: 0 };
 	selectedTileIndex = 0;
 	editorPalette = [
-        1,  // Suelo
-        2,  // Ladrillo
-        24, // Escalera (Piedra)
-        3,  // ? (Powerup)
-        41, // ? (Moneda)
-        34, // ? (Multi Monedas)
-        5, 6, 7, 8, // Tuberías Vertical
-        13, // Bandera
-        25, // Bloque Invisible
-        10, // Goomba
-        11, // Koopa Rojo
-        12, // Koopa Verde
-        12, // Planta Piraña
-        42, 43, 44, 45, 46, 47, 48, 49, 50, // Tuberías Horizontal
-
-    ];
-	// editorPalette = BlockType;
+		MT.Ground, MT.Brick, MT.BrickUnderground, MT.Hard,
+		MT.QuestionPowerup, MT.QuestionCoin, 0x58, 0x5f, MT.Hidden1Up, MT.Used, MT.Coin,
+		0x10, 0x11, 0x14, 0x15,                        // caño vertical
+		0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21,            // caño lateral
+		MT.FlagpoleTop, MT.Flagpole,
+		...ENEMY_MARKERS.map(m => m.id),
+	];
 
 	OVERWORLD_COLOR = "#5C94FC";
 	UNDERGROUND_COLOR = "#000000";
@@ -268,7 +259,7 @@ class Game {
 		this.tileSize = TILE_PIXEL_SIZE * this.tileScale;
 		this.updatePhysicsScaling();
 		this.specialBlocks = {};
-		this.foregroundBlocks = [5, 6, 7, 8, 42, 43, 44, 45, 46, 47];
+		this.foregroundBlocks = FOREGROUND_METATILES;
 		
 		this.availableWorlds = [...new Set(map.filter(m => !m.hidden).map(m => m.world))].sort();
 		this.currentWorldIndex = 0;
@@ -380,11 +371,12 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
 
-		// El tileset subterráneo no tiene la pieza inferior del empalme del caño lateral, y su cuerpo
+		// El tileset subterráneo no tiene la pieza superior del empalme del caño lateral, y su cuerpo
 		// está un tile más a la izquierda que en el exterior. El empalme sale del tileset exterior.
 		if (tilesetName === "Underground_Tiles") {
 			js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 7, 2, 1, tileScale);
 			js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 8, 2, 1, tileScale);
+			js2d.defineSpriteFromTileset("Block_Pipe_End_Top", "Overworld_Tiles", 6, 2, 1, tileScale);
 			js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", "Overworld_Tiles", 7, 2, 1, tileScale);
 		}
 
@@ -486,11 +478,12 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Left", tilesetName, 2, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Pipe_Body_Right", tilesetName, 3, 2, 1, tileScale);
 
-		// El tileset subterráneo no tiene la pieza inferior del empalme del caño lateral, y su cuerpo
+		// El tileset subterráneo no tiene la pieza superior del empalme del caño lateral, y su cuerpo
 		// está un tile más a la izquierda que en el exterior. El empalme sale del tileset exterior.
 		if (tilesetName === "Underground_Tiles") {
 			js2d.defineSpriteFromTileset("Block_Pipe_Body_Top", tilesetName, 7, 2, 1, tileScale);
 			js2d.defineSpriteFromTileset("Block_Pipe_Body_Bottom", tilesetName, 8, 2, 1, tileScale);
+			js2d.defineSpriteFromTileset("Block_Pipe_End_Top", "Overworld_Tiles", 6, 2, 1, tileScale);
 			js2d.defineSpriteFromTileset("Block_Pipe_End_Bottom", "Overworld_Tiles", 7, 2, 1, tileScale);
 		}
 
@@ -599,85 +592,61 @@ class Game {
 			// No borrar!
 			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
 
-			this.enemies = [];
-			const map_w = this.currentMap.dimensions.width;
-
-			for (var i = 0; i < this.currentMap.map.length; i++) {
-				const blockId = this.currentMap.map[i];
-				let enemyType = null;
-				let enemyColor = null;
-
-				switch (blockId) {
-					case 10: 
-						enemyType = "Goomba"; 
-						break;
-					case 11: 
-						enemyType = "Koopa"; 
-						enemyColor = "Green";
-						break;
-					case 12: 
-						enemyType = "Pakkun"; 
-						enemyColor = "Green";
-						break;
-					case 37: 
-						enemyType = "Koopa_Winged";
-						enemyColor = "Red";
-						break;
-					case 38:
-						enemyType = "Koopa_Winged";
-						enemyColor = "Green";
-						break;
-					case 39:
-						enemyType = "Koopa";
-						enemyColor = "Red";
-						break;
-					case 40:
-						enemyType = "Pakkun";
-						enemyColor = "Red";
-						break;
-				}
-
-				if (enemyType) {
-					let coords = this.engine.indexToCoords(i, map_w);
-					let screenPos = this.tileToScreen(coords.x, coords.y);
-
-					if (enemyType.includes("Pakkun")) {
-
-						const worldY = coords.y * this.tileSize + this.tileSize * 2;
-						const screenPosX = this.tileToScreen(coords.x, coords.y).x + this.tileSize / 2;
-
-						this.enemies.push({
-							type: 'Pakkun', 
-							color: enemyColor,
-							x: (screenPosX - this.mapOffset.x),
-							y: worldY,                         
-							initialY: worldY,
-							maxHeight: this.tileSize * 2,
-							state: 'hiding',
-							timer: 120
-						});
-					} else {
-						this.enemies.push({
-							id: this.enemies.length,
-							type: enemyType,
-							color: enemyColor,
-							x: screenPos.x - this.mapOffset.x,
-							y: screenPos.y,
-							vx: -2,
-							vy: 0,
-							state: "walking",
-							stompTimer: 0,
-							isWinged: enemyType === "Koopa_Winged",
-							canFly: enemyType === "Koopa_Winged",
-							flyTimer: 0,
-						});
-					}
-					this.currentMap.map[i] = 0;
-				}
-			}
+			this.createEnemies();
 		} else {
 			console.error(`[GAME] No se pudo encontrar el mapa: ${name}`);
 		}
+	}
+
+	// Enemigos del nivel: currentMap.enemies es una lista { type, color, x, y } con x, y en celdas
+	// del mapa; las plantas piraña van sobre la boca del caño.
+	createEnemies() {
+		this.enemies = [];
+		for (const e of this.currentMap.enemies || []) {
+			const screenPos = this.tileToScreen(e.x, e.y);
+			if (e.type === 'Pakkun') {
+				const worldY = e.y * this.tileSize + this.tileSize * 2;
+				const screenPosX = screenPos.x + this.tileSize / 2;
+				this.enemies.push({
+					type: 'Pakkun',
+					color: e.color ?? null,
+					x: (screenPosX - this.mapOffset.x),
+					y: worldY,
+					initialY: worldY,
+					maxHeight: this.tileSize * 2,
+					state: 'hiding',
+					timer: 120
+				});
+			} else {
+				this.enemies.push({
+					id: this.enemies.length,
+					type: e.type,
+					color: e.color ?? null,
+					x: screenPos.x - this.mapOffset.x,
+					y: screenPos.y,
+					vx: -2,
+					vy: 0,
+					state: "walking",
+					stompTimer: 0,
+					isWinged: e.type === "Koopa_Winged",
+					canFly: e.type === "Koopa_Winged",
+					flyTimer: 0,
+				});
+			}
+		}
+	}
+
+	// Nombre del sprite con el que se dibuja una celda del mapa (null si no se dibuja).
+	spriteNameForCell(blockId, idx) {
+		if (blockId >= 0x100) return ENEMY_MARKERS.find(m => m.id === blockId)?.sprite ?? null;
+		if (HIDDEN_BLOCKS.has(blockId)) return this.isEditorMode ? 'Block_Invisible' : null;
+		if (BLOCK_ITEM[blockId] === 'coins') {
+			// Ladrillo con monedas: parece un ladrillo hasta el primer golpe y queda vacío al agotarse
+			const info = this.specialBlocks[idx];
+			if (info?.coinsLeft === 0) return 'Block_Question_Used';
+			return info?.revealed ? 'Block_Question' : METATILE_SPRITE[blockId];
+		}
+		return METATILE_SPRITE[blockId] ?? (isSolidMetatile(blockId) ? 'Block_Stairs' : null);
 	}
 
 	saveGameState() {
@@ -1068,7 +1037,7 @@ class Game {
 						enemy.x += enemy.vx;
 						const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
 						const wallTile = this.screenToTile(wallCheckX, enemy.y);
-						if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
+						if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)])) {
 							enemy.vx *= -1;
 							enemy.x += enemy.vx > 0 ? 1 : -1;
 						}
@@ -1099,8 +1068,8 @@ class Game {
 				const feetY = enemy.y + enemyHeight;
 				const feetLeft = this.screenToTile(enemy.x + this.mapOffset.x + 4, feetY);
 				const feetRight = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize - 4, feetY);
-				const onGroundLeft = this.currentMap.map[this.engine.coordsToIndex(feetLeft, this.currentMap.dimensions.width)] > 0;
-				const onGroundRight = this.currentMap.map[this.engine.coordsToIndex(feetRight, this.currentMap.dimensions.width)] > 0;
+				const onGroundLeft = isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(feetLeft, this.currentMap.dimensions.width)]);
+				const onGroundRight = isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(feetRight, this.currentMap.dimensions.width)]);
 
 				let isOnSolidGround = false;
 				if (onGroundLeft || onGroundRight) {
@@ -1113,7 +1082,7 @@ class Game {
 					enemy.x += enemy.vx;
 					const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
 					const wallTile = this.screenToTile(wallCheckX, enemy.y);
-					if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
+					if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)])) {
 						enemy.vx *= -1;
 					}
 					if (isOnSolidGround && !enemy.isWinged) {
@@ -1129,7 +1098,7 @@ class Game {
 
 				const feetY = enemy.y + enemyHeight;
 				const feetTile = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize / 2, feetY);
-				if (this.currentMap.map[this.engine.coordsToIndex(feetTile, this.currentMap.dimensions.width)] > 0) {
+				if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(feetTile, this.currentMap.dimensions.width)])) {
 					enemy.vy = 0;
 					enemy.y = this.tileToScreen(feetTile.x, feetTile.y).y - enemyHeight;
 				}
@@ -1138,7 +1107,7 @@ class Game {
 					enemy.x += enemy.vx;
 					const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
 					const wallTile = this.screenToTile(wallCheckX, enemy.y);
-					if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0) {
+					if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)])) {
 						enemy.vx *= -1;
 					}
 				}
@@ -1658,36 +1627,14 @@ class Game {
 		for (let i = 0; i < this.currentMap.map.length; i++) {
 			const blockId = this.currentMap.map[i];
 			if (blockId === 0 || this.foregroundBlocks.includes(blockId)) continue;
-			
+
+			const spriteName = this.spriteNameForCell(blockId, i);
+			const sprite = spriteName && this.engine.sprites[spriteName];
+			if (!sprite) continue;
+
 			const coords = this.engine.indexToCoords(i, mapWidth);
 			const blockPos = this.tileToScreen(Math.floor(coords.x), Math.floor(coords.y));
-			
-			let spriteName = BlockType[blockId];
-			if (blockId === 34) {
-				switch (this.currentMap.type) {
-					case World_Type.Overworld:
-						spriteName = this.specialBlocks[i]?.revealed ? 'Block_Question' : 'Block_Brick';
-						// Cambiar a Block_Question_Used si no hay más monedas
-						if (this.specialBlocks[i]?.coinsLeft === 0) {
-							spriteName = 'Block_Question_Used';
-						}
-						break;
-					case World_Type.Underground:
-						spriteName = this.specialBlocks[i]?.revealed ? 'Block_Question' : 'Block_Brick_Underground';
-						// Cambiar a Block_Question_Used si no hay más monedas
-						if (this.specialBlocks[i]?.coinsLeft === 0) {
-							spriteName = 'Block_Question_Used';
-						}
-						break;
-					default:
-						break;
-				}
-			}
-
-			const sprite = this.engine.sprites[spriteName];
-			if (sprite) {
-				this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
-			}
+			this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
 		}
 	}
 
@@ -1699,8 +1646,8 @@ class Game {
 			if (!this.foregroundBlocks.includes(blockId)) continue;
 			const coords = this.engine.indexToCoords(i, mapWidth);
 			const blockPos = this.tileToScreen(coords.x, coords.y);
-			const spriteName = BlockType[blockId];
-			const sprite = this.engine.sprites[spriteName];
+			const spriteName = this.spriteNameForCell(blockId, i);
+			const sprite = spriteName && this.engine.sprites[spriteName];
 
 			if (sprite) {
 				this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
@@ -1774,13 +1721,13 @@ class Game {
 			fb.y += fb.vy;
 
 			const groundTile = this.screenToTile(screenPos.x, fb.y + SPRITE_SIZE / 2);
-			if (this.currentMap.map[this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width)] > 0) {
+			if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width)])) {
 				fb.y = this.tileToScreen(groundTile.x, groundTile.y).y - SPRITE_SIZE / 2;
 				fb.vy = -8;
 			}
 
 			const wallTile = this.screenToTile(screenPos.x + (fb.vx > 0 ? SPRITE_SIZE : 0), fb.y);
-			if (this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)] > 0 || screenPos.x < 0 || screenPos.x > this.engine.getCanvasWidth()) {
+			if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)]) || screenPos.x < 0 || screenPos.x > this.engine.getCanvasWidth()) {
 				fb.state = 'exploding';
 				this.engine.playAudioOverlap(audio["Player_Bump"]);
 				continue;
@@ -1885,28 +1832,22 @@ class Game {
 			block.y += block.vY;
 			block.vY += this.gravity * 1.5;
 			if (block.y >= block.originalY) {
+				// Al terminar el golpe, el bloque que entregó su contenido queda vacío
 				let finalId = block.originalId;
-				if (block.originalId === 3 || block.originalId === 41) {
-					finalId = 4; // Block_Used
-				} else if (block.originalId === 34) { // Super
-					finalId = (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) ? 4 : 34;
-				} else if (block.originalId === 25) { // 1UP
-					finalId = 35; // Question_Used
+				const item = BLOCK_ITEM[block.originalId];
+				if (item === 'coins') {
+					if (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) finalId = MT.Used;
+				} else if (item) {
+					finalId = MT.Used;
 				}
 
 				this.currentMap.map[block.mapIndex] = finalId;
 				this.bumpingBlocks.splice(i, 1);
 				continue;
 			}
-			let spriteNameToDraw = BlockType[block.originalId];
-			if (block.originalId === 34) {
-				if (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) {
-					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Block_Question_Used' : 'Block_Question_Used';
-				} else {
-					spriteNameToDraw = (this.currentMap.type === World_Type.Overworld) ? 'Block_Question' : 'Block_Question';
-				}
-			}
-			const spriteData = this.engine.sprites[spriteNameToDraw];
+			// Un bloque oculto se ve como bloque vacío mientras rebota
+			let spriteNameToDraw = HIDDEN_BLOCKS.has(block.originalId) ? 'Block_Question_Used' : this.spriteNameForCell(block.originalId, block.mapIndex);
+			const spriteData = spriteNameToDraw && this.engine.sprites[spriteNameToDraw];
 			if (spriteData) {
 				this.engine.drawSprite(spriteNameToDraw, 0, { x: block.x, y: block.y }, spriteData.scale, false, 0, Pivot.Top_Left);
 			}
@@ -1981,7 +1922,7 @@ class Game {
 		}
 
 		const playerPos = player.position;
-		const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
+		const isSolid = isSolidMetatile;
 
 
 			let isCrouching = false;
@@ -2056,14 +1997,14 @@ class Game {
 					const idx = this.engine.coordsToIndex(headCenterTile, mapWidth);
 					this.handleCoinCollision(idx); 
 					const blockId = this.currentMap.map[idx] || 0;
-					if (isSolid(blockId) || blockId === 25) {
+					if (isSolid(blockId) || HIDDEN_BLOCKS.has(blockId)) {
 						let ceilingSpeed = SMB_CEILING_SPEED;
 						const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 						let blockSoundPlayed = false;
 
-						if (blockId === 2 || blockId === 27) { // Brick / Brick_Middle
+						if (PLAIN_BRICKS.has(blockId)) {
 							const idxAbove = idx - mapWidth;
-							if (this.currentMap.map[idxAbove] === 9) { // Moneda
+							if (isCoinMetatile(this.currentMap.map[idxAbove])) { // moneda sobre el ladrillo
 								this.currentMap.map[idxAbove] = 0;
 
 								this.coins++;
@@ -2074,7 +2015,7 @@ class Game {
 							}
 						}
 
-						const isBreakableBrick = (blockId === 2 || blockId === 27);
+						const isBreakableBrick = PLAIN_BRICKS.has(blockId);
 						const canPlayerBreakBrick = this.playerSize > Player_Size.Small;
 
 						if (isBreakableBrick && canPlayerBreakBrick) {
@@ -2088,7 +2029,8 @@ class Game {
 						} else {
 							let blockSoundPlayed = false;
 
-							if (blockId === 34) {
+							const item = BLOCK_ITEM[blockId];
+							if (item === 'coins') {
 								if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { coinsLeft: 10, revealed: false }; }
 								// Revelar el bloque en la primera activación
 								this.specialBlocks[idx].revealed = true;
@@ -2096,18 +2038,18 @@ class Game {
 									this.specialBlocks[idx].coinsLeft--; this.coins++; this.spawnCoin(blockX, blockY);
 									this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
 								}
-							} else if (blockId === 41) {
+							} else if (item === 'coin') {
 								this.spawnCoin(blockX, blockY);
 								this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
-							} else if (blockId === 3) {
+							} else if (item === 'powerup') {
 								const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
 								this.spawnPowerup(blockX, blockY, powerupType);
-							} else if (blockId === 25) {
+							} else if (item === '1up') {
 								this.spawnPowerup(blockX, blockY, Powerup_Type.Mushroom_1UP);
 							}
 
 							const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
-							const justExhausted = (blockId === 34 && this.specialBlocks[idx]?.coinsLeft === 0);
+							const justExhausted = (BLOCK_ITEM[blockId] === 'coins' && this.specialBlocks[idx]?.coinsLeft === 0);
 
 							if (!isAlreadyBumping && !justExhausted) {
 								this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId });
@@ -2252,11 +2194,11 @@ class Game {
 						const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
 						const blockId = this.currentMap.map[mapIndex];
 						this.handleCoinCollision(mapIndex);
-						if (blockId === 13) {
+						if (blockId === MT.Flagpole) {
 							const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
 							playerPos.x = poleCoords.x - this.tileSize / 2;
 							let groundYTile = ty;
-							while (this.currentMap.map[this.engine.coordsToIndex({x: tileCoords.x, y: groundYTile + 1}, mapWidth)] === 13) {
+							while (this.currentMap.map[this.engine.coordsToIndex({x: tileCoords.x, y: groundYTile + 1}, mapWidth)] === MT.Flagpole) {
 								groundYTile++;
 							}
 							const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize;
@@ -2504,7 +2446,7 @@ class Game {
 	}
 
 	handleCoinCollision = (idx) => {
-		if (this.currentMap.map[idx] === 9) {
+		if (isCoinMetatile(this.currentMap.map[idx])) {
 			this.currentMap.map[idx] = 0;
 			this.coins++;
 			this.score += 200;
@@ -2515,7 +2457,7 @@ class Game {
 	};
 
 	updatePowerups() {
-		const isSolid = (blockId) => blockId > 0 && ![25, 12, 26].includes(blockId);
+		const isSolid = isSolidMetatile;
 		
 		for (let i = this.activePowerups.length - 1; i >= 0; i--) {
 			const p = this.activePowerups[i];
@@ -2949,8 +2891,8 @@ class Game {
                 this.currentMap.map = JSON.parse(JSON.stringify(this.pristineMapData));
             }
             
-            this.enemies = [];
-            
+            this.enemiesToMarkers();
+
             console.log("[GAME] Modo editor activado. Mapa restaurado.");
 
         } else if (this.state === Game_State.Editor) {
@@ -2964,86 +2906,34 @@ class Game {
         }
     }
 
-	reloadEnemiesFromMap() {
-		this.enemies = [];
-		const map_w = this.currentMap.dimensions.width;
-
-		for (var i = 0; i < this.currentMap.map.length; i++) {
-			const blockId = this.currentMap.map[i];
-			let enemyType = null;
-			let enemyColor = null;
-
-			switch (blockId) {
-				case 10: 
-					enemyType = "Goomba"; 
-					break;
-				case 11: 
-					enemyType = "Koopa"; 
-					enemyColor = "Green";
-					break;
-				case 12: 
-					enemyType = "Pakkun"; 
-					enemyColor = "Green";
-					break;
-				case 37: 
-					enemyType = "Koopa_Winged";
-					enemyColor = "Red";
-					break;
-				case 43:
-					enemyType = "Koopa_Winged";
-					enemyColor = "Green";
-					break;
-				case 44:
-					enemyType = "Koopa";
-					enemyColor = "Red";
-					break;
-				case 45:
-					enemyType = "Pakkun";
-					enemyColor = "Red";
-					break;
-			}
-
-			if (enemyType) {
-				let coords = this.engine.indexToCoords(i, map_w);
-
-				let worldX = coords.x * this.tileSize;
-                let worldY = coords.y * this.tileSize;
-
-                if (enemyType.includes("Pakkun")) {
-                    // La planta se coloca en el tile de la "boca" de la tubería.
-                    // Su posición inicial (escondida) debe ser un tile más abajo (+ this.tileSize).
-                    this.enemies.push({
-                        type: 'Pakkun', 
-                        color: enemyColor,
-                        x: worldX + (this.tileSize / 2), // Centrado horizontalmente
-                        y: worldY + this.tileSize * 1.5,       // Posición Y inicial (escondida en el tubo)
-                        initialY: worldY + this.tileSize,// Referencia para saber dónde volver
-                        maxHeight: this.tileSize * 1.5,  // Cuánto sube
-                        state: 'hiding', 
-                        timer: 120
-                    });
-                } else {
-                    // Enemigos normales
-                    this.enemies.push({
-                        id: this.enemies.length, 
-                        type: enemyType, 
-                        color: enemyColor,
-                        x: worldX, 
-                        y: worldY,
-                        vx: -2, 
-                        vy: 0, 
-                        state: "walking", 
-                        stompTimer: 0,
-                        isWinged: enemyType === "Koopa_Winged",
-                        canFly: enemyType === "Koopa_Winged",
-                        flyTimer: 0,
-                    });
-                }
-
-                // Importante: Borrar el bloque del mapa para que no sea un obstáculo sólido estático
-                this.currentMap.map[i] = 0;
+	// Al entrar al editor, los enemigos del nivel se vuelven marcadores en la grilla para poder moverlos.
+	enemiesToMarkers() {
+		const w = this.currentMap.dimensions.width;
+		for (const e of this.currentMap.enemies || []) {
+			const marker = ENEMY_MARKERS.find(m => m.type === e.type && (m.color ?? null) === (e.color ?? null));
+			if (marker && e.x >= 0 && e.x < w && e.y >= 0 && e.y < this.currentMap.dimensions.height) {
+				this.currentMap.map[e.y * w + e.x] = marker.id;
 			}
 		}
+		this.currentMap.enemies = [];
+		this.enemies = [];
+	}
+
+	// Al salir del editor, los marcadores vuelven a ser la lista de enemigos del nivel.
+	reloadEnemiesFromMap() {
+		const w = this.currentMap.dimensions.width;
+		this.currentMap.enemies = [];
+		for (let i = 0; i < this.currentMap.map.length; i++) {
+			const marker = ENEMY_MARKERS.find(m => m.id === this.currentMap.map[i]);
+			if (!marker) continue;
+			const e = { type: marker.type, x: i % w, y: Math.floor(i / w) };
+			if (marker.color) e.color = marker.color;
+			this.currentMap.enemies.push(e);
+			// Se borra el marcador para que no sea un obstáculo
+			this.currentMap.map[i] = 0;
+		}
+		this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
+		this.createEnemies();
 	}
 
     updateAndDrawEditor() {
@@ -3097,18 +2987,6 @@ class Game {
         this.drawBlocks();
         this.drawForegroundBlocks();
 
-        // Dibujar enemigos estáticos (para ver dónde están en el editor)
-        for (let i = 0; i < this.currentMap.map.length; i++) {
-            const bid = this.currentMap.map[i];
-            // IDs de enemigos conocidos
-            if ([10, 11, 12, 37, 38, 40, 43, 44, 45].includes(bid)) {
-                 const coords = this.engine.indexToCoords(i, mapWidth);
-                 const pos = this.tileToScreen(coords.x, coords.y);
-                 if (BlockType[bid] && this.engine.sprites[BlockType[bid]]) {
-                    this.engine.drawSprite(BlockType[bid], 0, pos, this.tileScale, false, 0, Pivot.Top_Left);
-                 }
-            }
-        }
         this.drawUI();
 
         // 6. DIBUJAR CURSOR Y BLOQUE FANTASMA
@@ -3126,7 +3004,7 @@ class Game {
 
             // B) Bloque Fantasma (Ghost): Previsualiza qué vas a poner
             if (isInsideMap && tileToPlace) {
-                const ghostSpriteName = BlockType[tileToPlace];
+                const ghostSpriteName = this.spriteNameForCell(tileToPlace, -1);
                 if (ghostSpriteName && this.engine.sprites[ghostSpriteName]) {
                     this.engine.ctx.save();
                     this.engine.ctx.globalAlpha = 0.6; // Semitransparente
@@ -3155,7 +3033,7 @@ class Game {
             if (paletteIndex < 0) paletteIndex += len;
 
             const blockId = this.editorPalette[paletteIndex];
-            let spriteName = (BlockType && BlockType[blockId]) ? BlockType[blockId] : "Unknown";
+            let spriteName = this.spriteNameForCell(blockId, -1) ?? "Unknown";
             
             const drawPos = {
                 x: centerX + (offset * itemSpacing) - (this.tileSize / 2),
