@@ -234,6 +234,14 @@ async function init() {
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
     for (let i = 0; i < 4; i++) js2d.defineSpriteFromTileset(`Platform_Tile_${i}`, "Platform_Tiles", i, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Spring", "Spring_Tiles", 0, 0, 3, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Koopa_Buzzy", "Enemy_Extra_Tiles", 0, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Koopa_Shell_Buzzy", "Enemy_Extra_Tiles", 2, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Spiny", "Enemy_Extra_Tiles", 4, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_SpinyEgg", "Enemy_Extra_Tiles", 6, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Hammer", "Enemy_Extra_Tiles", 8, 0, 4, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Lakitu", "Enemy_Tall2_Tiles", 0, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_HammerBro", "Enemy_Tall2_Tiles", 2, 0, 4, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Bowser", "Enemy_Bowser_Tiles", 0, 0, 4, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Flame", "Enemy_Flame_Tiles", 0, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Toad", "Enemy_Npc_Tiles", 0, 0, 1, tileScale);
@@ -287,6 +295,8 @@ async function init() {
     js2d.createAnimatedSprite("Koopa_Shell_Red", "Koopa_Shell_Red", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Pakkun_Green", "Enemy_Pakkun_Green", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("BulletBill", "Enemy_BulletBill", { x: 0, y: 0 }, tileScale);
+    js2d.createAnimatedSprite("Koopa_Buzzy", "Enemy_Koopa_Buzzy", { x: 0, y: 0 }, tileScale);
+    js2d.createAnimatedSprite("Koopa_Shell_Buzzy", "Koopa_Shell_Buzzy", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Bloober", "Enemy_Bloober", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Cheep_Grey", "Enemy_Cheep_Grey", { x: 0, y: 0 }, tileScale);
     js2d.createAnimatedSprite("Cheep_Red", "Enemy_Cheep_Red", { x: 0, y: 0 }, tileScale);
@@ -374,6 +384,10 @@ async function init() {
     js2d.addAnimationToSprite("Koopa_Shell_Green", "Shell_Sliding", [0, 1], false, 16);
     js2d.addAnimationToSprite("Pakkun_Green", "Pakkun_Bite", [0, 1], true, 16);
     js2d.addAnimationToSprite("BulletBill", "BulletBill_Walk", [0], true, 16);
+    js2d.addAnimationToSprite("Koopa_Buzzy", "Koopa_Walk", [0, 1], true, 16);
+    js2d.addAnimationToSprite("Koopa_Buzzy", "Koopa_Stomped", [0], true, 16);
+    js2d.addAnimationToSprite("Koopa_Shell_Buzzy", "Shell_Idle", [0], true, 16);
+    js2d.addAnimationToSprite("Koopa_Shell_Buzzy", "Shell_Sliding", [0, 1], true, 16);
     js2d.addAnimationToSprite("Bloober", "Bloober_Walk", [0, 1], true, 16);
     js2d.addAnimationToSprite("Cheep_Grey", "Cheep_Walk", [0, 1], true, 16);
     js2d.addAnimationToSprite("Cheep_Red", "Cheep_Walk", [0, 1], true, 16);
@@ -412,6 +426,8 @@ async function init() {
     js2d.setAnimationForSprite("Pakkun_Red", "Pakkun_Bite");
     js2d.setAnimationForSprite("Pakkun_Green", "Pakkun_Bite");
     js2d.setAnimationForSprite("BulletBill", "BulletBill_Walk");
+    js2d.setAnimationForSprite("Koopa_Buzzy", "Koopa_Walk");
+    js2d.setAnimationForSprite("Koopa_Shell_Buzzy", "Shell_Idle");
     js2d.setAnimationForSprite("Bloober", "Bloober_Walk");
     js2d.setAnimationForSprite("Cheep_Grey", "Cheep_Walk");
     js2d.setAnimationForSprite("Cheep_Red", "Cheep_Walk");

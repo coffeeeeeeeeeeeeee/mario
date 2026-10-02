@@ -167,6 +167,7 @@ function backgroundSheet(name, paletteLabel, { groundId, extras }) {
 
 		// Fila 3: mástil y bandera
 		put(0, 3, 0x24); put(1, 3, 0x25);
+		put(3, 3, 0x63); put(4, 3, 0x0b);   // puente de cuerda y su baranda
 		{
 			// La bandera son tres sprites (triángulo, calavera, triángulo) con la paleta 1 de sprites
 			const [x, y] = cell(ox, oy, 16, 16, 2, 3);
@@ -256,7 +257,7 @@ fireSheet('Luigi');
 const GROUND = areaPalettes('GroundPaletteData');
 const eg = asmBytes('EnemyGraphicsTable');
 // Cada cuadro son 3 filas de [izq, der]; los cuadros están numerados en el orden de la tabla
-const ENEMY = { princess: 26, retainer: 27, bowserFront1: 35, bowserRear1: 36, bowserFront2: 37, bowserRear2: 38, bulletBill: 39, bloober1: 10, bloober2: 11, cheep1: 12, cheep2: 13, koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
+const ENEMY = { spring1: 40, spring2: 41, spring3: 42, buzzy1: 0, buzzy2: 1, spiny1: 6, spiny2: 7, egg1: 8, egg2: 9, buzzyShellUp1: 21, buzzyShellUp2: 22, lakitu1: 24, lakitu2: 25, hammer1: 28, hammer2: 29, hammer3: 30, hammer4: 31, princess: 26, retainer: 27, bowserFront1: 35, bowserRear1: 36, bowserFront2: 37, bowserRear2: 38, bulletBill: 39, bloober1: 10, bloober2: 11, cheep1: 12, cheep2: 13, koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
 const BOWSER_PAL = asmBytes('BowserPaletteData').slice(3, 7);   // verde, blanco y naranja
 const ENEMY_PODOBOO = 34;   // posición de "podoboo" en EnemyGraphicsTable
 const enemyRows = n => [0, 1, 2].map(j => [eg[n * 6 + j * 2], eg[n * 6 + j * 2 + 1]]);
@@ -349,6 +350,47 @@ sheet('Enemy_Npc_Tiles', 32, 24, 16, 24, (cv, ox, oy) => {
 sheet('Platform_Tiles', 32, 8, 8, 8, (cv, ox, oy) => {
 	['GroundPaletteData', 'UndergroundPaletteData', 'WaterPaletteData', 'CastlePaletteData'].forEach((label, i) =>
 		putTile(cv, ox + i * 8, oy, SPR, 0x5b, areaPalettes(label).spr[2]));
+});
+
+// Enemigos extra de 16x16: Buzzy Beetle (andando y caparazón), Spiny (andando y huevo) y las 4 poses del martillo.
+// Todos miran a la izquierda. El Buzzy usa la paleta 3 del subterráneo, el Spiny la 2 del exterior.
+{
+	const UG = areaPalettes('UndergroundPaletteData');
+	sheet('Enemy_Extra_Tiles', 192, 16, 16, 16, (cv, ox, oy) => {
+		const at = f => [ox + f * 16, oy];
+		const cut = n => enemyRows(n).slice(1);
+		putSprite(cv, ...at(0), cut(ENEMY.buzzy1), UG.spr[3], { facingLeft: true });
+		putSprite(cv, ...at(1), cut(ENEMY.buzzy2), UG.spr[3], { facingLeft: true });
+		putSprite(cv, ...at(2), cut(ENEMY.buzzyShellUp1), UG.spr[3]);
+		putSprite(cv, ...at(3), cut(ENEMY.buzzyShellUp2), UG.spr[3]);
+		putSprite(cv, ...at(4), cut(ENEMY.spiny1), GROUND.spr[2], { facingLeft: true });
+		putSprite(cv, ...at(5), cut(ENEMY.spiny2), GROUND.spr[2], { facingLeft: true });
+		// Huevo: cada fila repite un tile y lo espeja a la derecha; la de abajo va volteada en vertical
+		[[0x8f, 0x8e], [0x95, 0x94]].forEach(([top, bottom], f) => {
+			const [x, y] = at(6 + f);
+			putTile(cv, x, y, SPR, top, GROUND.spr[2]); putTile(cv, x + 8, y, SPR, top, GROUND.spr[2], { flipX: true });
+			putTile(cv, x, y + 8, SPR, bottom, GROUND.spr[2], { flipY: true }); putTile(cv, x + 8, y + 8, SPR, bottom, GROUND.spr[2], { flipX: true, flipY: true });
+		});
+		// Martillo en cuatro poses (tiles $80 a $83, paleta 3): dos sprites de 8x8 por pose, posiciones y espejos de DrawHammer
+		const pal = GROUND.spr[3];
+		[[0x80, 0x81, [4, 0], [4, 8], false], [0x82, 0x83, [0, 4], [8, 4], false], [0x81, 0x80, [4, 0], [4, 8], true], [0x83, 0x82, [0, 4], [8, 4], true]].forEach(([t1, t2, p1, p2, flip], i) => {
+			const [x, y] = at(8 + i);
+			putTile(cv, x + p1[0], y + p1[1], SPR, t1, pal, { flipX: flip, flipY: flip });
+			putTile(cv, x + p2[0], y + p2[1], SPR, t2, pal, { flipX: flip, flipY: flip });
+		});
+	});
+	// Lakitu y el Hammer Bro (celdas de 16x24)
+	sheet('Enemy_Tall2_Tiles', 96, 24, 16, 24, (cv, ox, oy) => {
+		const at = f => [ox + f * 16, oy];
+		putSprite(cv, ...at(0), enemyRows(ENEMY.lakitu1), GROUND.spr[1], { facingLeft: true });
+		putSprite(cv, ...at(1), enemyRows(ENEMY.lakitu2), GROUND.spr[1], { facingLeft: true });
+		[ENEMY.hammer1, ENEMY.hammer2, ENEMY.hammer3, ENEMY.hammer4].forEach((n, i) => putSprite(cv, ...at(2 + i), enemyRows(n), GROUND.spr[1], { facingLeft: true }));
+	});
+}
+
+// Resorte: 3 cuadros de 16x24 (extendido, a medias y comprimido), con la paleta 1 de sprites del exterior
+sheet('Spring_Tiles', 48, 24, 16, 24, (cv, ox, oy) => {
+	[ENEMY.spring1, ENEMY.spring2, ENEMY.spring3].forEach((n, i) => putSprite(cv, ox + i * 16, oy, enemyRows(n), GROUND.spr[1]));
 });
 
 // --- Bolas de fuego ----------------------------------------------------------------------------

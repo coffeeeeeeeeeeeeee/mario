@@ -124,17 +124,15 @@ for (let i = 0x16; i <= 0x1b; i++) METATILE_NOTES[i] = 'plataforma de árbol u h
 Object.assign(METATILE_NOTES, {
 	0x56: 'ladrillo con enredadera (el motor lo trata como hongo)', 0x5b: 'ladrillo con enredadera (el motor lo trata como hongo)',
 	0x57: 'ladrillo con estrella (el motor lo trata como hongo)', 0x5c: 'ladrillo con estrella (el motor lo trata como hongo)',
-	0x63: 'puente (se dibuja como bloque duro)', 0x89: 'puente (se dibuja como bloque duro)',
-	0x64: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x65: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x66: 'cañón de Bullet Bill (bloque duro, sin disparos)',
-	0x67: 'resorte (bloque duro)', 0x68: 'resorte (bloque duro)',
 });
 
 // Enemigo del original -> enemigo del motor (null si no existe y se descarta)
 const ENEMY_TO_ENTITY = {
 	0x00: { type: 'Koopa', color: 'Green' },
-	0x02: { type: 'Goomba', note: 'Buzzy Beetle -> Goomba' },
+	0x02: { type: 'Koopa', color: 'Buzzy' },
 	0x03: { type: 'Koopa', color: 'Red' },
-	0x05: { type: 'Koopa', color: 'Red', note: 'Hammer Bro -> Koopa rojo' },
+	0x05: { type: 'HammerBro' },
+	0x11: { type: 'Lakitu' },
 	0x06: { type: 'Goomba' },
 	0x07: { type: 'Bloober' },
 	0x0a: { type: 'Cheep', color: 'Grey' },
@@ -143,7 +141,7 @@ const ENEMY_TO_ENTITY = {
 	0x0e: { type: 'Koopa_Winged', color: 'Green' },
 	0x0f: { type: 'Koopa_Winged', color: 'Red' },
 	0x10: { type: 'Koopa_Winged', color: 'Green' },
-	0x12: { type: 'Goomba', note: 'Spiny -> Goomba' },
+	0x12: { type: 'Spiny' },
 	0x2d: { type: 'Bowser' },
 	0x35: { type: 'Toad' },
 };
@@ -186,6 +184,7 @@ class AreaDecoder {
 		// Memoria del motor original
 		this.mt = new Array(13).fill(0);
 		this.sceneryCol = new Array(13).fill(0);
+		this.frenzy = [];
 		this.sceneryColumns = [];   // escenografía de fondo (nubes, colinas, arbustos, árboles...) por columna
 		this.mtKeep = new Array(13).fill(false);   // filas con piezas decorativas que igual se guardan (castillo)
 		this.areaObjectLength = [-1, -1, -1];
@@ -366,6 +365,7 @@ class AreaDecoder {
 	bridge(x, row) {
 		this.chkLrgObjLength(x);
 		this.mt[row] = 0x0b;
+		this.mtKeep[row] = true;   // baranda del puente
 		this.renderUnderPart(row + 1, 0, 0x63);
 	}
 
@@ -519,7 +519,12 @@ class AreaDecoder {
 			case 0x23: return this.flagpoleObject();
 			case 0x24: case 0x25: case 0x26: return this.castleObjectRow(x, index - 0x22);
 			case 0x27: this.warpZoneCol = this.currentPageLoc * 16 + this.currentColumnPos; return;   // ScrollLockObject_Warp
-			case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2c: case 0x2d: return;
+			case 0x28: case 0x29: return;   // ScrollLockObject: frena el scroll
+			case 0x2a: case 0x2b: case 0x2c:
+				// AreaFrenzy: cambia el ataque continuo (cheep-cheeps voladores, Bullet Bills o cheep-cheeps nadando, o parar)
+				this.frenzy.push({ x: this.currentPageLoc * 16 + this.currentColumnPos, kind: ['fly', 'bill', 'stop'][index - 0x2a] });
+				return;
+			case 0x2d: return;
 			case 0x2e: return this.alterAreaAttributes(x);
 			default: throw new Error(`Objeto desconocido ${index.toString(16)}`);
 		}
@@ -881,6 +886,7 @@ function decodeLevel(lines, spec, report) {
 	const built = buildMap(dec, report, name);
 	// Castillo de Bowser: el hacha queda en el mapa y el motor termina el nivel al tocarla
 	if (dec.axe) built.axe = { x: dec.axe.col, y: dec.axe.row + TOP_ROWS };
+	built.frenzy = dec.frenzy;
 	return { name, dec, time: GAME_TIMER_BY_SETTING[dec.gameTimerSetting], halfway: halfwayPage(lines, spec.world, spec.level), ...built };
 }
 
@@ -1039,7 +1045,7 @@ function generate(lines, report) {
 
 	const out = [];
 	for (const [name, lv] of Object.entries(levels)) {
-		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, axe: lv.axe, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, frenzy: lv.frenzy, axe: lv.axe, warps: warpsOf[name] || [] });
 	}
 	for (const name of Object.keys(subs).sort()) {
 		const sub = subs[name];
@@ -1075,6 +1081,7 @@ function formatLevels(out) {
 		if (lv.halfway) L.push(`\t\thalfway: ${lv.halfway},`);
 		L.push(`\t\tdimensions: { width: ${lv.width}, height: ${MAP_HEIGHT} },`);
 		if (lv.axe) L.push(`\t\taxe: ${JSON.stringify(lv.axe)},`);
+		if (lv.frenzy && lv.frenzy.length) L.push(`\t\tfrenzy: ${JSON.stringify(lv.frenzy)},`);
 		L.push(`\t\twarps: ${JSON.stringify(lv.warps)},`);
 		L.push('\t\tenemies: [');
 		for (const e of lv.enemies) L.push('\t\t\t' + JSON.stringify(e) + ',');

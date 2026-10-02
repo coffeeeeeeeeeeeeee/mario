@@ -114,14 +114,13 @@ El motor lee las coordenadas de cada sprite en las hojas de `atlas.js` (ver `bui
 
 ## Qué no cubre
 
-Los martillos de Bowser en los mundos 6 y 7, el Buzzy Beetle y el Spiny (se reemplazan por Goombas), el Hammer Bro (por un Koopa rojo),
-Lakitu, los cheep-cheep voladores de los puentes, enredaderas y estrellas en ladrillos (dan un
+Los martillos de Bowser en los mundos 6 y 7, enredaderas y estrellas en ladrillos (dan un
 hongo). Los niveles de nubes (que se entran por enredadera) no se generan, y sus caños quedan como
 decoración. Los laberintos con bucle de los castillos (4-4, 7-4, 8-4) no vuelven a Mario atrás si se
 equivoca.
 
-Sí están, con la lógica del original simplificada: plataformas móviles (balancín, vertical, horizontal, elevadores, la que cae al pisarla
-y la que se va a la derecha; Mario las pisa desde arriba y viaja con ellas), Bowser (5 puntos de vida que le quitan las bolas de fuego, salta, abre la boca y
+Sí están, con la lógica del original simplificada: el ataque continuo de los niveles (cheep-cheeps que saltan del agua, Bullet Bills desde la derecha, cheep-cheeps nadando), los puentes de cuerda, plataformas móviles (balancín, vertical, horizontal, elevadores, la que cae al pisarla
+y la que se va a la derecha; Mario las pisa desde arriba y viaja con ellas), resortes (rebotan más alto si se aprieta el salto mientras se comprimen), Buzzy Beetle (inmune al fuego), Spiny con su huevo, Lakitu (que reaparece), Hammer Bro con sus martillos, Bowser (5 puntos de vida que le quitan las bolas de fuego, salta, abre la boca y
 suelta llamas), el puente y el hacha (al tocarla se cae el puente y Mario camina hasta Toad o la princesa del 8-4), Bloober, cheep-cheep, Podoboo, barras de fuego
 (corta y larga, en los dos sentidos y velocidades), Bullet Bills disparados por los cañones, plantas
 piraña y paratroopas.

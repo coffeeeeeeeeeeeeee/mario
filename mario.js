@@ -177,7 +177,8 @@ for (let id = 0x55; id <= 0x59; id++) METATILE_SPRITE[id] = 'Block_Brick';      
 for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle';      // ídem (subterráneo y castillo)
 METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
 METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
-for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x67, 0x68, 0x88]) METATILE_SPRITE[id] = 'Block_Stairs';
+for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x67, 0x68, 0x88]) METATILE_SPRITE[id] = 'Block_Stairs';
+METATILE_SPRITE[0x63] = 'Block_Rope_Bridge'; METATILE_SPRITE[0x0b] = 'Block_Rope_Rail';
 METATILE_SPRITE[MT.Axe] = 'Block_Axe'; METATILE_SPRITE[0x0c] = 'Block_Chain'; METATILE_SPRITE[0x89] = 'Block_Bridge';
 METATILE_SPRITE[0x64] = 'Block_Cannon_Top'; METATILE_SPRITE[0x65] = 'Block_Cannon_Mid'; METATILE_SPRITE[0x66] = 'Block_Cannon_Base';
 
@@ -204,7 +205,7 @@ const PLAIN_BRICKS = new Set([MT.Brick, MT.BrickUnderground]);
 const HIDDEN_BLOCKS = new Set([MT.HiddenCoin, MT.Hidden1Up]);   // sólo se golpean desde abajo
 const NON_SOLID_BLOCKS = new Set([MT.FlagpoleTop, MT.HiddenCoin, MT.Hidden1Up, MT.Coin, MT.CoinWater]);
 const FOREGROUND_METATILES = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21]; // Mario pasa por detrás
-NON_SOLID_BLOCKS.add(0x0c); NON_SOLID_BLOCKS.add(MT.Axe);   // cadena y hacha: se tocan, no frenan
+NON_SOLID_BLOCKS.add(0x0b); NON_SOLID_BLOCKS.add(0x0c); NON_SOLID_BLOCKS.add(MT.Axe);   // cadena y hacha: se tocan, no frenan
 for (let id = 0x45; id <= 0x4b; id++) NON_SOLID_BLOCKS.add(id);   // castillo: decoración
 const isSolidMetatile = id => id > 0 && id < 0x100 && !NON_SOLID_BLOCKS.has(id);
 const isCoinMetatile = id => id === MT.Coin || id === MT.CoinWater;
@@ -232,8 +233,20 @@ const PLATFORM_HORI_AMPLITUDE = 40, PLATFORM_HORI_RATE = 0.025;  // la que va y 
 const PLATFORM_DROP_GRAVITY = 0.1, PLATFORM_DROP_MAX = 2;        // la que cae al pisarla
 const PLATFORM_FALL_GRAVITY = 0.2;                               // balancín que se suelta
 const PLATFORM_BALANCE_LIMIT = 13;                               // el balancín se suelta si una sube hasta acá
+const HAMMER_THROW_STEPS = 0x30;       // cuadros entre martillos (HammerThrowTmrData)
+const HAMMER_BRO_JUMP_SPEED = 5;      // px del NES por cuadro
+const HAMMER_GRAVITY = 0x10 / 256, HAMMER_UP_SPEED = 2;
+const LAKITU_EGG_STEPS = 0x80;        // cuadros entre huevos de espinosos
+const LAKITU_RESPAWN_STEPS = 7 * 0x80;
+const SPRING_OFFSETS = [0, 8, 16, 8];              // cuánto baja la parte de arriba en cada cuadro (Jumpspring_Y_PosData)
+const SPRING_STEPS_PER_FRAME = 4;                  // cuadros que dura cada paso de la compresión
+const SPRING_BOUNCE = 7, SPRING_BOUNCE_HIGH = 12;  // px del NES por cuadro: rebote normal y apretando el salto
+const SPRING_FORCE = 0x70 / 256;                   // gravedad de Mario tras el rebote (VerticalForce)
+const FLY_CHEEP_GRAVITY = 0.1;                       // px del NES por cuadro al cuadrado de los cheep-cheeps que saltan
+const FRENZY_Y = [32, 16, 112, 48, 0, 64, 128, 80];   // alturas (desde la fila 0 del nivel) de Enemy17YPosData
 const NPC_TYPES = new Set(['Toad', 'Princess']);
-const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame']);   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
+const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
+const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
 const FIREBAR_SLOW = 0x28 / 256, FIREBAR_FAST = 0x38 / 256;   // giro en 1/32 de vuelta por cuadro (FirebarSpinSpdData)
 const FIREBAR_BALL_STEP = 8;       // separación entre bolas, en px del NES
 const FIREBAR_HIT = 3;             // medio lado de la caja de cada bola, en px del NES
@@ -473,6 +486,8 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Cannon_Mid", tilesetName, 11, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cannon_Base", tilesetName, 12, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Axe", tilesetName, 13, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Rope_Bridge", tilesetName, 3, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Rope_Rail", tilesetName, 4, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
@@ -581,6 +596,8 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Cannon_Mid", tilesetName, 11, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cannon_Base", tilesetName, 12, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Axe", tilesetName, 13, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Rope_Bridge", tilesetName, 3, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Rope_Rail", tilesetName, 4, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
@@ -727,6 +744,20 @@ class Game {
 	// del mapa; las plantas piraña van sobre la boca del caño.
 	createEnemies() {
 		this.enemies = [];
+		// Resortes: el original los pone como un objeto sobre dos metatiles (0x67 arriba y 0x68 abajo)
+		// (se sacan del mapa la primera vez y quedan anotados para cuando se reinicia el nivel)
+		if (!this.currentMap.springDefs) {
+			this.currentMap.springDefs = [];
+			const mw2 = this.currentMap.dimensions.width, ids = this.currentMap.map || [];
+			for (let i = 0; i < ids.length; i++) {
+				if (ids[i] !== 0x67) continue;
+				this.currentMap.springDefs.push({ tx: i % mw2, ty: Math.floor(i / mw2) });
+				ids[i] = 0; if (ids[i + mw2] === 0x68) ids[i + mw2] = 0;
+			}
+		}
+		this.springs = this.currentMap.springDefs.map(d => ({ ...d, anim: 0, timer: 0, force: SPRING_BOUNCE }));
+		this.hasLakitu = (this.currentMap.enemies || []).some(e => e.type === 'Lakitu');
+		this.lakituTimer = 0;
 		const base = (this.currentMap.platforms || []).map(d => {
 			const p = { ...d, ox: d.x, oy: d.y, vx: 0, vy: 0, rider: false, t: d.kind === 'vert' ? -Math.PI / 2 : 0, active: false, falling: false };
 			if (d.kind === 'vert') p.cy = d.y + PLATFORM_VERT_AMPLITUDE;
@@ -793,7 +824,8 @@ class Game {
 					shellChain: 0,
 					active: false,
 					// Peces: altura original, sentido del vaivén y ciclo de brazadas del Bloober
-					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spin: 0, timer: 21,
+					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spin: 0, timer: 21, anim: 0,
+					edgeTurn: e.type === 'HammerBro', walkTimer: 40, jumpTimer: 90 + Math.floor(Math.random() * 90), throwTimer: HAMMER_THROW_STEPS,
 					origY: screenPos.y,
 					bobDown: e.x % 2 === 0,
 					swimPhase: 0,
@@ -1368,7 +1400,14 @@ class Game {
 		const screenLeft = -this.mapOffset.x;
 		const screenRight = screenLeft + this.engine.getCanvasWidth();
 		this.updateCannons(player, screenLeft, screenRight);
+		this.updateFrenzy(player, screenLeft, screenRight);
+		if (this.hasLakitu && !this.enemies.some(e => e.type === 'Lakitu') && ++this.lakituTimer >= LAKITU_RESPAWN_STEPS * 0.5) {
+			// Si lo derrotan, otro Lakitu vuelve a aparecer por la derecha pasado un rato
+			this.lakituTimer = 0;
+			this.enemies.push({ id: this.enemies.length, type: 'Lakitu', color: null, x: screenRight + 2 * ts, y: ts * 1.4, dir: -1, vx: -1, vy: 0, vx0: 0, state: 'walking', throwTimer: LAKITU_EGG_STEPS, active: true, anim: 0 });
+		}
 		this.updatePlatforms(player, screenLeft, screenRight);
+		this.updateSprings(player);
 
 		for (let i = this.enemies.length - 1; i >= 0; i--) {
 			const enemy = this.enemies[i];
@@ -1397,21 +1436,25 @@ class Game {
 		const solidAt = (worldX, screenY) => isSolidMetatile(tiles[this.engine.coordsToIndex(this.screenToTile(worldX + off, screenY), W)]);
 
 		if (enemy.type === 'Pakkun') { this.stepPiranha(enemy, player); return; }
-		if (SWIMMERS.has(enemy.type)) { this.stepSwimmer(enemy, player); return; }
+		if (SWIMMERS.has(enemy.type)) return this.stepSwimmer(enemy, player);
 		if (enemy.type === 'Firebar') { this.stepFirebar(enemy); return; }
 		if (enemy.type === 'BulletBill') return this.stepBulletBill(enemy);
 		if (enemy.type === 'Bowser') { this.stepBowser(enemy, player); return; }
 		if (enemy.type === 'BowserFlame') return this.stepBowserFlame(enemy);
 		if (NPC_TYPES.has(enemy.type)) return;
 		if (enemy.type === 'Podoboo') { this.stepPodoboo(enemy); return; }
+		if (enemy.type === 'Lakitu') { this.stepLakitu(enemy, player); return; }
+		if (enemy.type === 'Hammer') return this.stepHammer(enemy);
+		if (enemy.type === 'Spiny' || enemy.type === 'HammerBro') enemy.anim = (enemy.anim || 0) + 1;
+		if (enemy.type === 'Spiny' && enemy.state === 'egg') { this.stepSpinyEgg(enemy, player); return; }
+		if (enemy.type === 'HammerBro' && enemy.state === 'walking') this.hammerBroLogic(enemy, player);
 
 		if (enemy.state === 'stomped') {
 			enemy.stompTimer++;
 			return enemy.stompTimer > STOMPED_GOOMBA_STEPS ? 'remove' : undefined;
 		}
 
-		const isKoopa = enemy.type.includes('Koopa');
-		const height = (isKoopa && enemy.state === 'walking') ? ts * 1.5 : ts;
+		const height = this.enemyHeight(enemy);
 		const jumper = !!enemy.isWinged;
 
 		// Velocidad horizontal según el estado: camina, el caparazón pateado corre y el quieto no se mueve
@@ -1433,6 +1476,7 @@ class Game {
 				grounded = true;
 			}
 		}
+		enemy.grounded = grounded;
 		enemy.vy = Math.min(enemy.vy + (jumper ? JUMPER_GRAVITY : ENEMY_GRAVITY) * k, ENEMY_MAX_FALL * k);
 
 		if (enemy.vx !== 0) {
@@ -1442,7 +1486,7 @@ class Game {
 				if (solidAt(wallX, enemy.y + height - 4)) {
 					enemy.dir *= -1;
 					if (enemy.state === 'shell') enemy.x += enemy.dir;
-				} else if (enemy.state === 'walking' && grounded && !jumper && enemy.color === 'Red') {
+				} else if (enemy.state === 'walking' && grounded && !jumper && (enemy.color === 'Red' || enemy.edgeTurn)) {
 					// Sólo el Koopa rojo se frena en el borde; el verde se cae de las plataformas
 					if (enemy.dir < 0 && !onGroundLeft) enemy.dir = 1;
 					else if (enemy.dir > 0 && !onGroundRight) enemy.dir = -1;
@@ -1455,10 +1499,43 @@ class Game {
 			const rect = { x: enemy.x + off, y: enemy.y, w: ts, h: ts };
 			for (const other of this.enemies) {
 				if (other === enemy || !other.active || other.state === 'falling' || other.state === 'stomped') continue;
-				const oh = (other.type.includes('Koopa') && other.state === 'walking') ? ts * 1.5 : ts;
+				const oh = this.enemyHeight(other);
 				if (this.rectsOverlap(rect, { x: other.x + off, y: other.y, w: ts, h: oh })) {
 					this.defeatEnemy(other, SCORE_CHAIN[Math.min(4 + enemy.shellChain++, SCORE_CHAIN.length - 1)]);
 				}
+			}
+		}
+	}
+
+	// Ataque continuo de los niveles (AreaFrenzy): cheep-cheeps que saltan, Bullet Bills desde la derecha o,
+	// en el agua, cheep-cheeps que nadan desde la derecha. Rige desde que la pantalla llega a su marca hasta la marca de fin.
+	updateFrenzy(player, screenLeft, screenRight) {
+		const list = this.currentMap.frenzy;
+		if (!list || !list.length) return;
+		const ts = this.tileSize, k = this.tileScale, W = this.engine.getCanvasWidth(), H = this.engine.getCanvasHeight();
+		let mode = null;
+		for (const f of list) if (f.x * ts <= screenRight) mode = f.kind;
+		if (!mode || mode === 'stop') return;
+		this.frenzyTimer = (this.frenzyTimer || 0) - this.physicsSteps;
+		if (this.frenzyTimer > 0) return;
+		const world = parseInt(this.currentMap.world, 10);
+		const color = world === 2 ? 'Grey' : 'Red';
+		const base = { id: this.enemies.length, color, state: 'walking', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true, anim: 0, frame: 0, swimPhase: 0, force: 0, floatTimer: 0 };
+		if (mode === 'fly') {
+			this.frenzyTimer = 16 + Math.floor(Math.random() * 80);
+			if (this.enemies.filter(e => e.flying).length >= 3) return;
+			const dir = Math.random() < 0.5 ? -1 : 1;
+			this.enemies.push({ ...base, type: 'Cheep', flying: true, x: screenLeft + (0.15 + Math.random() * 0.7) * W, y: H + ts,
+				dir, vx: dir * (0.9 + Math.random() * 1.1) * k, vy: -(5 + Math.random() * 1.5) * k, origY: H, bobDown: false });
+		} else {
+			const y = ts * 1.2 + FRENZY_Y[Math.floor(Math.random() * 8)] / 128 * (H - ts * 3.2);   // dentro de la parte visible
+			if (this.currentMap.type === World_Type.Underwater) {
+				this.frenzyTimer = 32;
+				this.enemies.push({ ...base, type: 'Cheep', x: screenRight + ts, y, dir: -1, vx: -1, vy: 0, origY: y, bobDown: false });
+			} else {
+				this.frenzyTimer = 40 + Math.floor(Math.random() * 60);
+				if (this.enemies.filter(e => e.type === 'BulletBill').length >= CANNON_MAX_BILLS) return;
+				this.enemies.push({ ...base, type: 'BulletBill', color: null, x: screenRight + ts, y, dir: -1, vx: -1, vy: 0 });
 			}
 		}
 	}
@@ -1482,6 +1559,84 @@ class Game {
 		}
 	}
 
+	// Huevo del Spiny: sale despedido por Lakitu, cae y al tocar el piso se rompe y sale el Spiny hacia Mario
+	stepSpinyEgg(enemy, player) {
+		const k = this.tileScale, W = this.currentMap.dimensions.width, tiles = this.currentMap.map;
+		enemy.x += enemy.vx;
+		enemy.y += enemy.vy;
+		enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
+		if (enemy.vy > 0) {
+			const t = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize / 2, enemy.y + this.tileSize);
+			if (isSolidMetatile(tiles[this.engine.coordsToIndex(t, W)])) {
+				enemy.y = this.tileToScreen(t.x, t.y).y - this.tileSize;
+				enemy.state = 'walking';
+				enemy.vy = 0;
+				enemy.dir = (player.position.x - this.mapOffset.x) < enemy.x ? -1 : 1;
+			}
+		}
+	}
+
+	// Lakitu: flota arriba, sigue a Mario por encima y cada 128 cuadros suelta un huevo de Spiny
+	stepLakitu(enemy, player) {
+		const k = this.tileScale;
+		if (enemy.state === 'falling') {
+			enemy.y += enemy.vy;
+			enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
+			return;
+		}
+		enemy.anim++;
+		const playerX = player.position.x - this.mapOffset.x;
+		const dx = playerX - enemy.x;
+		const target = Math.max(-2.5, Math.min(2.5, dx * 0.03)) * k;
+		enemy.vx0 = (enemy.vx0 || 0) + (target - (enemy.vx0 || 0)) * 0.05;
+		enemy.x += enemy.vx0;
+		enemy.vx = enemy.vx0 >= 0 ? 1 : -1;
+		enemy.y = this.tileSize * 1.4;   // flota cerca del borde de arriba de la pantalla
+		if (--enemy.throwTimer <= 0) {
+			enemy.throwTimer = LAKITU_EGG_STEPS;
+			const spinies = this.enemies.filter(e => e.type === 'Spiny').length;
+			if (spinies < 4) {
+				this.enemies.push({
+					id: this.enemies.length, type: 'Spiny', color: null, x: enemy.x, y: enemy.y - 8 * k,
+					dir: dx < 0 ? -1 : 1, vx: Math.max(-1.5, Math.min(1.5, dx / 60)) * k, vy: -3 * k,
+					state: 'egg', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true, anim: 0,
+				});
+			}
+		}
+	}
+
+	// Hammer Bro: mira a Mario, camina de acá para allá sin caerse, salta cada tanto y tira un martillo
+	// hacia arriba y adelante cada 48 cuadros
+	hammerBroLogic(enemy, player) {
+		const k = this.tileScale;
+		const playerX = player.position.x - this.mapOffset.x;
+		const face = playerX < enemy.x ? -1 : 1;
+		enemy.facing = face;
+		if (--enemy.walkTimer <= 0) { enemy.dir = enemy.dir === 0 || !enemy.dir ? -1 : -enemy.dir; enemy.walkTimer = 30 + Math.floor(Math.random() * 40); }
+		if (enemy.grounded && --enemy.jumpTimer <= 0) {
+			enemy.vy = -HAMMER_BRO_JUMP_SPEED * k;
+			enemy.jumpTimer = 90 + Math.floor(Math.random() * 120);
+		}
+		enemy.warning = enemy.throwTimer < 20;
+		if (--enemy.throwTimer <= 0) {
+			enemy.throwTimer = HAMMER_THROW_STEPS;
+			const sx = enemy.x + this.mapOffset.x;
+			if (sx > -this.tileSize && sx < this.engine.getCanvasWidth()) {
+				this.enemies.push({ id: this.enemies.length, type: 'Hammer', color: null, x: enemy.x + 2 * k, y: enemy.y - 10 * k, vx: face * 1 * k, vy: -HAMMER_UP_SPEED * k, dir: face, state: 'walking', active: true, anim: 0 });
+			}
+		}
+	}
+
+	// Martillo: sube y baja en arco hacia donde miraba el Hammer Bro, girando
+	stepHammer(enemy) {
+		const k = this.tileScale;
+		enemy.anim++;
+		enemy.x += enemy.vx;
+		enemy.y += enemy.vy;
+		enemy.vy += HAMMER_GRAVITY * k;
+		if (enemy.y > this.engine.getCanvasHeight() + this.tileSize) return 'remove';
+	}
+
 	// Bullet Bill: vuela recto a 1,5 px por cuadro, atraviesa todo y se va al salir de la pantalla
 	stepBulletBill(enemy) {
 		const k = this.tileScale;
@@ -1498,6 +1653,63 @@ class Game {
 	// --- Plataformas móviles -------------------------------------------------------------------
 	// Posiciones en px del NES: x en el mundo e y desde la fila 0 del nivel. Mario sólo aterriza sobre ellas
 	// (desde arriba): se lo lleva con la plataforma mientras está encima.
+
+	// Superficie del resorte: su parte de arriba, que baja al comprimirse. Va 8 px sobre el metatile 0x67.
+	springTop(sp) {
+		const bottom = this.tileToScreen(sp.tx, sp.ty + 2).y;
+		return bottom - 24 * this.tileScale + SPRING_OFFSETS[Math.max(0, sp.anim - 1)] * this.tileScale * (sp.anim > 0 ? 1 : 0);
+	}
+
+	// Mario cae sobre un resorte y lo comprime; al terminar rebota. Con el salto apretado durante la compresión sale más alto.
+	updateSprings(player) {
+		if (!this.springs || !this.springs.length || this.state !== Game_State.Playing) return;
+		const k = this.tileScale, ts = this.tileSize, pos = player.position;
+		const h = this.playerHeightPx();
+		const jumpDown = !!(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']);
+		for (const sp of this.springs) {
+			const left = this.tileToScreen(sp.tx, sp.ty).x;
+			for (let st = 0; st < this.physicsSteps; st++) {
+				const top = this.springTop(sp);
+				const overlap = pos.x + ts - 3 * k > left && pos.x + 3 * k < left + ts;
+				if (sp.anim === 0) {
+					const feet = pos.y + h;
+					if (overlap && this.velocityY >= 0 && feet >= top - k && feet <= top + Math.max(5 * k, this.velocityY + 3 * k)) {
+						sp.anim = 1; sp.timer = SPRING_STEPS_PER_FRAME; sp.force = SPRING_BOUNCE; sp.pressed = jumpDown;
+						this.stompChain = 0;
+					}
+				}
+				if (sp.anim > 0) {
+					// Mario baja con la parte de arriba del resorte
+					pos.y = this.springTop(sp) - h; this.velocityY = 0; this.isOnGround = true;
+					if (jumpDown && !sp.pressed && sp.anim >= 2) sp.force = SPRING_BOUNCE_HIGH;
+					sp.pressed = jumpDown;
+					if (--sp.timer <= 0) {
+						sp.timer = SPRING_STEPS_PER_FRAME;
+						if (++sp.anim > 4) {
+							sp.anim = 0;
+							this.velocityY = -sp.force * k;
+							this.jumpForceUp = this.jumpForceDown = SPRING_FORCE;
+							this.jumpOriginY = pos.y;
+							this.jumpHeld = true;
+							this.isOnGround = false;
+							this.engine.playAudioOverlap(audio["Player_Jump"]);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	drawSprings() {
+		const w = this.engine.getCanvasWidth(), k = this.tileScale;
+		for (const sp of this.springs || []) {
+			const left = this.tileToScreen(sp.tx, sp.ty).x;
+			if (left + this.tileSize < 0 || left > w) continue;
+			const off = SPRING_OFFSETS[Math.max(0, sp.anim - 1)] * (sp.anim > 0 ? 1 : 0);
+			const frame = off === 0 ? 0 : off === 8 ? 1 : 2;
+			this.engine.drawSprite('Enemy_Spring', frame, { x: left, y: this.springTop(sp) }, k, false, 0, Pivot.Top_Left);
+		}
+	}
 
 	platformBaseY() { return this.tileToScreen(0, 2).y; }
 
@@ -1568,6 +1780,10 @@ class Game {
 
 	// Tras la física del jugador: si va sobre una plataforma se lo vuelve a apoyar (la gravedad lo bajó un poco)
 	snapToPlatform(playerPos, playerHeight) {
+		for (const sp of this.springs || []) {
+			if (sp.anim === 0) continue;
+			playerPos.y = this.springTop(sp) - playerHeight; this.velocityY = 0; this.isOnGround = true;
+		}
 		for (const p of this.platforms || []) {
 			if (!p.rider || this.velocityY < 0) continue;
 			playerPos.y = this.platformRect(p).y - playerHeight;
@@ -1718,6 +1934,14 @@ class Game {
 			return;
 		}
 		enemy.frame++;
+		if (enemy.flying) {
+			// Cheep-cheep que salta del agua: sube a 5 px por cuadro, se frena y vuelve a caer
+			enemy.x += enemy.vx;
+			enemy.y += enemy.vy;
+			enemy.vy += FLY_CHEEP_GRAVITY * k;
+			if (enemy.vy > 0 && enemy.y > this.engine.getCanvasHeight() + this.tileSize) return 'remove';
+			return;
+		}
 		if (enemy.type === 'Cheep') {
 			enemy.vx = -1;
 			enemy.x -= (enemy.color === 'Red' ? 0.5 : 0.25) * k;
@@ -1802,11 +2026,17 @@ class Game {
 			: { x: player.position.x + 3 * k, y: player.position.y + 4 * k, w: 10 * k, h: 12 * k };
 	}
 
+	// Alto de la caja de un enemigo: el Koopa y el Hammer Bro miden 24 px mientras caminan (el Buzzy Beetle, 16)
+	enemyHeight(enemy) {
+		const tall = (enemy.type.includes('Koopa') && enemy.color !== 'Buzzy' && enemy.state === 'walking') || enemy.type === 'HammerBro';
+		return tall ? this.tileSize * 1.5 : this.tileSize;
+	}
+
 	enemyScreenRect(enemy) {
 		const k = this.tileScale, sx = enemy.x + this.mapOffset.x;
 		if (enemy.type === 'Bowser') return { x: sx + 2 * k, y: enemy.y, w: (BOWSER_W - 4) * k, h: BOWSER_H * k };
 		if (enemy.type === 'BowserFlame') return { x: sx, y: enemy.y, w: FLAME_W * k, h: FLAME_H * k };
-		const h = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+		const h = this.enemyHeight(enemy);
 		let y = enemy.y;
 		if (enemy.type === 'Pakkun') {
 			const offsetY = this.currentMap.dimensions.height * this.tileSize - this.engine.getCanvasHeight();
@@ -1822,10 +2052,10 @@ class Game {
 		const left = tx * ts;
 		for (const enemy of this.enemies) {
 			if (!enemy.active || enemy.type === 'Pakkun' || enemy.state === 'falling' || enemy.state === 'stomped') continue;
-			const h = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? ts * 1.5 : ts;
+			const h = this.enemyHeight(enemy);
 			const center = enemy.x + ts / 2;
 			if (center > left && center < left + ts && Math.abs(enemy.y + h - top) < ts * 0.3) {
-				this.defeatEnemy(enemy, enemy.type === 'Goomba' ? 100 : 200);
+				this.defeatEnemy(enemy, ENEMY_POINTS[enemy.type] ?? 200);
 				enemy.vy = -4 * this.tileScale;
 			}
 		}
@@ -1834,6 +2064,11 @@ class Game {
 	// Choque de Mario con un enemigo, una vez por cuadro
 	playerVsEnemy(enemy, player) {
 		if (NPC_TYPES.has(enemy.type)) return;
+		if (enemy.type === 'Hammer') {
+			const k = this.tileScale, sx = enemy.x + this.mapOffset.x;
+			if (this.rectsOverlap(this.playerHitbox(player), { x: sx + 4 * k, y: enemy.y + 2 * k, w: 8 * k, h: 12 * k })) this.damagePlayer();
+			return;
+		}
 		if (enemy.type === 'Bowser' || enemy.type === 'BowserFlame') {
 			if (enemy.state === 'falling') return;
 			if (this.rectsOverlap(this.playerHitbox(player), this.enemyScreenRect(enemy))) this.damagePlayer();
@@ -1847,7 +2082,7 @@ class Game {
 			return;
 		}
 		const enemyScreenX = enemy.x + this.mapOffset.x;
-		const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+		const enemyHeight = this.enemyHeight(enemy);
 		let enemyScreenY = enemy.y;
 		if (enemy.type === 'Pakkun') {
 			const offsetY = this.currentMap.dimensions.height * this.tileSize - this.engine.getCanvasHeight();
@@ -1863,7 +2098,7 @@ class Game {
 
 		// Con la estrella, Mario se lleva puesto a cualquier enemigo
 		if (this.starTimer > 0) {
-			this.defeatEnemy(enemy, enemy.type === 'Goomba' ? 100 : 200);
+			this.defeatEnemy(enemy, ENEMY_POINTS[enemy.type] ?? 200);
 			return;
 		}
 
@@ -1880,13 +2115,13 @@ class Game {
 		// tiene que estar bastante por encima (12 px del NES)
 		const above = (playerRect.y + 12 * this.tileScale) < enemyRect.y;
 		let isStomping = (!this.isOnGround && this.velocityY > 0) || above;
-		if (enemy.type === 'Pakkun' || SWIMMERS.has(enemy.type) || enemy.type === 'Podoboo') isStomping = false;
+		if (enemy.type === 'Pakkun' || SWIMMERS.has(enemy.type) || enemy.type === 'Podoboo' || enemy.type === 'Spiny') isStomping = false;
 
 		if (isStomping) {
 			this.velocityY = SMB_STOMP_SPEED * this.tileScale;
 			this.engine.playAudioOverlap(audio["Player_Stomp"]);
-			if (enemy.type === 'BulletBill') {
-				this.defeatEnemy(enemy, 200);
+			if (enemy.type === 'BulletBill' || enemy.type === 'Lakitu' || enemy.type === 'HammerBro') {
+				this.defeatEnemy(enemy, ENEMY_POINTS[enemy.type] ?? 200);
 			} else if (enemy.type === 'Goomba') {
 				enemy.state = 'stomped';
 				this.awardChain(1, enemyScreenX, enemy.y);
@@ -1902,13 +2137,14 @@ class Game {
 					this.awardChain(1, enemyScreenX, enemy.y);
 				}
 			}
-		} else if (enemy.type === 'Pakkun' || enemy.state === 'walking' || (enemy.state === 'shell' && enemy.kicked)) {
+		} else if (enemy.type === 'Pakkun' || enemy.state === 'walking' || enemy.state === 'egg' || (enemy.state === 'shell' && enemy.kicked)) {
 			this.damagePlayer();
 		}
 	}
 
 	drawEnemies() {
 		this.drawPlatforms();
+		this.drawSprings();
 		const pakkunGreenAnim = this.engine.animatedSprites['Pakkun_Green'];
 		const pakkunRedAnim = this.engine.animatedSprites['Pakkun_Red'];
 		const biteAnim = pakkunGreenAnim.animations.Pakkun_Bite;
@@ -1932,6 +2168,23 @@ class Game {
 			}
 			if (enemy.type === 'BowserFlame') {
 				this.engine.drawSprite('Enemy_Flame', Math.floor(enemy.anim / 2) % 2, { x: screenX, y: enemy.y }, this.tileScale, false, 0, Pivot.Top_Left);
+				continue;
+			}
+			if (enemy.type === 'Spiny') {
+				const egg = enemy.state === 'egg';
+				this.engine.drawSprite(egg ? 'Enemy_SpinyEgg' : 'Enemy_Spiny', Math.floor((enemy.anim || 0) / (egg ? 4 : 8)) % 2, { x: screenX, y: enemy.y }, this.tileScale, !egg && enemy.dir > 0, 0, Pivot.Top_Left);
+				continue;
+			}
+			if (enemy.type === 'Lakitu') {
+				this.engine.drawSprite('Enemy_Lakitu', enemy.throwTimer < 24 || enemy.throwTimer > LAKITU_EGG_STEPS - 12 ? 1 : 0, { x: screenX, y: enemy.y - this.tileSize / 2 }, this.tileScale, enemy.vx > 0, 0, Pivot.Top_Left);
+				continue;
+			}
+			if (enemy.type === 'HammerBro') {
+				this.engine.drawSprite('Enemy_HammerBro', (enemy.warning ? 2 : 0) + Math.floor((enemy.anim || 0) / 16) % 2, { x: screenX, y: enemy.y }, this.tileScale, (enemy.facing || -1) > 0, 0, Pivot.Top_Left);
+				continue;
+			}
+			if (enemy.type === 'Hammer') {
+				this.engine.drawSprite('Enemy_Hammer', Math.floor(enemy.anim / 4) % 4, { x: screenX, y: enemy.y }, this.tileScale, false, 0, Pivot.Top_Left);
 				continue;
 			}
 			if (NPC_TYPES.has(enemy.type)) {
@@ -2517,10 +2770,11 @@ class Game {
 				const fbRect = { x: sx - half, y: fb.y - half, w: 2 * half, h: 2 * half };
 				for (const enemy of this.enemies) {
 					if (!enemy.active || enemy.state === 'stomped' || enemy.state === 'shell' || enemy.state === 'falling') continue;
-					if (NPC_TYPES.has(enemy.type) || enemy.type === 'BowserFlame') continue;
+					if (NPC_TYPES.has(enemy.type) || enemy.type === 'BowserFlame' || enemy.type === 'Hammer') continue;
 					if (this.rectsOverlap(fbRect, this.enemyScreenRect(enemy))) {
 						if (enemy.type === 'Bowser') { this.hitBowser(enemy); fb.state = 'exploding'; break; }
-						this.defeatEnemy(enemy, enemy.type === 'Goomba' ? 100 : 200);
+						if (enemy.color === 'Buzzy') { fb.state = 'exploding'; break; }
+						this.defeatEnemy(enemy, ENEMY_POINTS[enemy.type] ?? 200);
 						fb.state = 'exploding';
 						break;
 					}
