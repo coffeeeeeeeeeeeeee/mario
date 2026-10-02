@@ -841,7 +841,7 @@ class Game {
 					active: false,
 					// Peces: altura original, sentido del vaivén y ciclo de brazadas del Bloober
 					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spin: 0, timer: 21, anim: 0,
-					edgeTurn: e.type === 'HammerBro', walkTimer: 40, jumpTimer: 90 + Math.floor(Math.random() * 90), throwTimer: HAMMER_THROW_STEPS,
+					edgeTurn: e.type === 'HammerBro', walkTimer: 128, jumpTimer: 192 + Math.floor(Math.random() * 64), throwTimer: HAMMER_THROW_STEPS,
 					origY: screenPos.y,
 					bobDown: e.x % 2 === 0,
 					swimPhase: 0,
@@ -1477,7 +1477,7 @@ class Game {
 		const jumper = !!enemy.isWinged;
 
 		// Velocidad horizontal según el estado: camina, el caparazón pateado corre y el quieto no se mueve
-		const speed = enemy.state === 'shell' ? (enemy.kicked ? ENEMY_SHELL_SPEED : 0) : ENEMY_WALK_SPEED;
+		const speed = enemy.state === 'shell' ? (enemy.kicked ? ENEMY_SHELL_SPEED : 0) : (enemy.walkSpeed ?? ENEMY_WALK_SPEED);
 		enemy.vx = enemy.dir * speed * k;
 
 		// Vertical: primero se mueve y después se suma la gravedad, como ImposeGravity
@@ -1504,11 +1504,12 @@ class Game {
 				const wallX = enemy.vx > 0 ? enemy.x + ts : enemy.x;
 				if (solidAt(wallX, enemy.y + height - 4)) {
 					enemy.dir *= -1;
+					if (enemy.edgeTurn) enemy.holdDir = 30;
 					if (enemy.state === 'shell') enemy.x += enemy.dir;
 				} else if (enemy.state === 'walking' && grounded && !jumper && (enemy.color === 'Red' || enemy.edgeTurn)) {
 					// Sólo el Koopa rojo se frena en el borde; el verde se cae de las plataformas
-					if (enemy.dir < 0 && !onGroundLeft) enemy.dir = 1;
-					else if (enemy.dir > 0 && !onGroundRight) enemy.dir = -1;
+					if (enemy.dir < 0 && !onGroundLeft) { enemy.dir = 1; enemy.holdDir = 30; }
+					else if (enemy.dir > 0 && !onGroundRight) { enemy.dir = -1; enemy.holdDir = 30; }
 				}
 			}
 		}
@@ -1736,17 +1737,24 @@ class Game {
 		}
 	}
 
-	// Hammer Bro: mira a Mario, camina de acá para allá sin caerse, salta cada tanto y tira un martillo
-	// hacia arriba y adelante cada 48 cuadros
+	// Hammer Bro (ProcHammerBro): mira a Mario y se mueve de un lado a otro (cada 64 cuadros cambia, a 1/4 px por cuadro);
+	// pasados 128 cuadros, si Mario queda a su izquierda, camina hacia él a 1/2 px por cuadro. Salta cada 192 a 255
+	// cuadros (más alto desde abajo) y tira un martillo cada 48 cuadros.
 	hammerBroLogic(enemy, player) {
 		const k = this.tileScale;
 		const playerX = player.position.x - this.mapOffset.x;
 		const face = playerX < enemy.x ? -1 : 1;
 		enemy.facing = face;
-		if (--enemy.walkTimer <= 0) { enemy.dir = enemy.dir === 0 || !enemy.dir ? -1 : -enemy.dir; enemy.walkTimer = 30 + Math.floor(Math.random() * 40); }
+		enemy.walkTimer = (enemy.walkTimer ?? 128) - 1;
+		const shimmy = Math.floor((enemy.anim || 0) / 64) % 2 === 0 ? -1 : 1;
+		// Si acaba de dar la vuelta en un borde o una pared, mantiene el rumbo un rato en vez de volver a caer
+		if (enemy.holdDir > 0) enemy.holdDir--;
+		else if (face < 0 && enemy.walkTimer <= 0) { enemy.dir = -1; enemy.walkSpeed = 0.5; }
+		else { enemy.dir = shimmy; enemy.walkSpeed = 0.25; }
 		if (enemy.grounded && --enemy.jumpTimer <= 0) {
-			enemy.vy = -HAMMER_BRO_JUMP_SPEED * k;
-			enemy.jumpTimer = 90 + Math.floor(Math.random() * 120);
+			const low = enemy.y > this.engine.getCanvasHeight() / 2;
+			enemy.vy = -(low ? 6 : 3) * k;
+			enemy.jumpTimer = 192 + Math.floor(Math.random() * 64);
 		}
 		enemy.warning = enemy.throwTimer < 20;
 		if (--enemy.throwTimer <= 0) {
