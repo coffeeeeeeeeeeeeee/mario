@@ -163,6 +163,7 @@ function backgroundSheet(name, paletteLabel, { groundId, extras }) {
 		put(0, 2, 0x10); put(1, 2, 0x11); put(2, 2, 0x14); put(3, 2, 0x15);
 		put(4, 2, 0x1c); put(5, 2, 0x1f); put(6, 2, 0x1e); put(7, 2, 0x21); put(8, 2, 0x1d); put(9, 2, 0x20);
 		put(10, 2, 0x64); put(11, 2, 0x65); put(12, 2, 0x66);   // cañón
+		put(13, 2, 0xc5); put(14, 2, 0x0c); put(15, 2, 0x89);   // hacha, cadena y puente del castillo de Bowser
 
 		// Fila 3: mástil y bandera
 		put(0, 3, 0x24); put(1, 3, 0x25);
@@ -255,7 +256,8 @@ fireSheet('Luigi');
 const GROUND = areaPalettes('GroundPaletteData');
 const eg = asmBytes('EnemyGraphicsTable');
 // Cada cuadro son 3 filas de [izq, der]; los cuadros están numerados en el orden de la tabla
-const ENEMY = { bulletBill: 39, bloober1: 10, bloober2: 11, cheep1: 12, cheep2: 13, koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
+const ENEMY = { princess: 26, retainer: 27, bowserFront1: 35, bowserRear1: 36, bowserFront2: 37, bowserRear2: 38, bulletBill: 39, bloober1: 10, bloober2: 11, cheep1: 12, cheep2: 13, koopa1: 2, koopa2: 3, para1: 4, para2: 5, goomba: 14, shellUp1: 15, shellUp2: 16, shell1: 17, shell2: 18, goombaFlat: 23, piranha1: 32, piranha2: 33 };
+const BOWSER_PAL = asmBytes('BowserPaletteData').slice(3, 7);   // verde, blanco y naranja
 const ENEMY_PODOBOO = 34;   // posición de "podoboo" en EnemyGraphicsTable
 const enemyRows = n => [0, 1, 2].map(j => [eg[n * 6 + j * 2], eg[n * 6 + j * 2 + 1]]);
 
@@ -316,6 +318,38 @@ sheet('Enemy_Water_Tiles', 96, 24, 16, 24, (cv, ox, oy) => {
 		put(ox + 16, b, a, true);
 	});
 }
+
+// Bowser: 4 cuadros de 32x24 (boca cerrada o abierta, pies de un lado o del otro), mirando a la izquierda.
+// El original guarda la mitad trasera a la izquierda y la delantera a la derecha, y lo espeja al mirar a la izquierda.
+sheet('Enemy_Bowser_Tiles', 128, 24, 32, 24, (cv, ox, oy) => {
+	const pal = BOWSER_PAL;
+	[[ENEMY.bowserFront1, ENEMY.bowserRear1], [ENEMY.bowserFront1, ENEMY.bowserRear2],
+	 [ENEMY.bowserFront2, ENEMY.bowserRear1], [ENEMY.bowserFront2, ENEMY.bowserRear2]].forEach(([front, rear], f) => {
+		const x = ox + f * 32;
+		putSprite(cv, x, oy, enemyRows(rear), pal);
+		putSprite(cv, x + 16, oy, enemyRows(front), pal);
+		mirrorRegion(cv, x, oy, 32, 24);
+	});
+});
+
+// Llama de Bowser: 3 tiles ($51 a $53) de 8x8 en fila, y la misma volteada en vertical
+sheet('Enemy_Flame_Tiles', 48, 8, 24, 8, (cv, ox, oy) => {
+	const pal = areaPalettes('CastlePaletteData').spr[2];
+	[false, true].forEach((flipY, f) => [0x51, 0x52, 0x53].forEach((t, i) => putTile(cv, ox + f * 24 + i * 8, oy, SPR, t, pal, { flipY })));
+});
+
+// Toad y la princesa (celdas de 16x24)
+sheet('Enemy_Npc_Tiles', 32, 24, 16, 24, (cv, ox, oy) => {
+	putSprite(cv, ox, oy, enemyRows(ENEMY.retainer), GROUND.spr[2]);
+	putSprite(cv, ox + 16, oy, enemyRows(ENEMY.princess), GROUND.spr[2]);
+});
+
+// Plataformas móviles: un tile de viga ($5b) por tipo de área (exterior, subterráneo, agua y castillo),
+// con la paleta 2 de sprites de cada una; el motor lo repite a lo ancho
+sheet('Platform_Tiles', 32, 8, 8, 8, (cv, ox, oy) => {
+	['GroundPaletteData', 'UndergroundPaletteData', 'WaterPaletteData', 'CastlePaletteData'].forEach((label, i) =>
+		putTile(cv, ox + i * 8, oy, SPR, 0x5b, areaPalettes(label).spr[2]));
+});
 
 // --- Bolas de fuego ----------------------------------------------------------------------------
 

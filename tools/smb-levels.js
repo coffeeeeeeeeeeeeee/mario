@@ -127,7 +127,6 @@ Object.assign(METATILE_NOTES, {
 	0x63: 'puente (se dibuja como bloque duro)', 0x89: 'puente (se dibuja como bloque duro)',
 	0x64: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x65: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x66: 'cañón de Bullet Bill (bloque duro, sin disparos)',
 	0x67: 'resorte (bloque duro)', 0x68: 'resorte (bloque duro)',
-	0xc5: 'hacha del castillo',
 });
 
 // Enemigo del original -> enemigo del motor (null si no existe y se descarta)
@@ -145,7 +144,8 @@ const ENEMY_TO_ENTITY = {
 	0x0f: { type: 'Koopa_Winged', color: 'Red' },
 	0x10: { type: 'Koopa_Winged', color: 'Green' },
 	0x12: { type: 'Goomba', note: 'Spiny -> Goomba' },
-	0x2d: { type: 'Koopa', color: 'Red', note: 'Bowser -> Koopa rojo' },
+	0x2d: { type: 'Bowser' },
+	0x35: { type: 'Toad' },
 };
 
 // ---------------------------------------------------------------------------------------------
@@ -470,6 +470,7 @@ class AreaDecoder {
 		if (idx === 4) this.chkLrgObjFixedLength(x, 0x0c);
 		const row = C_OBJECT_ROW[idx - 2];
 		this.renderUnderPart(row, 0, C_OBJECT_METATILE[idx - 2]);
+		this.mtKeep[row] = true;   // hacha, cadena y puente del castillo de Bowser
 		if (idx === 2) this.axe = { col: this.currentPageLoc * 16 + this.currentColumnPos, row };
 	}
 
@@ -743,6 +744,7 @@ function buildMap(dec, report, label) {
 	const width = dec.columns.length;
 	const map = new Array(width * MAP_HEIGHT).fill(0);
 	const enemies = [];
+	const platforms = [];   // plataformas móviles; x, y en px del NES (y desde la fila 0 del nivel)
 	const set = (x, y, id) => { if (x >= 0 && x < width && y >= 0 && y < MAP_HEIGHT) map[y * width + x] = id; };
 	const note = (txt) => { report[txt] = (report[txt] || 0) + 1; };
 
@@ -751,7 +753,6 @@ function buildMap(dec, report, label) {
 			const mt = dec.columns[x][r];
 			if (!mt) continue;
 			if (METATILE_NOTES[mt]) note(`${label}: ${METATILE_NOTES[mt]}`);
-			if (mt === MT.Axe) continue;
 			set(x, r + TOP_ROWS, mt);
 		}
 	}
@@ -789,11 +790,15 @@ function buildMap(dec, report, label) {
 		if (m) {
 			if (m.note) note(`${label}: ${m.note}`);
 			const ent = { type: m.type };
+			if (e.id === 0x35 && dec.worldNumber === 7) ent.type = 'Princess';   // en el 8-4 espera la princesa
 			if (m.color) ent.color = m.color;
 			enemies.push({ ...ent, x: e.x, y: cellRow });
 		} else if (e.id >= 0x24 && e.id <= 0x2c) {
-			note(`${label}: plataforma móvil -> fila de bloques duros fija`);
-			for (let n = 0; n < 3; n++) set(e.x + n, e.row + TOP_ROWS, MT.Hard);
+			// 24 balancín, 25 sube y baja, 26/2b suben, 27/2c bajan, 28 va y viene, 29 cae al pisarla, 2a se va a la derecha.
+			// Las grandes miden 48 px (32 en los castillos) y las chicas 24; la superficie queda en y = fila * 16 - 24
+			const KINDS = { 0x24: 'balance', 0x25: 'vert', 0x26: 'lift', 0x27: 'lift', 0x28: 'hori', 0x29: 'drop', 0x2a: 'right', 0x2b: 'lift', 0x2c: 'lift' };
+			const small = e.id >= 0x2b;
+			platforms.push({ kind: KINDS[e.id], x: e.x * 16, y: e.row * 16 - 24, w: small ? 24 : (dec.areaType === AREA_TYPE.Castle ? 32 : 48), dir: e.id === 0x26 || e.id === 0x2b ? -1 : 1, small });
 		} else {
 			unsupported[e.id] = (unsupported[e.id] || 0) + 1;
 		}
@@ -811,8 +816,12 @@ function buildMap(dec, report, label) {
 		}
 	}
 
+	// Balancines: se aparean de a dos, de izquierda a derecha
+	const bal = platforms.filter(p => p.kind === 'balance').sort((a, b) => a.x - b.x);
+	for (let i = 0; i + 1 < bal.length; i += 2) { bal[i].pair = platforms.indexOf(bal[i + 1]); bal[i + 1].pair = platforms.indexOf(bal[i]); }
+
 	enemies.sort((a, b) => a.x - b.x || a.y - b.y);
-	return { width, map, enemies, scenery };
+	return { width, map, enemies, scenery, platforms };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -870,19 +879,8 @@ function decodeLevel(lines, spec, report) {
 	dec.run();
 	dec.decodeEnemies();
 	const built = buildMap(dec, report, name);
-	// El hacha del castillo se reemplaza por un mástil de bandera para poder terminar el nivel.
-	if (dec.axe && !dec.flagpole) {
-		const { width, map } = built;
-		const c = dec.axe.col;
-		const put = (row, id) => { map[(row + TOP_ROWS) * width + c] = id; };
-		for (let r = 0; r < 13; r++) put(r, 0);
-		put(0, MT.FlagpoleTop);
-		for (let r = 1; r <= 8; r++) put(r, MT.Flagpole);
-		put(10, MT.Hard);
-		dec.flagpole = { col: c };
-		report[`${name}: hacha del castillo -> mástil de bandera (x1)`] = 1;
-		delete report[`${name}: ${METATILE_NOTES[MT.Axe]}`];
-	}
+	// Castillo de Bowser: el hacha queda en el mapa y el motor termina el nivel al tocarla
+	if (dec.axe) built.axe = { x: dec.axe.col, y: dec.axe.row + TOP_ROWS };
 	return { name, dec, time: GAME_TIMER_BY_SETTING[dec.gameTimerSetting], halfway: halfwayPage(lines, spec.world, spec.level), ...built };
 }
 
@@ -896,7 +894,7 @@ function sliceLevel(level, x0, x1) {
 		const x = level.scenery[i];
 		if (x >= x0 && x <= x1) scenery.push(x - x0, level.scenery[i + 1], level.scenery[i + 2]);
 	}
-	return { width, map, enemies: [], scenery };
+	return { width, map, enemies: [], scenery, platforms: [] };
 }
 
 // Primer caño (de cualquier tipo) dentro de una página: es por donde el original hace salir a Mario.
@@ -1025,7 +1023,7 @@ function generate(lines, report) {
 		} else {
 			const spec = { name, pointer: sub.pointer, world: sub.world, level: infoByName[sub.parent].level, areaNumber: 0 };
 			const lv = decodeLevel(lines, spec, report);
-			Object.assign(sub, { width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, areaType: lv.dec.areaType, night: lv.dec.night });
+			Object.assign(sub, { width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, areaType: lv.dec.areaType, night: lv.dec.night });
 			for (const w of zoneWarps(lv.dec)) addWarp(name, w);
 			// Las salidas de la sala: sus propias entradas de cambio de área
 			const cands = [
@@ -1041,11 +1039,11 @@ function generate(lines, report) {
 
 	const out = [];
 	for (const [name, lv] of Object.entries(levels)) {
-		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, scenery: lv.scenery, platforms: lv.platforms, axe: lv.axe, warps: warpsOf[name] || [] });
 	}
 	for (const name of Object.keys(subs).sort()) {
 		const sub = subs[name];
-		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, scenery: sub.scenery, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, scenery: sub.scenery, platforms: sub.platforms, warps: warpsOf[name] || [] });
 	}
 	return { out, levels, subs };
 }
@@ -1076,9 +1074,13 @@ function formatLevels(out) {
 		if (lv.time !== undefined) L.push(`\t\ttime: ${lv.time},`);
 		if (lv.halfway) L.push(`\t\thalfway: ${lv.halfway},`);
 		L.push(`\t\tdimensions: { width: ${lv.width}, height: ${MAP_HEIGHT} },`);
+		if (lv.axe) L.push(`\t\taxe: ${JSON.stringify(lv.axe)},`);
 		L.push(`\t\twarps: ${JSON.stringify(lv.warps)},`);
 		L.push('\t\tenemies: [');
 		for (const e of lv.enemies) L.push('\t\t\t' + JSON.stringify(e) + ',');
+		L.push('\t\t],');
+		L.push('\t\tplatforms: [');
+		for (const p of lv.platforms || []) L.push('\t\t\t' + JSON.stringify(p) + ',');
 		L.push('\t\t],');
 		L.push('\t\tscenery: [');
 		for (let i = 0; i < lv.scenery.length; i += 30) L.push('\t\t\t' + lv.scenery.slice(i, i + 30).join(',') + ',');

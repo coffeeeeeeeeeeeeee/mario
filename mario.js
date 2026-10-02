@@ -156,6 +156,7 @@ const MT = {
 	FlagpoleTop: 0x24, Flagpole: 0x25,
 	Brick: 0x51, BrickUnderground: 0x52, Ground: 0x54,
 	HiddenCoin: 0x5f, Hidden1Up: 0x60, Hard: 0x61,
+	Axe: 0xc5,
 	QuestionCoin: 0xc0, QuestionPowerup: 0xc1, Coin: 0xc2, CoinWater: 0xc3, Used: 0xc4,
 };
 
@@ -176,7 +177,8 @@ for (let id = 0x55; id <= 0x59; id++) METATILE_SPRITE[id] = 'Block_Brick';      
 for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle';      // ídem (subterráneo y castillo)
 METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
 METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
-for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x67, 0x68, 0x88, 0x89]) METATILE_SPRITE[id] = 'Block_Stairs';
+for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x67, 0x68, 0x88]) METATILE_SPRITE[id] = 'Block_Stairs';
+METATILE_SPRITE[MT.Axe] = 'Block_Axe'; METATILE_SPRITE[0x0c] = 'Block_Chain'; METATILE_SPRITE[0x89] = 'Block_Bridge';
 METATILE_SPRITE[0x64] = 'Block_Cannon_Top'; METATILE_SPRITE[0x65] = 'Block_Cannon_Mid'; METATILE_SPRITE[0x66] = 'Block_Cannon_Base';
 
 // Celda (columna, fila) de la hoja de cada pieza de escenografía de fondo (no sólida), por número de metatile.
@@ -202,17 +204,36 @@ const PLAIN_BRICKS = new Set([MT.Brick, MT.BrickUnderground]);
 const HIDDEN_BLOCKS = new Set([MT.HiddenCoin, MT.Hidden1Up]);   // sólo se golpean desde abajo
 const NON_SOLID_BLOCKS = new Set([MT.FlagpoleTop, MT.HiddenCoin, MT.Hidden1Up, MT.Coin, MT.CoinWater]);
 const FOREGROUND_METATILES = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21]; // Mario pasa por detrás
+NON_SOLID_BLOCKS.add(0x0c); NON_SOLID_BLOCKS.add(MT.Axe);   // cadena y hacha: se tocan, no frenan
 for (let id = 0x45; id <= 0x4b; id++) NON_SOLID_BLOCKS.add(id);   // castillo: decoración
 const isSolidMetatile = id => id > 0 && id < 0x100 && !NON_SOLID_BLOCKS.has(id);
 const isCoinMetatile = id => id === MT.Coin || id === MT.CoinWater;
 
 // Marcadores de enemigo del editor: ids fuera del rango de metatiles, para colocarlos en la grilla.
 const SWIMMERS = new Set(['Bloober', 'Cheep']);
+const BOWSER_HP = 5, BOWSER_SCORE = 5000;
+const BOWSER_W = 32, BOWSER_H = 24;                        // px del NES
+const BOWSER_FIRST_FLAME_STEPS = 0xdf;                     // cuadros hasta la primera llama
+const BOWSER_FLAME_TIMER = [0xbf, 0x40, 0xbf, 0xbf, 0xbf, 0x40, 0x40, 0xbf];   // FlameTimerData
+const BOWSER_RANGE = [0x21, 0x41, 0x11, 0x31];             // PRandomRange: alcance de la patrulla y espera entre saltos
+const BOWSER_JUMP_SPEED = 2, BOWSER_GRAVITY = 0.0625;      // px del NES por cuadro
+const BOWSER_FLAME_SPEED = 1.25;                           // la llama avanza 1 px + 0x40/256 por cuadro
+const BOWSER_FLAME_HEIGHTS = [16, 32, 48, 16];             // alturas sobre el puente a las que apunta la llama
+const FLAME_W = 24, FLAME_H = 8;
+const BRIDGE_COLLAPSE_MS = 100;                            // un tile del puente cada 6 cuadros
+const BASE_GRAVITY_NES = 0.4;   // px del NES por cuadro al cuadrado, para la caída automática de Mario al final
 const BULLET_BILL_SPEED = 1.5;       // px del NES por cuadro (el original lo mueve a $e8/16)
 const CANNON_MIN_STEPS = 120, CANNON_RANGE_STEPS = 120;   // cuadros entre disparos de un cañón, mínimo y variación
 const CANNON_NEAR_TILES = 3;         // un cañón no dispara si Mario está más cerca que esto
 const CANNON_MAX_BILLS = 3;
-const UNKILLABLE = new Set(['Firebar', 'Podoboo']);   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
+const PLATFORM_LIFT_SPEED = 0.94;      // px del NES por cuadro de las plataformas que suben o bajan
+const PLATFORM_VERT_AMPLITUDE = 40, PLATFORM_VERT_RATE = 0.02;   // la que sube y baja: amplitud y fase por cuadro
+const PLATFORM_HORI_AMPLITUDE = 40, PLATFORM_HORI_RATE = 0.025;  // la que va y viene
+const PLATFORM_DROP_GRAVITY = 0.1, PLATFORM_DROP_MAX = 2;        // la que cae al pisarla
+const PLATFORM_FALL_GRAVITY = 0.2;                               // balancín que se suelta
+const PLATFORM_BALANCE_LIMIT = 13;                               // el balancín se suelta si una sube hasta acá
+const NPC_TYPES = new Set(['Toad', 'Princess']);
+const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame']);   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
 const FIREBAR_SLOW = 0x28 / 256, FIREBAR_FAST = 0x38 / 256;   // giro en 1/32 de vuelta por cuadro (FirebarSpinSpdData)
 const FIREBAR_BALL_STEP = 8;       // separación entre bolas, en px del NES
 const FIREBAR_HIT = 3;             // medio lado de la caja de cada bola, en px del NES
@@ -451,6 +472,9 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Cannon_Top", tilesetName, 10, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cannon_Mid", tilesetName, 11, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cannon_Base", tilesetName, 12, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Axe", tilesetName, 13, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
 		for (const [id, [c, r]] of Object.entries(SCENERY_CELL)) js2d.defineSpriteFromTileset(`Scenery_${Number(id).toString(16)}`, tilesetName, c, r, 1, tileScale);
 
@@ -556,6 +580,9 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Cannon_Top", tilesetName, 10, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cannon_Mid", tilesetName, 11, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cannon_Base", tilesetName, 12, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Axe", tilesetName, 13, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
 		for (const [id, [c, r]] of Object.entries(SCENERY_CELL)) js2d.defineSpriteFromTileset(`Scenery_${Number(id).toString(16)}`, tilesetName, c, r, 1, tileScale);
 
@@ -700,6 +727,18 @@ class Game {
 	// del mapa; las plantas piraña van sobre la boca del caño.
 	createEnemies() {
 		this.enemies = [];
+		const base = (this.currentMap.platforms || []).map(d => {
+			const p = { ...d, ox: d.x, oy: d.y, vx: 0, vy: 0, rider: false, t: d.kind === 'vert' ? -Math.PI / 2 : 0, active: false, falling: false };
+			if (d.kind === 'vert') p.cy = d.y + PLATFORM_VERT_AMPLITUDE;
+			return p;
+		});
+		base.forEach((p, i) => { if (p.pair !== undefined) { p.partner = base[p.pair]; p.first = i < p.pair; } });
+		this.platforms = [];
+		for (const p of base) {
+			this.platforms.push(p);
+			// Los elevadores chicos van con un doble 128 px más abajo
+			if (p.small && p.kind === 'lift') this.platforms.push({ ...p, y: p.y + 128, oy: p.y + 128 });
+		}
 		// Cañones: cada bloque de cañón superior (0x64) dispara Bullet Bills mientras está en pantalla
 		this.cannons = [];
 		const mw = this.currentMap.dimensions.width, mapIds = this.currentMap.map || [];
@@ -708,6 +747,22 @@ class Game {
 		}
 		for (const e of this.currentMap.enemies || []) {
 			const screenPos = this.tileToScreen(e.x, e.y);
+			if (e.type === 'Bowser') {
+				const k = this.tileScale;
+				const x = screenPos.x - this.mapOffset.x;
+				this.enemies.push({
+					id: this.enemies.length, type: 'Bowser', color: null,
+					x, y: this.bridgeFloorY() - BOWSER_H * k, origX: x, hp: BOWSER_HP,
+					dir: -1, vx: -1, vy: 0, state: 'walking', feet: 0, feetTimer: 32, mouth: false,
+					fireTimer: BOWSER_FIRST_FLAME_STEPS, flameIdx: 0, jumpTimer: BOWSER_RANGE[0] * 2, range: BOWSER_RANGE[0],
+					speed: 1, frame: 0, anim: 0, active: false,
+				});
+				continue;
+			}
+			if (NPC_TYPES.has(e.type)) {
+				this.enemies.push({ id: this.enemies.length, type: e.type, color: null, x: screenPos.x - this.mapOffset.x, y: this.tileToScreen(0, 13).y - 1.5 * this.tileSize, dir: -1, vx: -1, vy: 0, state: 'walking', active: false });
+				continue;
+			}
 			if (e.type === 'Pakkun') {
 				const worldY = e.y * this.tileSize + this.tileSize * 2;
 				const screenPosX = screenPos.x + this.tileSize / 2;
@@ -1313,6 +1368,7 @@ class Game {
 		const screenLeft = -this.mapOffset.x;
 		const screenRight = screenLeft + this.engine.getCanvasWidth();
 		this.updateCannons(player, screenLeft, screenRight);
+		this.updatePlatforms(player, screenLeft, screenRight);
 
 		for (let i = this.enemies.length - 1; i >= 0; i--) {
 			const enemy = this.enemies[i];
@@ -1344,6 +1400,9 @@ class Game {
 		if (SWIMMERS.has(enemy.type)) { this.stepSwimmer(enemy, player); return; }
 		if (enemy.type === 'Firebar') { this.stepFirebar(enemy); return; }
 		if (enemy.type === 'BulletBill') return this.stepBulletBill(enemy);
+		if (enemy.type === 'Bowser') { this.stepBowser(enemy, player); return; }
+		if (enemy.type === 'BowserFlame') return this.stepBowserFlame(enemy);
+		if (NPC_TYPES.has(enemy.type)) return;
 		if (enemy.type === 'Podoboo') { this.stepPodoboo(enemy); return; }
 
 		if (enemy.state === 'stomped') {
@@ -1434,6 +1493,182 @@ class Game {
 		enemy.x += enemy.dir * BULLET_BILL_SPEED * k;
 		const sx = enemy.x + this.mapOffset.x;
 		if (sx < -this.tileSize * 3 || sx > this.engine.getCanvasWidth() + this.tileSize * 3) return 'remove';
+	}
+
+	// --- Plataformas móviles -------------------------------------------------------------------
+	// Posiciones en px del NES: x en el mundo e y desde la fila 0 del nivel. Mario sólo aterriza sobre ellas
+	// (desde arriba): se lo lleva con la plataforma mientras está encima.
+
+	platformBaseY() { return this.tileToScreen(0, 2).y; }
+
+	platformRect(p) {
+		const k = this.tileScale;
+		return { x: p.x * k + this.mapOffset.x, y: this.platformBaseY() + p.y * k, w: p.w * k };
+	}
+
+	playerHeightPx() {
+		return (this.playerSize > Player_Size.Small && !this.wasCrouching) ? this.tileSize * 2 : this.tileSize;
+	}
+
+	updatePlatforms(player, screenLeft, screenRight) {
+		const k = this.tileScale;
+		const near = p => { const wx = p.x * k; return wx + p.w * k > screenLeft - 3 * this.tileSize && wx < screenRight + 2 * this.tileSize; };
+		for (const p of this.platforms || []) {
+			if (!p.active) { if (near(p)) p.active = true; else continue; }
+			for (let s = 0; s < this.physicsSteps; s++) this.stepPlatform(p, player);
+		}
+		this.platforms = (this.platforms || []).filter(p => !(p.falling && p.y > 260));
+	}
+
+	stepPlatform(p, player) {
+		const k = this.tileScale;
+		const prevX = p.x;
+		switch (p.kind) {
+			case 'vert': p.t += PLATFORM_VERT_RATE; p.y = p.cy + Math.sin(p.t) * PLATFORM_VERT_AMPLITUDE; break;
+			case 'hori': p.t += PLATFORM_HORI_RATE; p.x = p.ox + Math.sin(p.t) * PLATFORM_HORI_AMPLITUDE; break;
+			case 'lift':
+				p.y += p.dir * PLATFORM_LIFT_SPEED;
+				if (p.y >= 224) p.y -= 256; else if (p.y < -32) p.y += 256;
+				break;
+			case 'drop':
+				if (p.rider) { p.vy = Math.min(p.vy + PLATFORM_DROP_GRAVITY, PLATFORM_DROP_MAX); p.y += p.vy; }
+				break;
+			case 'right':
+				if (p.rider) p.vx = 1;
+				p.x += p.vx;
+				break;
+			case 'balance': {
+				const o = p.partner;
+				if (p.falling) { p.vy += PLATFORM_FALL_GRAVITY; p.y += p.vy; break; }
+				if (o && p.first && !o.falling) {
+					// Una baja y la otra sube de a 1 px mientras Mario está en una; si una llega arriba se sueltan las dos
+					if (p.rider && !o.rider) { p.y += 1; o.y -= 1; }
+					else if (o.rider && !p.rider) { p.y -= 1; o.y += 1; }
+					if (Math.min(p.y, o.y) <= PLATFORM_BALANCE_LIMIT) { p.falling = o.falling = true; p.vy = o.vy = 0; }
+				}
+				break;
+			}
+		}
+
+		// Mario: aterriza desde arriba y viaja con la plataforma
+		const ts = this.tileSize, h = this.playerHeightPx(), pos = player.position;
+		const r = this.platformRect(p);
+		const feet = pos.y + h, left = pos.x + 3 * k, right = pos.x + ts - 3 * k;
+		const overlap = right > r.x && left < r.x + r.w;
+		if (p.rider) {
+			if (overlap && this.velocityY >= 0 && this.state === Game_State.Playing) {
+				pos.x += (p.x - prevX) * k;
+				pos.y = r.y - h; this.velocityY = 0; this.isOnGround = true;
+			} else p.rider = false;
+		} else if (overlap && this.velocityY >= 0 && this.state === Game_State.Playing && feet >= r.y - k && feet <= r.y + Math.max(5 * k, this.velocityY + 3 * k)) {
+			p.rider = true; this.stompChain = 0;
+			pos.y = r.y - h; this.velocityY = 0; this.isOnGround = true;
+		}
+	}
+
+	// Tras la física del jugador: si va sobre una plataforma se lo vuelve a apoyar (la gravedad lo bajó un poco)
+	snapToPlatform(playerPos, playerHeight) {
+		for (const p of this.platforms || []) {
+			if (!p.rider || this.velocityY < 0) continue;
+			playerPos.y = this.platformRect(p).y - playerHeight;
+			this.velocityY = 0; this.isOnGround = true;
+		}
+	}
+
+	drawPlatforms() {
+		const k = this.tileScale, tile = ['Platform_Tile_0', 'Platform_Tile_1', 'Platform_Tile_2', 'Platform_Tile_3'][this.currentMap?.type ?? 0];
+		const sprite = this.engine.sprites[tile];
+		if (!sprite) return;
+		const w = this.engine.getCanvasWidth();
+		for (const p of this.platforms || []) {
+			const r = this.platformRect(p);
+			if (r.x + r.w < 0 || r.x > w) continue;
+			for (let i = 0; i < p.w / 8; i++) this.engine.drawSprite(tile, 0, { x: r.x + i * 8 * k, y: r.y }, sprite.scale, false, 0, Pivot.Top_Left);
+		}
+	}
+
+	// Altura (en pantalla) de la superficie del puente de Bowser: la fila del puente es dos más abajo que el hacha
+	bridgeFloorY() {
+		const ax = this.currentMap.axe;
+		return this.tileToScreen(0, (ax ? ax.y : 8) + 2).y;
+	}
+
+	// Bowser (RunBowser / BowserControl): patrulla cerca de su lugar, se vuelve hacia Mario, salta cada tanto y
+	// abre la boca antes de soltar una llama. Tiene 5 puntos de vida, que le quitan las bolas de fuego.
+	stepBowser(enemy, player) {
+		const k = this.tileScale;
+		if (enemy.state === 'falling') {
+			enemy.y += enemy.vy;
+			enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
+			return;
+		}
+		enemy.frame++;
+		enemy.anim++;
+		const playerX = player.position.x - this.mapOffset.x;
+		const centerX = enemy.x + BOWSER_W * k / 2;
+
+		if (--enemy.feetTimer <= 0) { enemy.feetTimer = 32; enemy.feet ^= 1; }
+
+		// Mira a Mario; si Mario quedó a su derecha lo persigue hacia ese lado
+		if (playerX > centerX + 8 * k) { enemy.dir = 1; enemy.speed = 2; }
+		else if (enemy.frame % 16 === 0) enemy.dir = -1;
+
+		// Patrulla: cada 4 cuadros avanza 1 px y da la vuelta al alejarse de su lugar de origen
+		if (enemy.frame % 4 === 0) {
+			const away = enemy.x - enemy.origX;
+			if (Math.abs(away) >= enemy.range * k) { enemy.speed = away > 0 ? -1 : 1; enemy.range = BOWSER_RANGE[Math.floor(Math.random() * 4)]; }
+			if (enemy.dir === 1 && enemy.speed < 0) enemy.speed = 1;
+			enemy.x += enemy.speed * k;
+			enemy.x = Math.max(enemy.origX - 0x40 * k, Math.min(enemy.origX + 0x40 * k, enemy.x));
+		}
+
+		// Salto
+		const floor = this.bridgeFloorY() - BOWSER_H * k;
+		if (enemy.y >= floor) {
+			enemy.y = floor; enemy.vy = 0;
+			if (--enemy.jumpTimer <= 0) {
+				enemy.vy = -BOWSER_JUMP_SPEED * k;
+				enemy.jumpTimer = BOWSER_RANGE[Math.floor(Math.random() * 4)] * 2;
+			}
+		} else {
+			enemy.vy += BOWSER_GRAVITY * k;
+		}
+		enemy.y += enemy.vy;
+
+		// Llamas: en los mundos 1 a 5 y en el 8 (en el 6 y 7 el original tira martillos, que acá no están)
+		const world = parseInt(this.currentMap.world, 10);
+		if (world <= 5 || world === 8) {
+			if (--enemy.fireTimer <= 0) {
+				if (!enemy.mouth) { enemy.mouth = true; enemy.fireTimer = 32; }
+				else {
+					enemy.mouth = false;
+					enemy.fireTimer = BOWSER_FLAME_TIMER[enemy.flameIdx++ % BOWSER_FLAME_TIMER.length];
+					const target = this.bridgeFloorY() - BOWSER_FLAME_HEIGHTS[Math.floor(Math.random() * 4)] * k;
+					this.enemies.push({ id: this.enemies.length, type: 'BowserFlame', color: null, x: enemy.x - 14 * k, y: enemy.y + 8 * k, targetY: target, dir: -1, vx: -1, vy: 0, state: 'walking', anim: 0, active: true });
+					this.engine.playAudioOverlap(audio["Shell"]);
+				}
+			}
+		}
+	}
+
+	// Llama de Bowser: avanza a la izquierda y se acomoda de a 1 px por cuadro a la altura que eligió
+	stepBowserFlame(enemy) {
+		const k = this.tileScale;
+		enemy.anim++;
+		enemy.x -= BOWSER_FLAME_SPEED * k;
+		const dy = enemy.targetY - enemy.y;
+		if (Math.abs(dy) > k) enemy.y += Math.sign(dy) * k;
+	}
+
+	// Una bola de fuego de Mario le saca un punto de vida a Bowser; sin vidas cae y da 5000 puntos
+	hitBowser(enemy) {
+		this.engine.playAudioOverlap(audio["Player_Bump"]);
+		if (--enemy.hp > 0) return;
+		enemy.state = 'falling';
+		enemy.vy = ENEMY_JUMP_SPEED * this.tileScale;
+		this.score += BOWSER_SCORE;
+		this.spawnScorePopup(String(BOWSER_SCORE), enemy.x + this.mapOffset.x, enemy.y);
+		this.engine.playAudioOverlap(audio["Shell"]);
 	}
 
 	// Barra de fuego: 6 bolas (12 la larga) separadas 8 px que giran alrededor del bloque; el estado de giro
@@ -1568,6 +1803,9 @@ class Game {
 	}
 
 	enemyScreenRect(enemy) {
+		const k = this.tileScale, sx = enemy.x + this.mapOffset.x;
+		if (enemy.type === 'Bowser') return { x: sx + 2 * k, y: enemy.y, w: (BOWSER_W - 4) * k, h: BOWSER_H * k };
+		if (enemy.type === 'BowserFlame') return { x: sx, y: enemy.y, w: FLAME_W * k, h: FLAME_H * k };
 		const h = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
 		let y = enemy.y;
 		if (enemy.type === 'Pakkun') {
@@ -1595,6 +1833,12 @@ class Game {
 
 	// Choque de Mario con un enemigo, una vez por cuadro
 	playerVsEnemy(enemy, player) {
+		if (NPC_TYPES.has(enemy.type)) return;
+		if (enemy.type === 'Bowser' || enemy.type === 'BowserFlame') {
+			if (enemy.state === 'falling') return;
+			if (this.rectsOverlap(this.playerHitbox(player), this.enemyScreenRect(enemy))) this.damagePlayer();
+			return;
+		}
 		if (enemy.type === 'Firebar') {
 			const box = this.playerHitbox(player), h = FIREBAR_HIT * this.tileScale;
 			for (const b of this.firebarBalls(enemy)) {
@@ -1664,6 +1908,7 @@ class Game {
 	}
 
 	drawEnemies() {
+		this.drawPlatforms();
 		const pakkunGreenAnim = this.engine.animatedSprites['Pakkun_Green'];
 		const pakkunRedAnim = this.engine.animatedSprites['Pakkun_Red'];
 		const biteAnim = pakkunGreenAnim.animations.Pakkun_Bite;
@@ -1681,6 +1926,18 @@ class Game {
 
 			const screenX = enemy.x + this.mapOffset.x;
 
+			if (enemy.type === 'Bowser') {
+				this.engine.drawSprite('Enemy_Bowser', (enemy.mouth ? 2 : 0) + enemy.feet, { x: screenX, y: enemy.y }, this.tileScale, enemy.dir > 0, 0, Pivot.Top_Left);
+				continue;
+			}
+			if (enemy.type === 'BowserFlame') {
+				this.engine.drawSprite('Enemy_Flame', Math.floor(enemy.anim / 2) % 2, { x: screenX, y: enemy.y }, this.tileScale, false, 0, Pivot.Top_Left);
+				continue;
+			}
+			if (NPC_TYPES.has(enemy.type)) {
+				this.engine.drawSprite(`Enemy_${enemy.type}`, 0, { x: screenX, y: enemy.y }, this.tileScale, false, 0, Pivot.Top_Left);
+				continue;
+			}
 			if (enemy.type === 'Firebar') {
 				const frame = Math.floor((enemy.anim || 0) / 4) % 4;
 				for (const b of this.firebarBalls(enemy)) this.engine.drawSprite('Object_Fireball_Hit', frame, { x: b.x, y: b.y }, this.tileScale, false, 0, Pivot.Center);
@@ -2260,7 +2517,9 @@ class Game {
 				const fbRect = { x: sx - half, y: fb.y - half, w: 2 * half, h: 2 * half };
 				for (const enemy of this.enemies) {
 					if (!enemy.active || enemy.state === 'stomped' || enemy.state === 'shell' || enemy.state === 'falling') continue;
+					if (NPC_TYPES.has(enemy.type) || enemy.type === 'BowserFlame') continue;
 					if (this.rectsOverlap(fbRect, this.enemyScreenRect(enemy))) {
+						if (enemy.type === 'Bowser') { this.hitBowser(enemy); fb.state = 'exploding'; break; }
 						this.defeatEnemy(enemy, enemy.type === 'Goomba' ? 100 : 200);
 						fb.state = 'exploding';
 						break;
@@ -2727,6 +2986,14 @@ class Game {
 			}
 			this.jumpHeld = jumpDown;
 			
+			this.snapToPlatform(playerPos, playerHeight);
+
+			// Hacha del castillo de Bowser: al tocarla se cae el puente y termina el nivel
+			if (this.state === Game_State.Playing && this.currentMap.axe) {
+				const ax = this.currentMap.axe, tp = this.tileToScreen(ax.x, ax.y);
+				if (this.rectsOverlap(this.playerHitbox(player), { x: tp.x, y: tp.y, w: this.tileSize, h: this.tileSize })) this.startAxeEnding(playerPos, playerHeight);
+			}
+
 			// Caños que llevan a otro nivel (abajo sobre la boca, o derecha contra la boca lateral)
 			if (this.state === Game_State.Playing) {
 				const warp = this.findPipeWarp(playerPos, playerHeight);
@@ -2788,6 +3055,44 @@ class Game {
 		}
 	}
 
+	// Mario toca el hacha: desaparecen el hacha y la cadena, Bowser (si sigue) cae con el puente y Mario
+	// camina hasta Toad (o la princesa en el 8-4)
+	startAxeEnding(playerPos, playerHeight) {
+		const ax = this.currentMap.axe, mw = this.currentMap.dimensions.width, map = this.currentMap.map;
+		this.stopAllMusic();
+		this.state = Game_State.Level_Complete;
+		this.levelCompleteState = 'axe_collapse';
+		this.axeTimer = 0;
+		this.levelTimeAtFlag = 0;        // sin fuegos artificiales
+		this.flagpoleFlag = null;
+		this.xSpeed = 0; this.velocityX = 0; this.velocityY = 0;
+		map[ax.y * mw + ax.x] = 0;
+		map[(ax.y + 1) * mw + ax.x - 1] = 0;
+		// El puente se deshace de a un tile, desde el hacha hacia afuera
+		this.bridgeTiles = [];
+		for (let x = ax.x - 1; x >= 0; x--) {
+			const i = (ax.y + 2) * mw + x;
+			if (map[i] !== 0x89) { if (this.bridgeTiles.length) break; else continue; }
+			this.bridgeTiles.push(i);
+		}
+		this.enemies = this.enemies.filter(e => e.type === 'Bowser' || NPC_TYPES.has(e.type));
+		for (const e of this.enemies) e.active = true;
+		this.engine.playAudio(audio["Level_Clear"], false);
+		// Mario se queda parado sobre el apoyo del hacha
+		playerPos.y = this.tileToScreen(ax.x, ax.y + 1).y - playerHeight;
+	}
+
+	// Mensaje de Toad o de la princesa al final del castillo
+	drawAxeMessage() {
+		const world = parseInt(this.currentMap.world, 10);
+		const who = PlayerName[this.player].toUpperCase();
+		const lines = world === 8
+			? [`THANK YOU ${who}!`, 'YOUR QUEST IS OVER.', 'WE PRESENT YOU A NEW QUEST.']
+			: [`THANK YOU ${who}!`, 'BUT OUR PRINCESS IS IN', 'ANOTHER CASTLE!'];
+		const cx = this.engine.getCanvasWidth() / 2;
+		lines.forEach((t, i) => this.engine.drawTextCustom(font, t, TEXT_SIZE, Color.WHITE, { x: cx, y: this.tileSize * (2.2 + i * 0.8) }, "center"));
+	}
+
 	updateAndDrawLevelComplete(dt) {
 
 		let currentSpriteName;
@@ -2812,6 +3117,65 @@ class Game {
                 const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
 
                 switch(this.levelCompleteState) {
+                    case 'axe_collapse': {
+                        this.axeTimer += dt;
+                        while (this.bridgeTiles.length && this.axeTimer >= BRIDGE_COLLAPSE_MS) {
+                            this.axeTimer -= BRIDGE_COLLAPSE_MS;
+                            this.currentMap.map[this.bridgeTiles.shift()] = 0;
+                            this.engine.playAudioOverlap(audio["Brick_Break"]);
+                        }
+                        if (!this.bridgeTiles.length) {
+                            const bowser = this.enemies.find(e => e.type === 'Bowser');
+                            if (bowser && bowser.state !== 'falling') { bowser.state = 'falling'; bowser.vy = 0; }
+                            this.levelCompleteState = 'axe_fall';
+                            this.axeTimer = 0;
+                        }
+                        break;
+                    }
+                    case 'axe_fall': {
+                        for (const e of this.enemies) if (e.type === 'Bowser' && e.state === 'falling') for (let i = 0; i < Math.max(1, Math.round(this.fk)); i++) this.stepBowser(e, player);
+                        this.axeTimer += dt;
+                        if (this.axeTimer > 1500) {
+                            this.axeTimer = 0;
+                            const pfx = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
+                            this.engine.setAnimationForSprite(currentSpriteName, `${pfx}_Run`);
+                            player.flipped = false;
+                            this.axeVy = 0;
+                            this.levelCompleteState = 'axe_walk';
+                        }
+                        break;
+                    }
+                    case 'axe_walk': {
+                        // Camina a 1,5 px por cuadro hasta quedar al lado de Toad, con la cámara siguiéndolo y cayendo de la plataforma
+                        const k = this.tileScale, steps = Math.max(1, Math.round(this.fk));
+                        const npc = this.enemies.find(e => NPC_TYPES.has(e.type));
+                        const stopX = npc ? npc.x + this.mapOffset.x - this.tileSize * 1.2 : playerPos.x + this.tileSize * 4;
+                        const mw = this.currentMap.dimensions.width, tiles = this.currentMap.map;
+                        for (let i = 0; i < steps && playerPos.x < stopX; i++) {
+                            const dx = 1.5 * k;
+                            const minOffset = this.engine.getCanvasWidth() - mw * this.tileSize;
+                            if (playerPos.x > this.engine.getCanvasWidth() * 0.45 && this.mapOffset.x > minOffset) {
+                                this.mapOffset.x = Math.max(minOffset, this.mapOffset.x - dx);
+                            } else playerPos.x += dx;
+                            // Gravedad simple hasta el primer tile sólido bajo los pies
+                            const feet = playerPos.y + playerHeight;
+                            const t = this.screenToTile(playerPos.x + this.tileSize / 2, feet + 1);
+                            const solid = isSolidMetatile(tiles[this.engine.coordsToIndex(t, mw)]);
+                            if (solid && this.axeVy >= 0) { this.axeVy = 0; playerPos.y = this.tileToScreen(t.x, t.y).y - playerHeight; }
+                            else { this.axeVy = Math.min(this.axeVy + BASE_GRAVITY_NES * k, 4 * k); playerPos.y += this.axeVy; }
+                        }
+                        if (playerPos.x >= stopX) {
+                            const pfx = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
+                            this.engine.setAnimationForSprite(currentSpriteName, `${pfx}_Idle`);
+                            this.axeTimer = 0;
+                            this.levelCompleteState = 'axe_message';
+                        }
+                        break;
+                    }
+                    case 'axe_message':
+                        this.axeTimer += dt;
+                        if (this.axeTimer > 4500) { this.levelCompleteState = 'time_bonus'; this.bonusTimer = 0; }
+                        break;
                     case 'none':
                         this.stopAllMusic();
                         this.engine.playAudio(audio["Flagpole"], false);
@@ -2909,6 +3273,7 @@ class Game {
 
 			this.engine.drawAnimatedSprite(currentSpriteName, this.frameDt, Pivot.Top_Left);
 		}
+		if (this.levelCompleteState === 'axe_message') this.drawAxeMessage();
 	}
 
 	updateAndDrawGrowingPlayer(dt) {

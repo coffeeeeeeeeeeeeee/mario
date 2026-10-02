@@ -233,6 +233,11 @@ async function init() {
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Green", "Enemy_Tall_Tiles", 8, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Pakkun_Red", "Enemy_Tall_Tiles", 10, 0, 2, tileScale);
 
+    for (let i = 0; i < 4; i++) js2d.defineSpriteFromTileset(`Platform_Tile_${i}`, "Platform_Tiles", i, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Bowser", "Enemy_Bowser_Tiles", 0, 0, 4, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Flame", "Enemy_Flame_Tiles", 0, 0, 2, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Toad", "Enemy_Npc_Tiles", 0, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Enemy_Princess", "Enemy_Npc_Tiles", 1, 0, 1, tileScale);
     js2d.defineSpriteFromTileset("Enemy_BulletBill", "Enemy_Short_Tiles", 7, 0, 1, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Podoboo", "Enemy_Fire_Tiles", 0, 0, 2, tileScale);
 
