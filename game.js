@@ -30,6 +30,7 @@ const audio = {
 function update(dt) {
     if (!smb) return;
     smb.frameDt = dt / 1000;
+    smb.fk = Math.min(dt, 100) / PHYSICS_STEP_MS;   // cuadros de 1/60 s transcurridos, para las animaciones
 
     if (js2d.keysPressed['KeyP']) {
         js2d.keysPressed['KeyP'] = false; // Consumir la tecla
@@ -118,7 +119,8 @@ function update(dt) {
             break;
 
         case Game_State.Playing:
-            smb.time -= dt / 1000;
+            smb.stepFrame(dt);
+            smb.updateGameTimer(dt);
 
             if (smb.currentMap) {
                 const theme = smb.getCurrentThemeAudio();
@@ -131,8 +133,6 @@ function update(dt) {
             smb.updatePowerups();
             smb.updateCoins();
             smb.updateAndDrawScorePopups();
-
-            Object.values(js2d.animatedSprites).forEach(sprite => sprite.frameCounter = (sprite.frameCounter || 0) + 1);
 
             smb.drawBackground();
             smb.drawPowerups();

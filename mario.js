@@ -22,18 +22,61 @@ const SMB_JUMP = {
 	running:  { speed: 5, up: 0x28 / 256, down: 0x90 / 256 },
 };
 const SMB_MAX_FALL_SPEED = 4;
-const SMB_STOMP_SPEED = -3;        // rebote al pisar un enemigo ($FD)
+const SMB_STOMP_SPEED = -4;        // rebote al pisar un Goomba o un Koopa ($FC)
 const SMB_BRICK_BREAK_SPEED = -2;  // al romper un ladrillo Mario sigue subiendo ($FE)
 const SMB_BUMP_SPEED = 0;          // al golpear un bloque que rebota
 const SMB_CEILING_SPEED = 1;       // al chocar con un techo sólido empieza a caer
 const PHYSICS_STEP_MS = 1000 / 60;
 const PHYSICS_STEP_TOLERANCE_MS = 2; // absorbe el jitter de requestAnimationFrame a 60 Hz
 const PIPE_TRANSITION_MS = 700;      // lo que tarda Mario en entrar o salir de un caño
+
+// Tiempos y puntajes del original (la NES corre a 60,0988 cuadros por segundo)
+const NES_FPS = 60.0988;
+const GAME_TIMER_TICK_MS = 24 * 1000 / NES_FPS;           // el contador baja 1 cada 24 cuadros
+const INJURY_INVINCIBLE_MS = 8 * 21 * 1000 / NES_FPS;     // InjuryTimer: 8 intervalos de 21 cuadros
+const STAR_INVINCIBLE_MS = 0x23 * 21 * 1000 / NES_FPS;    // StarInvincibleTimer
+// Puntos de la cadena de pisotones sin tocar el suelo (ScoreUpdateData); el último es una vida
+const SCORE_CHAIN = [0, 100, 200, 400, 500, 800, 1000, 2000, 4000, 5000, 8000, 'life'];
+// Movimiento de enemigos y objetos, en píxeles del NES por cuadro (las fuerzas, por cuadro al cuadrado)
+const ENEMY_WALK_SPEED = 0.5;          // NormalXSpdData: $f8
+const ENEMY_SHELL_SPEED = 3;           // KickedShellXSpdData: $30
+const ENEMY_GRAVITY = 0x3d / 256;      // MoveD_EnemyVertically
+const JUMPER_GRAVITY = 0x1c / 256;     // MoveJ_EnemyVertically: paratroopa y estrella
+const ENEMY_MAX_FALL = 3;
+const ENEMY_JUMP_SPEED = -3;           // EnemyJump: $fd
+const MUSHROOM_SPEED = 1;              // $10
+const FIREBALL_SPEED = 4;              // FireballXSpdData: $40
+const FIREBALL_GRAVITY = 0x50 / 256;
+const FIREBALL_MAX_FALL = 3;
+const FIREBALL_BOUNCE = -3;
+const MAX_FIREBALLS = 2;
+const PIRANHA_SPEED = 0.5;             // 1 px cada 2 cuadros
+const PIRANHA_RISE = 24;               // PiranhaPlantUpYPos: 24 px sobre la boca
+const PIRANHA_DELAY_STEPS = 0x40;      // EnemyFrameTimer al llegar arriba o abajo
+const PIRANHA_NEAR = 33;               // no sale si Mario está a menos de 33 px
+const ENEMY_ACTIVATE_AHEAD = 3;        // los enemigos aparecen a 3 tiles del borde derecho de la pantalla
+const ENEMY_DESPAWN_BEHIND = 72;       // y desaparecen 72 px más allá del borde izquierdo
+const STOMPED_GOOMBA_STEPS = 30;
+const DEATH_PAUSE_MS = 15 * 1000 / NES_FPS;
+const DEATH_GRAVITY = 0x28 / 256;       // VerticalForce de PlayerKilled
+// Monedas que hay que juntar en el nivel -3 para que aparezca el 1UP oculto del mundo siguiente
+const HIDDEN_1UP_COINS = [0x15, 0x23, 0x16, 0x1b, 0x17, 0x18, 0x23, 0x63];
+const BRICK_COIN_TIMER_MS = 0x0b * 21 * 1000 / NES_FPS;   // BrickCoinTimer: el ladrillo da monedas durante ~3,8 s
+// Física horizontal de Mario (X_Physics, ImposeFriction): la velocidad va en 1/16 de píxel del NES por cuadro
+const X_MAX_RIGHT = [0x28, 0x18, 0x10];   // MaxRightXSpdData: corriendo, caminando y en el agua
+const X_MAX_LEFT = [-0x28, -0x18, -0x10]; // MaxLeftXSpdData ($d8, $e8, $f0)
+const X_FRICTION = [0xe4, 0x98, 0xd0];    // FrictionData, en 1/256 de unidad de velocidad por cuadro
+const RUNNING_TIMER_STEPS = 10 * 21;      // RunningTimer: se sigue corriendo ~3,5 s tras soltar B
+// Salto según la velocidad horizontal al despegar (umbrales de ProcJumping: 9, 16, 25 y 28)
+const JUMP_BY_SPEED = [SMB_JUMP.standing, SMB_JUMP.standing, SMB_JUMP.walking, SMB_JUMP.running, SMB_JUMP.running];
+// Altura de Mario al tocar el mástil (en píxeles del NES) -> premio (FlagpoleYPosData, FlagpoleScoreMods)
+const FLAGPOLE_Y_DATA = [0x18, 0x22, 0x50, 0x68, 0x90];
+const FLAGPOLE_SCORES = [5000, 2000, 800, 400, 100];
 const BASE_VELOCITY_SWIM = (TILE_PIXEL_SIZE * 17.6 / 16) * 60;
 
 const TEXT_SIZE = 16;
 
-const DEFAULT_LIVES = 1;
+const DEFAULT_LIVES = 3;
 const DEFAULT_VOLUME = 0.2;
 
 const TOUCH_CONTROLS = {
@@ -131,7 +174,8 @@ for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x64, 0x65, 0x
 // Qué entrega un bloque al golpearlo desde abajo
 const BLOCK_ITEM = {
 	[MT.QuestionPowerup]: 'powerup', [MT.QuestionCoin]: 'coin',
-	0x55: 'powerup', 0x56: 'powerup', 0x57: 'powerup', 0x5a: 'powerup', 0x5b: 'powerup', 0x5c: 'powerup',   // el motor no tiene enredadera ni estrella
+	0x55: 'powerup', 0x56: 'powerup', 0x5a: 'powerup', 0x5b: 'powerup',   // el motor no tiene enredadera, da un hongo
+	0x57: 'star', 0x5c: 'star',
 	0x58: 'coins', 0x5d: 'coins',     // ladrillo con monedas (hasta 10)
 	0x59: '1up', 0x5e: '1up', [MT.Hidden1Up]: '1up',
 	[MT.HiddenCoin]: 'coin',
@@ -205,6 +249,26 @@ class Game {
 	flagpoleFlag = null;
 	flagpoleInfo = null;
 	pipeTransition = null;
+	timeAcc = 0;
+	hidden1UpFlag = false;
+	levelCoinTally = 0;
+	xSpeed = 0;            // velocidad horizontal: unidades de 1/16 px por cuadro, con 8 bits de fracción
+	movingDir = 1;
+	facingDir = 1;
+	runningTimer = 0;
+	isSkidding = false;
+	blockedDir = 0;
+	physicsSteps = 0;
+	fk = 1;
+	clockMs = 0;
+	starTimer = 0;
+	timeExpired = false;
+	afterTimeUp = null;
+	stompChain = 0;
+	halfwayPage = 0;
+	levelTimeAtFlag = 0;
+	bonusTimer = 0;
+	fireworksLeft = 0;
 	nextWorldOverride = null; // reemplaza al nextWorld del nivel actual (p. ej. al salir del 1-2 por el final del 1-1)
 
 	availableWorlds = [];
@@ -247,6 +311,7 @@ class Game {
 	UNDERGROUND_COLOR = "#000000";
 	UNDERWATER_COLOR = "#5C94FC";
 	CASTLE_COLOR = "#000000";
+	NIGHT_COLOR = "#000000";
 
 	velocityXGround = BASE_VELOCITY_GROUND;
 	velocityXTurbo  = BASE_VELOCITY_TURBO;
@@ -410,6 +475,7 @@ class Game {
 		js2d.defineSpriteFromTileset("Object_Mushroom_Super", sceneryTileset, 0, 6, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Mushroom_1UP", sceneryTileset, 1, 6, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Fire_Flower", sceneryTileset, 0, 7, 4, tileScale);
+		js2d.defineSpriteFromTileset("Object_Star", sceneryTileset, 0, 8, 4, tileScale);
 
 		js2d.createAnimatedSprite("Mushroom_Super", "Object_Mushroom_Super", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
@@ -520,6 +586,7 @@ class Game {
 		js2d.defineSpriteFromTileset("Object_Mushroom_Super", sceneryTileset, 0, 6, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Mushroom_1UP", sceneryTileset, 1, 6, 1, tileScale);
 		js2d.defineSpriteFromTileset("Object_Fire_Flower", sceneryTileset, 0, 7, 4, tileScale);
+		js2d.defineSpriteFromTileset("Object_Star", sceneryTileset, 0, 8, 4, tileScale);
 
 		js2d.createAnimatedSprite("Mushroom_Super", "Object_Mushroom_Super", {x: 0, y: 0}, tileScale);
 		js2d.createAnimatedSprite("Mushroom_1UP", "Object_Mushroom_1UP", {x: 0, y: 0}, tileScale);
@@ -619,9 +686,9 @@ class Game {
 					x: (screenPosX - this.mapOffset.x),
 					y: worldY,
 					initialY: worldY,
-					maxHeight: this.tileSize * 2,
 					state: 'hiding',
-					timer: 120
+					delay: 0,
+					active: false
 				});
 			} else {
 				this.enemies.push({
@@ -630,13 +697,15 @@ class Game {
 					color: e.color ?? null,
 					x: screenPos.x - this.mapOffset.x,
 					y: screenPos.y,
-					vx: -2,
+					dir: -1,
+					vx: -ENEMY_WALK_SPEED * this.tileScale,
 					vy: 0,
 					state: "walking",
 					stompTimer: 0,
 					isWinged: e.type === "Koopa_Winged",
-					canFly: e.type === "Koopa_Winged",
-					flyTimer: 0,
+					kicked: false,
+					shellChain: 0,
+					active: false,
 				});
 			}
 		}
@@ -649,7 +718,7 @@ class Game {
 		if (BLOCK_ITEM[blockId] === 'coins') {
 			// Ladrillo con monedas: parece un ladrillo hasta el primer golpe y queda vacío al agotarse
 			const info = this.specialBlocks[idx];
-			if (info?.coinsLeft === 0) return 'Block_Used';
+			if (info?.exhausted) return 'Block_Used';
 			return info?.revealed ? 'Block_Question' : METATILE_SPRITE[blockId];
 		}
 		return METATILE_SPRITE[blockId] ?? (isSolidMetatile(blockId) ? 'Block_Stairs' : null);
@@ -699,17 +768,20 @@ class Game {
 		this.score = 0;
 		this.coins = 0;
 		this.savedState = null;
+		this.playerSize = Player_Size.Small;
+		this.halfwayPage = 0;
+		this.hidden1UpFlag = true;   // en un juego nuevo aparece el primer 1UP oculto (el del 1-1)
 		this.resetLevelState();
 		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
 	}
 
 	damagePlayer() {
-		if (this.isInvincible) return;
+		if (this.isInvincible || this.starTimer > 0) return;
 
 		if (this.playerSize > Player_Size.Small) {
 			this.playerSize = Player_Size.Small;
 			this.isInvincible = true;
-			this.invincibleTimer = 1500;
+			this.invincibleTimer = INJURY_INVINCIBLE_MS;
 			this.engine.playAudio(audio["Player_Pipe"], false);
 		} else {
 			this.killPlayer();
@@ -720,7 +792,7 @@ class Game {
 		if (this.state === Game_State.Playing) {
 			this.state = Game_State.Player_Dying;
 			this.deathTimer = 0;
-			this.velocityY = -18;
+			this.velocityY = -4 * this.tileScale;
 
 			if (this.score > this.highscore) {
 				this.highscore = this.score;
@@ -749,11 +821,166 @@ class Game {
 
 	handleDeath() {
 		this.lives--;
+		const timeUp = this.timeExpired;
+		this.timeExpired = false;
+		this.rememberHalfway();
+		this.playerSize = Player_Size.Small;
 		if (this.lives > 0) {
 			this.resetLevelState();
-			this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
+			if (timeUp) {
+				this.afterTimeUp = 'start';
+				this.transitionToBlackScreen(Black_Screen_Type.Time_Up, 2500);
+			} else {
+				this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
+			}
+		} else if (timeUp) {
+			this.afterTimeUp = 'gameover';
+			this.transitionToBlackScreen(Black_Screen_Type.Time_Up, 2500);
 		} else {
 			this.transitionToBlackScreen(Black_Screen_Type.Game_Over, 6500);
+		}
+	}
+
+	// Al morir, si la pantalla ya pasó la página del punto de reinicio del nivel, se vuelve a empezar
+	// desde ahí (HalfwayPageNybbles); si no, desde el principio.
+	rememberHalfway() {
+		const main = map.find(m => m.world === this.availableWorlds[this.currentWorldIndex]);
+		if (!main || this.currentMap?.world !== main.world || !main.halfway) return;
+		const page = Math.floor(-this.mapOffset.x / (16 * this.tileSize));
+		this.halfwayPage = main.halfway <= page ? main.halfway : 0;
+	}
+
+	// El contador baja 1 unidad cada 24 cuadros del NES; al llegar a 0 Mario muere
+	updateGameTimer(dt) {
+		this.timeAcc += dt;
+		while (this.timeAcc >= GAME_TIMER_TICK_MS) {
+			this.timeAcc -= GAME_TIMER_TICK_MS;
+			if (this.time > 0 && --this.time === 0 && this.state === Game_State.Playing) {
+				this.timeExpired = true;
+				this.killPlayer();
+			}
+		}
+	}
+
+	// Como en el original, el 1UP oculto sólo se dibuja si la bandera está activa, y sólo el primero del nivel
+	applyHidden1Up() {
+		const w = this.currentMap.dimensions.width, h = this.currentMap.dimensions.height, tiles = this.currentMap.map;
+		let kept = false;
+		for (let x = 0; x < w; x++) {
+			for (let y = 0; y < h; y++) {
+				if (tiles[y * w + x] !== MT.Hidden1Up) continue;
+				if (this.hidden1UpFlag && !kept) { kept = true; this.hidden1UpFlag = false; }
+				else tiles[y * w + x] = 0;
+			}
+		}
+		this.pristineMapData = JSON.parse(JSON.stringify(tiles));
+	}
+
+	// Al terminar el nivel -3 con suficientes monedas, aparece el 1UP oculto del siguiente
+	rewardHidden1Up() {
+		const main = this.availableWorlds[this.currentWorldIndex] ?? '';
+		const [world, level] = main.split('-').map(Number);
+		if (level === 3 && this.levelCoinTally >= HIDDEN_1UP_COINS[world - 1]) this.hidden1UpFlag = true;
+	}
+
+	resetHorizontalMotion() {
+		this.xSpeed = 0;
+		this.movingDir = 1;
+		this.facingDir = 1;
+		this.runningTimer = 0;
+		this.isSkidding = false;
+		this.blockedDir = 0;
+	}
+
+	// Un paso de 1/60 s de la velocidad horizontal de Mario, como en PlayerPhysicsSub del original
+	stepPlayerX(left, right, runButton) {
+		const onGround = this.isOnGround;
+		let dir = right ? 1 : (left ? -1 : 0);               // si se aprietan las dos, gana la derecha
+		let absSpeed = Math.abs(Math.floor(this.xSpeed / 256));
+
+		// Con velocidad baja, apretar el otro lado da media vuelta en el acto; con velocidad alta, derrapa
+		if (onGround && dir !== 0 && dir !== this.movingDir && absSpeed < 0x0b) {
+			this.movingDir = this.facingDir;
+			this.xSpeed = 0;
+			absSpeed = 0;
+		}
+		this.isSkidding = onGround && dir !== 0 && dir !== this.movingDir && absSpeed >= 0x0b;
+		if (onGround && dir !== 0) this.facingDir = dir;
+
+		// El choque con una pared del cuadro anterior anula el sentido en que se empujaba
+		const pushed = (dir !== 0 && dir === this.blockedDir) ? 0 : dir;
+		this.blockedDir = 0;
+
+		if (this.runningTimer > 0) this.runningTimer--;
+
+		// Límite de velocidad y fricción según el estado (X_Physics)
+		let maxIdx = 0, fricIdx = 0;
+		const sameDir = dir !== 0 && dir === this.movingDir;
+		if (!onGround) {
+			if (absSpeed < 0x19) { maxIdx = 1; fricIdx = 1; if (absSpeed >= 0x21) fricIdx = 2; }
+		} else if (sameDir && (runButton || this.runningTimer > 0)) {
+			if (runButton) this.runningTimer = RUNNING_TIMER_STEPS;
+		} else {
+			maxIdx = 1; fricIdx = (absSpeed >= 0x1c || absSpeed >= 0x21) ? 2 : 1;
+		}
+		let friction = X_FRICTION[fricIdx];
+		if (this.facingDir !== this.movingDir) friction *= 2;   // frenar contra el sentido de marcha
+		const maxRight = X_MAX_RIGHT[maxIdx] * 256, maxLeft = X_MAX_LEFT[maxIdx] * 256;
+
+		// En el aire sólo hay fricción si se aprieta una dirección
+		if (!onGround && pushed === 0) { /* conserva la velocidad */ }
+		else if (pushed > 0) {
+			this.xSpeed += friction;
+			if (Math.floor(this.xSpeed / 256) >= X_MAX_RIGHT[maxIdx]) this.xSpeed = maxRight;
+		} else if (pushed < 0) {
+			this.xSpeed -= friction;
+			if (Math.floor(this.xSpeed / 256) < X_MAX_LEFT[maxIdx]) this.xSpeed = maxLeft;
+		} else if (this.xSpeed !== 0) {
+			// Sin teclas, la fricción frena hasta quedar quieto
+			const before = Math.sign(this.xSpeed);
+			this.xSpeed -= before * friction;
+			if (Math.sign(this.xSpeed) !== before) this.xSpeed = 0;
+		}
+		if (this.xSpeed !== 0) this.movingDir = Math.sign(this.xSpeed);
+	}
+
+	// Una vez por cuadro: cuántos pasos de 1/60 s de física hay que correr, igual para Mario, enemigos y objetos
+	stepFrame(dt) {
+		this.clockMs += dt;
+		this.fk = Math.min(dt, 100) / PHYSICS_STEP_MS;
+		this.physicsAccumulator = Math.min(this.physicsAccumulator + dt, PHYSICS_STEP_MS * 5);
+		this.physicsSteps = Math.max(0, Math.floor((this.physicsAccumulator + PHYSICS_STEP_TOLERANCE_MS) / PHYSICS_STEP_MS));
+		this.physicsAccumulator -= this.physicsSteps * PHYSICS_STEP_MS;
+		if (this.starTimer > 0) this.starTimer = Math.max(0, this.starTimer - dt);
+	}
+
+	giveLife() {
+		this.lives++;
+		this.engine.playAudio(audio["Life"], false);
+	}
+
+	addCoin() {
+		this.coins++;
+		this.levelCoinTally++;
+		this.score += 200;
+		if (this.coins >= 100) {
+			this.coins = 0;
+			this.giveLife();
+		}
+	}
+
+	// Puntos de la cadena de pisotones (se reinicia al tocar el suelo). first es el escalón de partida:
+	// 1 al pisar, 3 al patear un caparazón. Devuelve el texto del puntaje.
+	awardChain(first, x, y) {
+		this.stompChain++;
+		const step = Math.min(first - 1 + this.stompChain, SCORE_CHAIN.length - 1);
+		const value = SCORE_CHAIN[step];
+		if (value === 'life') {
+			this.giveLife();
+			this.spawnScorePopup('1UP', x, y);
+		} else {
+			this.score += value;
+			this.spawnScorePopup(String(value), x, y);
 		}
 	}
 
@@ -765,6 +992,13 @@ class Game {
 	}
 	
 	handleBlackScreenEnd() {
+		if (this.screenType === Black_Screen_Type.Time_Up) {
+			const next = this.afterTimeUp;
+			this.afterTimeUp = null;
+			if (next === 'gameover') this.transitionToBlackScreen(Black_Screen_Type.Game_Over, 6500);
+			else this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
+			return;
+		}
 		if (this.screenType === Black_Screen_Type.Game_Over) {
 
 			this.state = Game_State.Title_Menu;
@@ -782,7 +1016,6 @@ class Game {
 
 	resetLevelState() {
 		this.velocityY = 0;
-		this.time = 400;
 		this.specialBlocks = {};
 		this.flagpoleFlag = null;
 		this.maxMapOffsetX = 0;
@@ -795,9 +1028,21 @@ class Game {
 			this.loadMap("1-1");
 		}
 
+		this.time = this.currentMap.time ?? 400;
+		this.timeAcc = 0;
+		this.timeExpired = false;
+		this.stompChain = 0;
+		this.levelCoinTally = 0;
+		this.applyHidden1Up();
+		this.resetHorizontalMotion();
+
+		// Mario arranca a 40 px (2,5 tiles) del borde izquierdo de la pantalla, en el punto de reinicio si lo hay
 		const playerSprite = this.engine.animatedSprites[PlayerName[this.player]];
-		
-		playerSprite.position = {x: this.mapOffset.x + 150, y: 100};
+		if (this.halfwayPage > 0) {
+			this.mapOffset.x = -(this.halfwayPage * 16 * this.tileSize);
+			this.maxMapOffsetX = this.mapOffset.x;
+		}
+		playerSprite.position = {x: 2.5 * this.tileSize, y: 100};
 	}
 
 	resetLevel() {
@@ -820,7 +1065,8 @@ class Game {
 
 		this.currentWorldIndex = nextWorldIndex;
 		this.playerIsVisible = true;
-		
+		this.halfwayPage = 0;
+
 		this.resetLevelState();
 		
 		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
@@ -877,6 +1123,7 @@ class Game {
 		this.isSliding = false;
 		this.slideVelocityX = 0;
 		this.skidTimer = 0;
+		this.resetHorizontalMotion();
 		this.engine.playAudio(audio["Player_Pipe"], false);
 	}
 
@@ -909,6 +1156,15 @@ class Game {
 		if (!map.some(m => m.world === warp.to)) {
 			console.error(`[GAME] El warp apunta a un mapa inexistente: ${warp.to}`);
 			this.finishPipeTransition();
+			return;
+		}
+		if (spawn.start) {
+			// Zona de atajos: se entra al caño y el otro mundo arranca desde el principio
+			this.pipeTransition = null;
+			this.state = Game_State.Playing;
+			this.stopAllMusic();
+			this.hidden1UpFlag = true;
+			this.startNextLevel(warp.to);
 			return;
 		}
 		this.stopAllMusic();
@@ -1005,175 +1261,237 @@ class Game {
 
 	updateEnemies(dt) {
 		const player = this.engine.animatedSprites[PlayerName[this.player]];
+		const ts = this.tileSize, k = this.tileScale;
+		const screenLeft = -this.mapOffset.x;
+		const screenRight = screenLeft + this.engine.getCanvasWidth();
+
 		for (let i = this.enemies.length - 1; i >= 0; i--) {
 			const enemy = this.enemies[i];
-			const enemyScreenX = enemy.x + this.mapOffset.x;
 
+			// Como en el original, los enemigos aparecen al acercarse la pantalla y se van al quedar atrás
+			if (enemy.x + ts < screenLeft - ENEMY_DESPAWN_BEHIND * k) { this.enemies.splice(i, 1); continue; }
+			if (!enemy.active) {
+				if (enemy.x <= screenRight + ENEMY_ACTIVATE_AHEAD * ts) enemy.active = true;
+				else continue;
+			}
 
-			if (enemy.type === 'Pakkun') {
+			let remove = false;
+			for (let s = 0; s < this.physicsSteps; s++) {
+				if (this.stepEnemy(enemy, player) === 'remove') { remove = true; break; }
+			}
+			if (remove || (enemy.state === 'falling' && enemy.y > this.engine.getCanvasHeight())) { this.enemies.splice(i, 1); continue; }
 
-				const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: this.tileSize };
-				const isPlayerNear = Math.abs(playerRect.x - enemyScreenX) < this.tileSize * 1.5;
-				switch (enemy.state) {
-					case 'hiding':
-						enemy.timer++;
-						if (enemy.timer > 120 && !isPlayerNear) { enemy.state = 'rising'; enemy.timer = 0; }
-						break;
-					case 'rising':
-						enemy.y--;
-						if (enemy.y <= enemy.initialY - enemy.maxHeight) { enemy.state = 'showing'; }
-						break;
-					case 'showing':
-						enemy.timer++;
-						if (enemy.timer > 90) { enemy.state = 'sinking'; enemy.timer = 0; }
-						break;
-					case 'sinking':
-						enemy.y++;
-						if (enemy.y >= enemy.initialY) { enemy.state = 'hiding'; }
-						break;
+			this.playerVsEnemy(enemy, player);
+		}
+	}
+
+	// Un paso de 1/60 s de un enemigo
+	stepEnemy(enemy, player) {
+		const ts = this.tileSize, k = this.tileScale, off = this.mapOffset.x;
+		const W = this.currentMap.dimensions.width, tiles = this.currentMap.map;
+		const solidAt = (worldX, screenY) => isSolidMetatile(tiles[this.engine.coordsToIndex(this.screenToTile(worldX + off, screenY), W)]);
+
+		if (enemy.type === 'Pakkun') { this.stepPiranha(enemy, player); return; }
+
+		if (enemy.state === 'stomped') {
+			enemy.stompTimer++;
+			return enemy.stompTimer > STOMPED_GOOMBA_STEPS ? 'remove' : undefined;
+		}
+
+		const isKoopa = enemy.type.includes('Koopa');
+		const height = (isKoopa && enemy.state === 'walking') ? ts * 1.5 : ts;
+		const jumper = !!enemy.isWinged;
+
+		// Velocidad horizontal según el estado: camina, el caparazón pateado corre y el quieto no se mueve
+		const speed = enemy.state === 'shell' ? (enemy.kicked ? ENEMY_SHELL_SPEED : 0) : ENEMY_WALK_SPEED;
+		enemy.vx = enemy.dir * speed * k;
+
+		// Vertical: primero se mueve y después se suma la gravedad, como ImposeGravity
+		enemy.y += enemy.vy;
+		let onGroundLeft = false, onGroundRight = false, grounded = false;
+		if (enemy.state !== 'falling') {
+			const feetY = enemy.y + height;
+			const feetLeft = this.screenToTile(enemy.x + off + 4, feetY);
+			const feetRight = this.screenToTile(enemy.x + off + ts - 4, feetY);
+			onGroundLeft = isSolidMetatile(tiles[this.engine.coordsToIndex(feetLeft, W)]);
+			onGroundRight = isSolidMetatile(tiles[this.engine.coordsToIndex(feetRight, W)]);
+			if (enemy.vy >= 0 && (onGroundLeft || onGroundRight)) {
+				enemy.y = this.tileToScreen(feetLeft.x, feetLeft.y).y - height;
+				enemy.vy = jumper ? ENEMY_JUMP_SPEED * k : 0;
+				grounded = true;
+			}
+		}
+		enemy.vy = Math.min(enemy.vy + (jumper ? JUMPER_GRAVITY : ENEMY_GRAVITY) * k, ENEMY_MAX_FALL * k);
+
+		if (enemy.vx !== 0) {
+			enemy.x += enemy.vx;
+			if (enemy.state !== 'falling') {
+				const wallX = enemy.vx > 0 ? enemy.x + ts : enemy.x;
+				if (solidAt(wallX, enemy.y + height - 4)) {
+					enemy.dir *= -1;
+					if (enemy.state === 'shell') enemy.x += enemy.dir;
+				} else if (enemy.state === 'walking' && grounded && !jumper && enemy.color === 'Red') {
+					// Sólo el Koopa rojo se frena en el borde; el verde se cae de las plataformas
+					if (enemy.dir < 0 && !onGroundLeft) enemy.dir = 1;
+					else if (enemy.dir > 0 && !onGroundRight) enemy.dir = -1;
 				}
-			} else if (enemy.type === 'Goomba' && enemy.state === 'stomped') {
+			}
+		}
 
-				enemy.stompTimer++;
-				if (enemy.stompTimer > 30) { this.enemies.splice(i, 1); continue; }
+		// Un caparazón pateado se lleva puestos a los demás enemigos; cada uno vale más que el anterior
+		if (enemy.state === 'shell' && enemy.kicked) {
+			const rect = { x: enemy.x + off, y: enemy.y, w: ts, h: ts };
+			for (const other of this.enemies) {
+				if (other === enemy || !other.active || other.state === 'falling' || other.state === 'stomped') continue;
+				const oh = (other.type.includes('Koopa') && other.state === 'walking') ? ts * 1.5 : ts;
+				if (this.rectsOverlap(rect, { x: other.x + off, y: other.y, w: ts, h: oh })) {
+					this.defeatEnemy(other, SCORE_CHAIN[Math.min(4 + enemy.shellChain++, SCORE_CHAIN.length - 1)]);
+				}
+			}
+		}
+	}
+
+	// La planta piraña sale y se esconde cada 64 cuadros, y no sale si Mario está cerca
+	stepPiranha(enemy, player) {
+		const k = this.tileScale;
+		if (enemy.delay > 0) { enemy.delay--; return; }
+		switch (enemy.state) {
+			case 'hiding': {
+				const near = Math.abs((player.position.x - this.mapOffset.x) - enemy.x) < PIRANHA_NEAR * k;
+				if (!near) enemy.state = 'rising';
+				break;
+			}
+			case 'rising':
+				enemy.y -= PIRANHA_SPEED * k;
+				if (enemy.y <= enemy.initialY - PIRANHA_RISE * k) {
+					enemy.y = enemy.initialY - PIRANHA_RISE * k;
+					enemy.state = 'showing';
+					enemy.delay = PIRANHA_DELAY_STEPS;
+				}
+				break;
+			case 'showing':
+				enemy.state = 'sinking';
+				break;
+			case 'sinking':
+				enemy.y += PIRANHA_SPEED * k;
+				if (enemy.y >= enemy.initialY) {
+					enemy.y = enemy.initialY;
+					enemy.state = 'hiding';
+					enemy.delay = PIRANHA_DELAY_STEPS;
+				}
+				break;
+		}
+	}
+
+	// El enemigo muere girando hacia abajo (golpe de caparazón, bola de fuego o estrella) y da puntos
+	defeatEnemy(enemy, points) {
+		enemy.state = 'falling';
+		enemy.kicked = false;
+		enemy.vy = ENEMY_JUMP_SPEED * this.tileScale;
+		const sx = enemy.x + this.mapOffset.x;
+		if (points === 'life') {
+			this.giveLife();
+			this.spawnScorePopup('1UP', sx, enemy.y);
+		} else if (points) {
+			this.score += points;
+			this.spawnScorePopup(String(points), sx, enemy.y);
+		}
+		this.engine.playAudioOverlap(audio["Shell"]);
+	}
+
+	// Caja de colisión de Mario contra enemigos y objetos: 10x12 px del NES si es chico o está agachado,
+	// 12x24 si es grande (BoundBoxCtrlData); el resto del sprite no cuenta
+	playerHitbox(player) {
+		const k = this.tileScale;
+		const bigStanding = this.playerSize > Player_Size.Small && !this.wasCrouching;
+		return bigStanding
+			? { x: player.position.x + 2 * k, y: player.position.y + 8 * k, w: 12 * k, h: 24 * k }
+			: { x: player.position.x + 3 * k, y: player.position.y + 4 * k, w: 10 * k, h: 12 * k };
+	}
+
+	enemyScreenRect(enemy) {
+		const h = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+		let y = enemy.y;
+		if (enemy.type === 'Pakkun') {
+			const offsetY = this.currentMap.dimensions.height * this.tileSize - this.engine.getCanvasHeight();
+			y = enemy.y + this.mapOffset.y - offsetY;
+		}
+		return { x: enemy.x + this.mapOffset.x, y, w: this.tileSize, h };
+	}
+
+	// Al golpear o romper un bloque mueren los enemigos que están parados encima (KillEnemyAboveBlock)
+	killEnemiesAbove(tx, ty) {
+		const ts = this.tileSize;
+		const top = this.tileToScreen(tx, ty).y;
+		const left = tx * ts;
+		for (const enemy of this.enemies) {
+			if (!enemy.active || enemy.type === 'Pakkun' || enemy.state === 'falling' || enemy.state === 'stomped') continue;
+			const h = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? ts * 1.5 : ts;
+			const center = enemy.x + ts / 2;
+			if (center > left && center < left + ts && Math.abs(enemy.y + h - top) < ts * 0.3) {
+				this.defeatEnemy(enemy, enemy.type === 'Goomba' ? 100 : 200);
+				enemy.vy = -4 * this.tileScale;
+			}
+		}
+	}
+
+	// Choque de Mario con un enemigo, una vez por cuadro
+	playerVsEnemy(enemy, player) {
+		const enemyScreenX = enemy.x + this.mapOffset.x;
+		const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
+		let enemyScreenY = enemy.y;
+		if (enemy.type === 'Pakkun') {
+			const offsetY = this.currentMap.dimensions.height * this.tileSize - this.engine.getCanvasHeight();
+			// Se pasa de coordenadas de mundo a pantalla
+			enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
+		}
+		const enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
+
+		const playerRect = this.playerHitbox(player);
+
+		if (enemy.state === 'stomped' || enemy.state === 'falling' || !this.rectsOverlap(playerRect, enemyRect)) return;
+
+		// Con la estrella, Mario se lleva puesto a cualquier enemigo
+		if (this.starTimer > 0) {
+			this.defeatEnemy(enemy, enemy.type === 'Goomba' ? 100 : 200);
+			return;
+		}
+
+		if (enemy.state === 'shell' && !enemy.kicked) {
+			// Un caparazón quieto se patea con cualquier contacto, hacia el lado contrario a Mario
+			enemy.dir = (player.position.x < enemyRect.x) ? 1 : -1;
+			enemy.kicked = true;
+			enemy.shellChain = 0;
+			this.awardChain(3, enemyScreenX, enemy.y);
+			return;
+		}
+
+		// Como en el original: cayendo sobre el enemigo se lo pisa; si no, la parte alta de Mario
+		// tiene que estar bastante por encima (12 px del NES)
+		const above = (playerRect.y + 12 * this.tileScale) < enemyRect.y;
+		let isStomping = (!this.isOnGround && this.velocityY > 0) || above;
+		if (enemy.type === 'Pakkun') isStomping = false;
+
+		if (isStomping) {
+			this.velocityY = SMB_STOMP_SPEED * this.tileScale;
+			this.engine.playAudioOverlap(audio["Player_Stomp"]);
+			if (enemy.type === 'Goomba') {
+				enemy.state = 'stomped';
+				this.awardChain(1, enemyScreenX, enemy.y);
 			} else if (enemy.type.includes('Koopa')) {
-
-				if (enemy.state === 'shell') {
-					if (enemy.vx !== 0) {
-						enemy.x += enemy.vx;
-						const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
-						const wallTile = this.screenToTile(wallCheckX, enemy.y);
-						if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)])) {
-							enemy.vx *= -1;
-							enemy.x += enemy.vx > 0 ? 1 : -1;
-						}
-						for (let j = this.enemies.length - 1; j >= 0; j--) {
-							const otherEnemy = this.enemies[j];
-							if (otherEnemy.id === enemy.id) continue;
-							const shellRect = { x: enemy.x + this.mapOffset.x, y: enemy.y, w: this.tileSize, h: this.tileSize };
-							const otherRect = { x: otherEnemy.x + this.mapOffset.x, y: otherEnemy.y, w: this.tileSize, h: this.tileSize };
-							if (this.rectsOverlap(shellRect, otherRect)) {
-								this.score += 400;
-								this.enemies.splice(j, 1);
-							}
-						}
-					}
-				} else if (enemy.isWinged && enemy.canFly) {
-					enemy.flyTimer++;
-					if (enemy.flyTimer > 60 && enemy.vy === 0) { 
-						enemy.vy = -10; 
-						enemy.flyTimer = 0; 
-					}
-				}
-
-				const enemyHeight = (enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
-
-				enemy.vy += this.gravity;
-				enemy.y += enemy.vy;
-
-				const feetY = enemy.y + enemyHeight;
-				const feetLeft = this.screenToTile(enemy.x + this.mapOffset.x + 4, feetY);
-				const feetRight = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize - 4, feetY);
-				const onGroundLeft = isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(feetLeft, this.currentMap.dimensions.width)]);
-				const onGroundRight = isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(feetRight, this.currentMap.dimensions.width)]);
-
-				let isOnSolidGround = false;
-				if (onGroundLeft || onGroundRight) {
-					enemy.y = this.tileToScreen(feetLeft.x, feetLeft.y).y - enemyHeight;
-					enemy.vy = 0;
-					isOnSolidGround = true;
-				}
-
-				if (enemy.state === 'walking') {
-					enemy.x += enemy.vx;
-					const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
-					const wallTile = this.screenToTile(wallCheckX, enemy.y);
-					if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)])) {
-						enemy.vx *= -1;
-					}
-					if (isOnSolidGround && !enemy.isWinged) {
-						if (enemy.vx < 0 && !onGroundLeft) enemy.vx *= -1;
-						else if (enemy.vx > 0 && !onGroundRight) enemy.vx *= -1;
-					}
-				}
-			} else {
-
-				const enemyHeight = this.tileSize;
-				enemy.vy += this.gravity;
-				enemy.y += enemy.vy;
-
-				const feetY = enemy.y + enemyHeight;
-				const feetTile = this.screenToTile(enemy.x + this.mapOffset.x + this.tileSize / 2, feetY);
-				if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(feetTile, this.currentMap.dimensions.width)])) {
-					enemy.vy = 0;
-					enemy.y = this.tileToScreen(feetTile.x, feetTile.y).y - enemyHeight;
-				}
-
-				if (enemy.state === 'walking') {
-					enemy.x += enemy.vx;
-					const wallCheckX = enemy.vx > 0 ? enemy.x + this.mapOffset.x + this.tileSize : enemy.x + this.mapOffset.x;
-					const wallTile = this.screenToTile(wallCheckX, enemy.y);
-					if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)])) {
-						enemy.vx *= -1;
-					}
-				}
-			}
-
-			const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
-
-			let enemyScreenY = enemy.y;
-			if (enemy.type === 'Pakkun') {
-				 const mapHeight = this.currentMap.dimensions.height;
-				 const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
-				 // Aplicamos el offset para convertir coordenadas de mundo a pantalla
-				 enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
-			}
-
-			const enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
-
-			const isBig = this.playerSize > Player_Size.Small;
-			const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
-			const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: playerHeight };
-
-			if (this.rectsOverlap(playerRect, enemyRect)) {
-
-				let isStomping = this.velocityY > 0 && (player.position.y + playerHeight) < (enemyRect.y + enemyHeight / 1.5);
-
-				if (enemy.type === 'Pakkun') {
-					isStomping = false;
-				}
-
-				if (isStomping) {
-					this.velocityY = SMB_STOMP_SPEED * this.tileScale;
-					this.engine.playAudioOverlap(audio["Player_Stomp"]);
-					if (enemy.type === 'Goomba') {
-						enemy.state = 'stomped';
-						this.score += 100;
-					} else if (enemy.type.includes('Koopa')) {
-						if (enemy.isWinged) {
-							enemy.isWinged = false; enemy.type = 'Koopa';
-						} else if (enemy.state === 'walking') {
-							enemy.state = 'shell'; enemy.vx = 0; this.score += 200;
-						} else if (enemy.state === 'shell') {
-							if (enemy.vx !== 0) {
-								enemy.vx = 0; this.score += 500;
-							} else {
-								enemy.vx = (player.position.x < enemyRect.x) ? 8 : -8; this.score += 500;
-							}
-						}
-					}
+				if (enemy.isWinged) {
+					// El paratroopa pasa a Koopa común y da 400 fijos
+					enemy.isWinged = false;
+					this.score += 400;
+					this.spawnScorePopup('400', enemyScreenX, enemy.y);
 				} else {
-					if (enemy.type === 'Pakkun' || (enemy.state === 'walking' && this.velocityY >= 0) || (enemy.state === 'shell' && enemy.vx !== 0)) {
-						this.damagePlayer();
-					} else if (enemy.state === 'shell' && enemy.vx === 0) {
-						enemy.vx = (player.position.x < enemyRect.x) ? 8 : -8;
-					}
+					enemy.state = 'shell';
+					enemy.kicked = false;
+					this.awardChain(1, enemyScreenX, enemy.y);
 				}
 			}
-
-			if (enemy.state === 'falling' && enemy.y > this.engine.getCanvasHeight()) {
-				this.enemies.splice(i, 1);
-			}
+		} else if (enemy.type === 'Pakkun' || enemy.state === 'walking' || (enemy.state === 'shell' && enemy.kicked)) {
+			this.damagePlayer();
 		}
 	}
 
@@ -1182,13 +1500,16 @@ class Game {
 		const pakkunRedAnim = this.engine.animatedSprites['Pakkun_Red'];
 		const biteAnim = pakkunGreenAnim.animations.Pakkun_Bite;
 
-		if (pakkunGreenAnim.frameCounter % biteAnim.frameSpeed === 0) {
+		this.pakkunAnimAcc = (this.pakkunAnimAcc || 0) + this.fk;
+		if (this.pakkunAnimAcc >= biteAnim.frameSpeed) {
+			this.pakkunAnimAcc -= biteAnim.frameSpeed;
 			const nextFrame = (pakkunGreenAnim.currentFrame + 1) % biteAnim.frames.length;
 			pakkunGreenAnim.currentFrame = nextFrame;
 			pakkunRedAnim.currentFrame = nextFrame;
 		}
 
 		for (const enemy of this.enemies) {
+			if (!enemy.active) continue;
 
 			const screenX = enemy.x + this.mapOffset.x;
 
@@ -1229,7 +1550,7 @@ class Game {
 					 const shellSprite = this.engine.animatedSprites[shellSpriteName];
 					 if(shellSprite) {
 						shellSprite.position = { x: screenX, y: enemy.y };
-						this.engine.setAnimationForSprite(shellSpriteName, enemy.vx === 0 ? 'Shell_Idle' : 'Shell_Sliding');
+						this.engine.setAnimationForSprite(shellSpriteName, enemy.kicked ? 'Shell_Sliding' : 'Shell_Idle');
 						this.engine.drawAnimatedSprite(shellSpriteName, this.frameDt, Pivot.Top_Left);
 					 }
 				} else {
@@ -1551,7 +1872,7 @@ class Game {
 	drawBackground() {
 		switch(this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Overworld:
-				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.OVERWORLD_COLOR);
+				this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.currentMap?.night ? this.NIGHT_COLOR : this.OVERWORLD_COLOR);
 
 				const parallaxSpeedClouds = 0.5;
 				const parallaxSpeedHills = 0.8;
@@ -1662,27 +1983,25 @@ class Game {
 	}
 
 	spawnFireball() {
-
-		if (this.fireballCooldown > 0) return;
-
-		this.fireballCooldown = 30;
+		// Como en el original, a lo sumo dos bolas de fuego a la vez
+		if (this.activeFireballs.filter(f => f.state === 'moving').length >= MAX_FIREBALLS) return;
 
 		const fireSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Fire"];
 		if (!fireSprite) return;
 
+		const k = this.tileScale;
+		const dir = fireSprite.flipped ? -1 : 1;
 		const startX = fireSprite.position.x + (fireSprite.flipped ? -this.tileSize / 2 : this.tileSize);
 		const startY = fireSprite.position.y + this.tileSize / 2;
 
-		const fireball = {
+		this.activeFireballs.push({
 			x: startX - this.mapOffset.x,
 			y: startY,
-			vx: 10 * (fireSprite.flipped ? -1 : 1),
-			vy: 0,
+			vx: dir * FIREBALL_SPEED * k,
+			vy: FIREBALL_MAX_FALL * k,
 			state: 'moving',
 			animTimer: 0
-		};
-
-		this.activeFireballs.push(fireball);
+		});
 		this.engine.playAudioOverlap(audio["Player_Fireball"]);
 
 		this.isThrowing = true;
@@ -1692,6 +2011,7 @@ class Game {
 	updateAndDrawFireballs() {
 		for (let i = this.activeFireballs.length - 1; i >= 0; i--) {
 			const fb = this.activeFireballs[i];
+			const k = this.tileScale, half = 4 * k;
 			const screenPos = { x: fb.x + this.mapOffset.x, y: fb.y };
 
 			if (fb.state === 'exploding') {
@@ -1722,61 +2042,48 @@ class Game {
 				continue;
 			}
 
-			fb.vy += this.gravity * 0.8;
-			fb.x += fb.vx;
-			fb.y += fb.vy;
+			// Física en pasos de 1/60 s: gravedad, rebote en el suelo, choque con paredes y enemigos
+			const W = this.currentMap.dimensions.width, tiles = this.currentMap.map;
+			for (let step = 0; step < this.physicsSteps && fb.state === 'moving'; step++) {
+				fb.y += fb.vy;
+				fb.vy = Math.min(fb.vy + FIREBALL_GRAVITY * k, FIREBALL_MAX_FALL * k);
+				fb.x += fb.vx;
+				const sx = fb.x + this.mapOffset.x;
 
-			const groundTile = this.screenToTile(screenPos.x, fb.y + SPRITE_SIZE / 2);
-			if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width)])) {
-				fb.y = this.tileToScreen(groundTile.x, groundTile.y).y - SPRITE_SIZE / 2;
-				fb.vy = -8;
-			}
+				const groundTile = this.screenToTile(sx, fb.y + half);
+				if (fb.vy > 0 && isSolidMetatile(tiles[this.engine.coordsToIndex(groundTile, W)])) {
+					fb.y = this.tileToScreen(groundTile.x, groundTile.y).y - half;
+					fb.vy = FIREBALL_BOUNCE * k;
+				}
 
-			const wallTile = this.screenToTile(screenPos.x + (fb.vx > 0 ? SPRITE_SIZE : 0), fb.y);
-			if (isSolidMetatile(this.currentMap.map[this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width)]) || screenPos.x < 0 || screenPos.x > this.engine.getCanvasWidth()) {
-				fb.state = 'exploding';
-				this.engine.playAudioOverlap(audio["Player_Bump"]);
-				continue;
-			}
-
-			for (let j = this.enemies.length - 1; j >= 0; j--) {
-				const enemy = this.enemies[j];
-				if (enemy.state === 'stomped' || enemy.state === 'shell') continue;
-				
-				const enemyScreenX = enemy.x + this.mapOffset.x;
-    			const enemyHeight = (enemy.type.includes('Koopa') && enemy.state === 'walking') ? this.tileSize * 1.5 : this.tileSize;
-    			let enemyScreenY = enemy.y;
-    
-			    if (enemy.type === 'Pakkun') {
-			        const mapHeight = this.currentMap.dimensions.height;
-			        const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
-			        // Convertir coordenada de mundo a pantalla
-			        enemyScreenY = enemy.y + this.mapOffset.y - offsetY;
-			    }
-
-				const enemyRect = { x: enemyScreenX, y: enemyScreenY, w: this.tileSize, h: enemyHeight };
-				const fbRect = { x: screenPos.x, y: screenPos.y, w: SPRITE_SIZE, h: SPRITE_SIZE };
-
-				if (this.rectsOverlap(fbRect, enemyRect)) {
-					this.score += 200;
-					this.spawnScorePopup("200", enemyScreenX, enemy.y);
-					this.enemies.splice(j, 1);
+				const wallTile = this.screenToTile(sx + (fb.vx > 0 ? half : -half), fb.y);
+				if (isSolidMetatile(tiles[this.engine.coordsToIndex(wallTile, W)]) || sx < 0 || sx > this.engine.getCanvasWidth()) {
 					fb.state = 'exploding';
 					this.engine.playAudioOverlap(audio["Player_Bump"]);
-					break; 
+					break;
+				}
+
+				const fbRect = { x: sx - half, y: fb.y - half, w: 2 * half, h: 2 * half };
+				for (const enemy of this.enemies) {
+					if (!enemy.active || enemy.state === 'stomped' || enemy.state === 'shell' || enemy.state === 'falling') continue;
+					if (this.rectsOverlap(fbRect, this.enemyScreenRect(enemy))) {
+						this.defeatEnemy(enemy, enemy.type === 'Goomba' ? 100 : 200);
+						fb.state = 'exploding';
+						break;
+					}
 				}
 			}
 
 			if (fb.state === 'moving') {
 
 				const moveSprite = this.engine.animatedSprites["Fireball_Hit"];
-				moveSprite.position = screenPos;
+				moveSprite.position = { x: fb.x + this.mapOffset.x, y: fb.y };
 				
 				this.engine.drawAnimatedSprite("Fireball_Hit", this.frameDt, Pivot.Center);
 			}
 		}
 	}
-	
+
 	spawnCoin(x, y) {
 		const coin = {
 			x: (x - this.mapOffset.x) + (this.tileSize / 4),
@@ -1794,9 +2101,10 @@ class Game {
 		for (let i = this.activeCoins.length - 1; i >= 0; i--) {
 			const coin = this.activeCoins[i];
 
-			coin.y += coin.vY;
-			coin.vY += 0.8;
-			coin.timer++;
+			const kk = this.tileScale / SPRITE_SCALE;
+			coin.y += coin.vY * kk * this.fk;
+			coin.vY += 0.8 * kk * this.fk;
+			coin.timer += this.fk;
 
 			if (coin.timer > 30) {
 				this.activeCoins.splice(i, 1);
@@ -1805,8 +2113,9 @@ class Game {
 
 		const coinSprite = this.engine.animatedSprites["Coin"];
 		const coinAnim = coinSprite.animations["Coin_Shine"];
-		coinSprite.frameCounter = (coinSprite.frameCounter || 0) + 1;
-		if (coinSprite.frameCounter % coinAnim.frameSpeed === 0) {
+		this.coinAnimAcc = (this.coinAnimAcc || 0) + this.fk;
+		if (this.coinAnimAcc >= coinAnim.frameSpeed) {
+			this.coinAnimAcc -= coinAnim.frameSpeed;
 			coinSprite.currentFrame = (coinSprite.currentFrame + 1) % coinAnim.frames.length;
 		}
 	}
@@ -1835,14 +2144,14 @@ class Game {
 	drawBumpingBlocksOverlay() {
 		for (let i = this.bumpingBlocks.length - 1; i >= 0; i--) {
 			const block = this.bumpingBlocks[i];
-			block.y += block.vY;
-			block.vY += this.gravity * 1.5;
+			block.y += block.vY * this.fk;
+			block.vY += this.gravity * 1.5 * this.fk;
 			if (block.y >= block.originalY) {
 				// Al terminar el golpe, el bloque que entregó su contenido queda vacío
 				let finalId = block.originalId;
 				const item = BLOCK_ITEM[block.originalId];
 				if (item === 'coins') {
-					if (this.specialBlocks[block.mapIndex]?.coinsLeft === 0) finalId = MT.Used;
+					if (this.specialBlocks[block.mapIndex]?.exhausted) finalId = MT.Used;
 				} else if (item) {
 					finalId = MT.Used;
 				}
@@ -1887,10 +2196,11 @@ class Game {
 		for (let i = this.brickParticles.length - 1; i >= 0; i--) {
 			const p = this.brickParticles[i];
 
-			p.vy += this.gravity * 1.5;
-			p.x += p.vx;
-			p.y += p.vy;
-			p.lifespan--;
+			const kk = this.tileScale / SPRITE_SCALE;
+			p.vy += this.gravity * 1.5 * this.fk;
+			p.x += p.vx * kk * this.fk;
+			p.y += p.vy * this.fk;
+			p.lifespan -= this.fk;
 
 			const particleSize = this.tileSize / 4;
 			this.engine.drawRectangle(
@@ -1935,7 +2245,7 @@ class Game {
 			const oldPlayerHeight = isBig ? (this.wasCrouching ? this.tileSize : this.tileSize * 2) : this.tileSize;
 
 			if (isBig) {
-				const isPressingCrouchKey = this.engine.keysPressed['KeyS'];
+				const isPressingCrouchKey = this.engine.keysPressed['KeyS'] || this.engine.keysPressed['ArrowDown'];
 				const checkPos = { x: playerPos.x + this.tileSize / 2, y: playerPos.y - 1 };
 				const tileAbove = this.screenToTile(checkPos.x, checkPos.y);
 				const mapIndex = this.engine.coordsToIndex(tileAbove, this.currentMap.dimensions.width);
@@ -1966,15 +2276,13 @@ class Game {
 			if (this.state === Game_State.Player_Dying) {
 
 				this.deathTimer += dt;
-				const deathAnimDuration = 400;
-				const maxScaleMultiplier = 1.5;
-				const progress = Math.min(1, this.deathTimer / deathAnimDuration);
-				const newScale = this.tileScale + (this.tileScale * (maxScaleMultiplier - 1) * progress);
-				const newWidth = SPRITE_SIZE * newScale;
-				const offset = (newWidth - this.tileSize) / 2;
-				const drawPos = { x: playerPos.x - offset, y: playerPos.y - offset };
-				this.velocityY += this.gravity * 60 * dt_sec;
-				playerPos.y += this.velocityY * 60 * dt_sec;
+				// Mario se queda quieto unos 15 cuadros y después sube y cae (PlayerKilled)
+				if (this.deathTimer > DEATH_PAUSE_MS) {
+					this.velocityY = Math.min(this.velocityY + DEATH_GRAVITY * this.tileScale * this.fk, ENEMY_MAX_FALL * 2 * this.tileScale);
+					playerPos.y += this.velocityY * this.fk;
+				}
+				const drawPos = { x: playerPos.x, y: playerPos.y };
+				const newScale = this.tileScale;
 				if (playerPos.y > this.engine.getCanvasHeight() + this.tileSize) {
 					this.handleDeath();
 				}
@@ -1986,10 +2294,8 @@ class Game {
 			const mapWidth = this.currentMap.dimensions.width;
 			const inBounds = (x, y) => x >= 0 && x < mapWidth;
 			
-			// Física vertical en pasos fijos de 1/60 s, igual que el original, sin importar los Hz de la pantalla.
-			this.physicsAccumulator = Math.min(this.physicsAccumulator + dt, PHYSICS_STEP_MS * 5);
-			const physicsSteps = Math.max(0, Math.floor((this.physicsAccumulator + PHYSICS_STEP_TOLERANCE_MS) / PHYSICS_STEP_MS));
-			this.physicsAccumulator -= physicsSteps * PHYSICS_STEP_MS;
+			// Física vertical en pasos fijos de 1/60 s (ver stepFrame), igual que el original, sin importar los Hz de la pantalla.
+			const physicsSteps = this.physicsSteps;
 
 			for (let physicsStep = 0; physicsStep < physicsSteps; physicsStep++) {
 			const newY = playerPos.y + this.velocityY;
@@ -2013,8 +2319,7 @@ class Game {
 							if (isCoinMetatile(this.currentMap.map[idxAbove])) { // moneda sobre el ladrillo
 								this.currentMap.map[idxAbove] = 0;
 
-								this.coins++;
-								this.score += 200;
+								this.addCoin();
 
 								this.spawnCoin(blockX, blockY - this.tileSize); 
 								this.engine.playAudioOverlap(audio["Coin"]);
@@ -2036,26 +2341,32 @@ class Game {
 							let blockSoundPlayed = false;
 
 							const item = BLOCK_ITEM[blockId];
+							let coinGivenNow = false;
 							if (item === 'coins') {
-								if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { coinsLeft: 10, revealed: false }; }
-								// Revelar el bloque en la primera activación
-								this.specialBlocks[idx].revealed = true;
-								if (this.specialBlocks[idx].coinsLeft > 0) {
-									this.specialBlocks[idx].coinsLeft--; this.coins++; this.spawnCoin(blockX, blockY);
-									this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
+								// Da una moneda por golpe durante unos 3,8 s desde el primero (BrickCoinTimer)
+								if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { revealed: false, expiresAt: this.clockMs + BRICK_COIN_TIMER_MS }; }
+								const info = this.specialBlocks[idx];
+								info.revealed = true;
+								if (!info.exhausted) {
+									this.addCoin(); this.spawnCoin(blockX, blockY);
+									this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true; coinGivenNow = true;
+									if (this.clockMs >= info.expiresAt) info.exhausted = true;
 								}
 							} else if (item === 'coin') {
+								this.addCoin();
 								this.spawnCoin(blockX, blockY);
 								this.engine.playAudioOverlap(audio["Coin"]); blockSoundPlayed = true;
 							} else if (item === 'powerup') {
 								const powerupType = isBig ? Powerup_Type.Fire_Flower : Powerup_Type.Mushroom_Super;
 								this.spawnPowerup(blockX, blockY, powerupType);
+							} else if (item === 'star') {
+								this.spawnPowerup(blockX, blockY, Powerup_Type.Invincible);
 							} else if (item === '1up') {
 								this.spawnPowerup(blockX, blockY, Powerup_Type.Mushroom_1UP);
 							}
 
 							const isAlreadyBumping = this.bumpingBlocks.some(b => b.mapIndex === idx);
-							const justExhausted = (BLOCK_ITEM[blockId] === 'coins' && this.specialBlocks[idx]?.coinsLeft === 0);
+							const justExhausted = (BLOCK_ITEM[blockId] === 'coins' && this.specialBlocks[idx]?.exhausted && !coinGivenNow);
 
 							if (!isAlreadyBumping && !justExhausted) {
 								this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId });
@@ -2068,6 +2379,7 @@ class Game {
 							}
 						}
 
+						this.killEnemiesAbove(headCenterTile.x, headCenterTile.y);
 						this.velocityY = ceilingSpeed * this.tileScale; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y; hitCeiling = true;
 					}
 				}
@@ -2084,7 +2396,7 @@ class Game {
 						this.handleCoinCollision(idx);
 						if (isSolid(this.currentMap.map[idx])) {
 							playerPos.y = this.tileToScreen(tx, bottomLeft.y).y - playerHeight;
-							this.isOnGround = true; this.velocityY = 0; foundGround = true; break;
+							this.isOnGround = true; this.velocityY = 0; this.stompChain = 0; foundGround = true; break;
 						}
 					}
 				}
@@ -2104,128 +2416,102 @@ class Game {
 			if (this.throwTimer > 0) this.throwTimer--; else this.isThrowing = false;
 
 			const isShooting = this.engine.keysPressed['ControlLeft'] || this.engine.keysPressed['ControlRight'] || this.engine.keysPressed['Space'];
-			if (isShooting && this.playerSize === Player_Size.Fire && !this.isThrowing) {
+			if (isShooting && this.playerSize === Player_Size.Fire) {
 				this.spawnFireball();
 
 				this.engine.keysPressed['ControlLeft'] = false;
 				this.engine.keysPressed['ControlRight'] = false;
 			}
 
-			if (this.skidTimer > 0) this.skidTimer--;
-				const isTurbo = this.engine.keysPressed['ShiftLeft'] || this.engine.keysPressed['ShiftRight'];
-				const isTryingToMoveLeft = this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA'];
-				const isTryingToMoveRight = this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD'];
-				const isMoving = isTryingToMoveLeft || isTryingToMoveRight;
-				const changedDirection = (isTryingToMoveLeft && !player.flipped) || (isTryingToMoveRight && player.flipped);
-				
-				if (this.isOnGround && isMoving && changedDirection && this.wasMovingTurbo) { 
-					this.skidTimer = 10;
-					this.engine.playAudioOverlap(audio["Player_Skid"]); 
-				}
-				this.wasMovingTurbo = isMoving && isTurbo;
+			const keys = this.engine.keysPressed;
+			const isTurbo = keys['ShiftLeft'] || keys['ShiftRight'];
+			let isTryingToMoveLeft = !!(keys['ArrowLeft'] || keys['KeyA']);
+			let isTryingToMoveRight = !!(keys['ArrowRight'] || keys['KeyD']);
+			// Apretar abajo en el suelo anula izquierda y derecha: agachado, Mario sólo se frena solo
+			if ((keys['KeyS'] || keys['ArrowDown']) && this.isOnGround) { isTryingToMoveLeft = isTryingToMoveRight = false; }
 
-				if (isBig && isCrouching && isMoving && this.isOnGround && !this.isSliding) {
-				this.isSliding = true;
-				// Usamos la velocidad turbo como base para un deslizamiento más satisfactorio
-				const initialSpeed = this.velocityXTurbo * dt_sec; 
-				this.slideVelocityX = player.flipped ? -initialSpeed : initialSpeed;
-				this.engine.playAudioOverlap(audio["Player_Skid"]);
+			const wasSkidding = this.isSkidding;
+			let dx = 0;
+			for (let st = 0; st < physicsSteps; st++) {
+				this.stepPlayerX(isTryingToMoveLeft, isTryingToMoveRight, isTurbo);
+				dx += (this.xSpeed / 4096) * this.tileScale;
 			}
-
-			// 2. Lógica de físicas MIENTRAS se está deslizando
-			if (this.isSliding) {
-				// Aplicar fricción para frenar
-				this.slideVelocityX *= 0.96; 
-				const newX = playerPos.x + this.slideVelocityX;
-
-				// Comprobar colisión con paredes
-				const checkTileX = this.slideVelocityX > 0 ? newX + this.tileSize - 4 : newX + 4;
-				const wallTile = this.screenToTile(checkTileX, playerPos.y + playerHeight / 2);
-				if (inBounds(wallTile.x, wallTile.y) && isSolid(this.currentMap.map[this.engine.coordsToIndex(wallTile, mapWidth)])) {
-					this.slideVelocityX = 0; // Detenerse en seco si choca
-				} else {
-					// Mover al jugador (replicando la lógica de la cámara)
-					if (this.slideVelocityX > 0) { // Deslizando a la derecha
-						if (playerPos.x < (this.engine.getCanvasWidth() / 2)) playerPos.x = newX;
-						else { this.mapOffset.x -= this.slideVelocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); }
-					} else { // Deslizando a la izquierda
-						// Solo bloquear si intenta salir del borde izquierdo de la pantalla
-						if (newX >= 0) playerPos.x = newX;
-					}
-				}
-				
-				// Condiciones para DETENER el deslizamiento
-				const ceilingCheckPos = { x: playerPos.x + this.tileSize / 2, y: playerPos.y - 1 };
-				const tileAbove = this.screenToTile(ceilingCheckPos.x, ceilingCheckPos.y);
-				const isBlockedByCeiling = isSolid(this.currentMap.map[this.engine.coordsToIndex(tileAbove, mapWidth)]);
-				
-				// Se detiene si la velocidad es muy baja, si deja de estar en el suelo, o si suelta la tecla y no hay un techo
-				if (Math.abs(this.slideVelocityX) < 1 || !this.isOnGround || (!isCrouching && !isBlockedByCeiling)) {
-					this.isSliding = false;
-					this.slideVelocityX = 0;
-				}
-			}
+			if (this.isSkidding && !wasSkidding) this.engine.playAudioOverlap(audio["Player_Skid"]);
+			player.flipped = this.facingDir < 0;
+			const isMoving = this.xSpeed !== 0;
 
 			const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 			if (isCrouching) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Crouch`);
 			else if (this.isThrowing) { this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Shoot`); } 
 			else if (this.velocityY < 0 && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Jump`);
 			else if (this.velocityY > this.gravity && !this.isOnGround) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Fall`);
-			else if (this.skidTimer > 0) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Stop`);
+			else if (this.isSkidding) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Stop`);
 			else if (isMoving) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Run`);
 			else this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_Idle`);
-			const velocityX = (isTurbo ? this.velocityXTurbo : this.velocityXGround) * dt_sec;
-			if (!isCrouching) {
-				if (isTryingToMoveLeft) {
-					player.flipped = true;
-					const newX = playerPos.x - velocityX;
-					const leftTop = this.screenToTile(newX + 4, playerPos.y);
-					const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
-					let blocked = false;
-					for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
-						if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
-							blocked = true; break;
-						}
+
+			// Se aplica el desplazamiento con colisiones; chocar con una pared anula la velocidad
+			const cw = this.engine.getCanvasWidth();
+			if (dx < 0) {
+				const newX = playerPos.x + dx;
+				const leftTop = this.screenToTile(newX + 4, playerPos.y);
+				const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
+				let blocked = false;
+				for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
+					if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
+						blocked = true; break;
 					}
-					// Solo bloquear si intenta salir del borde izquierdo de la pantalla
-					if (!blocked && newX >= 0) playerPos.x = newX;
-				} else if (isTryingToMoveRight) {
-					player.flipped = false;
-					const newX = playerPos.x + velocityX;
-					const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
-					const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
-					let blocked = false;
-					for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
-						const tileCoords = { x: rightTop.x, y: ty };
-						const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
-						const blockId = this.currentMap.map[mapIndex];
-						this.handleCoinCollision(mapIndex);
-						if (blockId === MT.Flagpole) {
-							const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
-							playerPos.x = poleCoords.x - this.tileSize / 2;
-							let groundYTile = ty;
-							while (this.currentMap.map[this.engine.coordsToIndex({x: tileCoords.x, y: groundYTile + 1}, mapWidth)] === MT.Flagpole) {
-								groundYTile++;
-							}
-							const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize;
-							this.flagpoleInfo = { topY: poleCoords.y, groundY: finalLandingY, castleDoorX: poleCoords.x + this.tileSize * 5 };
-							this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y };
-							this.state = Game_State.Level_Complete; this.levelCompleteState = 'none'; 
-							return;
+				}
+				// No se puede salir por el borde izquierdo de la pantalla
+				if (blocked || newX < 0) { this.xSpeed = 0; this.blockedDir = -1; if (!blocked) playerPos.x = Math.max(0, playerPos.x); }
+				else playerPos.x = newX;
+			} else if (dx > 0) {
+				const newX = playerPos.x + dx;
+				const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
+				const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
+				let blocked = false;
+				for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
+					const tileCoords = { x: rightTop.x, y: ty };
+					const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
+					const blockId = this.currentMap.map[mapIndex];
+					this.handleCoinCollision(mapIndex);
+					if (blockId === MT.Flagpole) {
+						const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
+						playerPos.x = poleCoords.x - this.tileSize / 2;
+						let groundYTile = ty;
+						while (this.currentMap.map[this.engine.coordsToIndex({x: tileCoords.x, y: groundYTile + 1}, mapWidth)] === MT.Flagpole) {
+							groundYTile++;
 						}
-						if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
-							blocked = true;
-							break;
-						}
+						const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize;
+						this.flagpoleInfo = { topY: poleCoords.y, groundY: finalLandingY, castleDoorX: poleCoords.x + this.tileSize * 5 };
+						this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y };
+						this.state = Game_State.Level_Complete; this.levelCompleteState = 'none'; 
+						this.xSpeed = 0;
+						return;
 					}
-					if (!blocked) { if (playerPos.x < (this.engine.getCanvasWidth() / 2)) playerPos.x = newX; else { this.mapOffset.x -= velocityX; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); } }
+					if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
+						blocked = true;
+						break;
+					}
+				}
+				if (blocked) { this.xSpeed = 0; this.blockedDir = 1; }
+				else {
+					// La pantalla empieza a seguir a Mario a los 80 px de 256 (un poco menos de lo que avanza) y
+					// del todo a los 112 px; acá se usa la misma proporción del ancho de la ventana
+					const k = this.tileScale;
+					let scroll = 0;
+					if (playerPos.x >= cw * (80 / 256)) {
+						scroll = dx;
+						if (playerPos.x < cw * (112 / 256) && dx >= 2 * k) scroll = dx - k;
+					}
+					playerPos.x += dx - scroll;
+					if (scroll > 0) { this.mapOffset.x -= scroll; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); }
 				}
 			}
 			// Como en el original, el salto solo se dispara al apretar: mantener apretado no repite.
 			const jumpDown = !!(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']);
 			if (jumpDown && !this.jumpHeld && this.isOnGround) {
-				const walking = !isCrouching && !!(isTryingToMoveLeft || isTryingToMoveRight);
-				const jump = walking ? (isTurbo ? SMB_JUMP.running : SMB_JUMP.walking) : SMB_JUMP.standing;
+				const absSpeed = Math.abs(Math.floor(this.xSpeed / 256));
+				const jump = JUMP_BY_SPEED[absSpeed >= 28 ? 4 : absSpeed >= 25 ? 3 : absSpeed >= 16 ? 2 : absSpeed >= 9 ? 1 : 0];
 				this.velocityY = -jump.speed * this.tileScale;
 				this.jumpForceUp = jump.up;
 				this.jumpForceDown = jump.down;
@@ -2236,7 +2522,7 @@ class Game {
 			this.jumpHeld = jumpDown;
 			
 			// Caños que llevan a otro nivel (abajo sobre la boca, o derecha contra la boca lateral)
-			if (this.state === Game_State.Playing && !this.isSliding) {
+			if (this.state === Game_State.Playing) {
 				const warp = this.findPipeWarp(playerPos, playerHeight);
 				if (warp) this.startPipeTransition(warp, playerHeight);
 			}
@@ -2266,7 +2552,13 @@ class Game {
 				player.position.y -= this.tileSize;
 			}
 
+			// Con la estrella Mario cambia de colores rápidamente
+			if (this.starTimer > 0) {
+				this.engine.ctx.save();
+				this.engine.ctx.filter = `hue-rotate(${Math.floor(this.clockMs / 50) % 6 * 60}deg) saturate(2)`;
+			}
 			this.engine.drawAnimatedSprite(currentSpriteName, this.frameDt, Pivot.Top_Left);
+			if (this.starTimer > 0) this.engine.ctx.restore();
 
 			player.position.y = originalY;
 
@@ -2281,8 +2573,8 @@ class Game {
 		for (let i = this.scorePopups.length - 1; i >= 0; i--) {
 			const popup = this.scorePopups[i];
 
-			popup.y -= 0.5;
-			popup.timer--;
+			popup.y -= 0.5 * (this.tileScale / SPRITE_SCALE) * this.fk;
+			popup.timer -= this.fk;
 			this.engine.drawTextCustom(font, popup.text, TEXT_SIZE, Color.WHITE, {x: popup.x, y: popup.y}, "center");
 			if (popup.timer <= 0) {
 				this.scorePopups.splice(i, 1);
@@ -2310,7 +2602,7 @@ class Game {
 		const player = this.engine.animatedSprites[currentSpriteName];
 
                 const playerPos = player.position;
-                const slideSpeed = 5;
+                const slideSpeed = 1 * this.tileScale * this.fk;   // baja 1 px por cuadro, como en el original
                 const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
 
                 switch(this.levelCompleteState) {
@@ -2318,24 +2610,13 @@ class Game {
                         this.stopAllMusic();
                         this.engine.playAudio(audio["Flagpole"], false);
 
-                        const poleHeight = this.flagpoleInfo.groundY - this.flagpoleInfo.topY + playerHeight;
-                        const playerHeightOnPole = this.flagpoleInfo.groundY - playerPos.y + playerHeight;
-                        
-                        const heightPercentage = Math.max(0, Math.min(1, playerHeightOnPole / poleHeight));
-
-				let points = 100;
-
-				if (heightPercentage >= 0.95) {
-					points = 5000;
-				} else if (heightPercentage >= 0.80) {
-					points = 2000;
-				} else if (heightPercentage >= 0.50) {
-					points = 800;
-				} else if (heightPercentage >= 0.25) {
-					points = 400;
-				} else {
-					points = 100;
-				}
+                        // Premio según la altura (en píxeles del NES) a la que Mario tocó el mástil
+                        const offsetY = this.currentMap.dimensions.height * this.tileSize - this.engine.getCanvasHeight();
+                        const nesY = ((playerPos.y - this.mapOffset.y + offsetY) / this.tileSize) * 16;
+                        let flagZone = 0;
+                        for (let z = 4; z >= 1; z--) { if (nesY >= FLAGPOLE_Y_DATA[z]) { flagZone = z; break; } }
+                        const points = FLAGPOLE_SCORES[flagZone];
+                        this.levelTimeAtFlag = this.time;
 
 				this.score += points;
 				this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
@@ -2367,10 +2648,39 @@ class Game {
 				break;
 
 			case 'walking_to_castle':
-				playerPos.x += 2;
-				if (playerPos.x >= this.flagpoleInfo.castleDoorX && this.levelCompleteState !== 'finished') {
+				playerPos.x += 1.5 * this.tileScale * this.fk;   // camina a 1,5 px por cuadro
+				if (playerPos.x >= this.flagpoleInfo.castleDoorX) {
 					this.playerIsVisible = false;
+					this.levelCompleteState = 'time_bonus';
+					this.bonusTimer = 0;
+				}
+				break;
+
+			case 'time_bonus': {
+				// 50 puntos por cada unidad de tiempo que sobra, una por cuadro del NES
+				if (this.time > 0) {
+					const n = Math.min(this.time, Math.max(1, Math.round(dt / (1000 / NES_FPS))));
+					this.time -= n;
+					this.score += 50 * n;
+				} else {
+					// Fuegos artificiales si la última cifra del tiempo con que se llegó es 1, 3 o 6
+					const digit = this.levelTimeAtFlag % 10;
+					this.fireworksLeft = (digit === 1 || digit === 3 || digit === 6) ? digit : 0;
+					this.levelCompleteState = 'fireworks';
+					this.bonusTimer = 0;
+				}
+				break;
+			}
+
+			case 'fireworks':
+				this.bonusTimer += dt;
+				if (this.fireworksLeft > 0 && this.bonusTimer > 400) {
+					this.fireworksLeft--;
+					this.score += 500;
+					this.bonusTimer = 0;
+				} else if (this.fireworksLeft === 0 && this.bonusTimer > 800) {
 					this.levelCompleteState = 'finished';
+					this.rewardHidden1Up();
 					const nextWorldName = this.nextWorldOverride || this.currentMap.nextWorld;
 					this.nextWorldOverride = null;
 					if (nextWorldName) {
@@ -2436,7 +2746,7 @@ class Game {
 		let powerup = {
 			x: x - this.mapOffset.x,
 			y: y,
-			vx: (type === Powerup_Type.Mushroom_Super || type === Powerup_Type.Mushroom_1UP) ? 2.5 : 0,
+			dir: 1,
 			vy: 0,
 			type: type,
 			state: "emerging",
@@ -2454,8 +2764,7 @@ class Game {
 	handleCoinCollision = (idx) => {
 		if (isCoinMetatile(this.currentMap.map[idx])) {
 			this.currentMap.map[idx] = 0;
-			this.coins++;
-			this.score += 200;
+			this.addCoin();
 			this.engine.playAudioOverlap(audio["Coin"]);
 			return true;
 		}
@@ -2463,62 +2772,52 @@ class Game {
 	};
 
 	updatePowerups() {
-		const isSolid = isSolidMetatile;
-		
+		const k = this.tileScale, ts = this.tileSize, W = this.currentMap.dimensions.width, tiles = this.currentMap.map;
+
 		for (let i = this.activePowerups.length - 1; i >= 0; i--) {
 			const p = this.activePowerups[i];
 
-			if (p.state === "emerging") {
-				p.y -= 1;
-				p.emergeCounter--;
-				if (p.emergeCounter <= 0) {
-					p.state = "moving";
-				}
-			} 
+			for (let step = 0; step < this.physicsSteps; step++) {
+				if (p.state === "emerging") {
+					// Sube un píxel del NES cada 4 cuadros
+					p.y -= 0.25 * k;
+					p.emergeCounter -= 0.25 * k;
+					if (p.emergeCounter <= 0) p.state = "moving";
+				} else if (p.type !== Powerup_Type.Fire_Flower) {
+					// Hongos y estrella: caminan a 1 px por cuadro; la estrella además rebota
+					const star = p.type === Powerup_Type.Invincible;
+					p.y += p.vy;
+					const groundTile = this.screenToTile(p.x + ts / 2 + this.mapOffset.x, p.y + ts);
+					const onGround = isSolidMetatile(tiles[this.engine.coordsToIndex(groundTile, W)]);
+					if (p.vy >= 0 && onGround) {
+						p.y = this.tileToScreen(groundTile.x, groundTile.y).y - ts;
+						p.vy = star ? ENEMY_JUMP_SPEED * k : 0;
+					}
+					p.vy = Math.min(p.vy + (star ? JUMPER_GRAVITY : ENEMY_GRAVITY) * k, ENEMY_MAX_FALL * k);
 
-			else if (p.type === Powerup_Type.Mushroom_Super || p.type === Powerup_Type.Mushroom_1UP) {
-
-				p.vy += this.gravity;
-				p.y += p.vy;
-
-				const groundScreenX = (p.x + this.tileSize / 2) + this.mapOffset.x;
-				const groundTile = this.screenToTile(groundScreenX, p.y + this.tileSize);
-				const groundIndex = this.engine.coordsToIndex(groundTile, this.currentMap.dimensions.width);
-
-				if (isSolid(this.currentMap.map[groundIndex])) {
-					p.y = this.tileToScreen(groundTile.x, groundTile.y).y - this.tileSize;
-					p.vy = 0;
-				}
-
-				p.x += p.vx;
-				const wallCheckX = p.vx > 0 ? p.x + this.tileSize : p.x;
-
-				const wallCheckScreenX = wallCheckX + this.mapOffset.x;
-				const wallTile = this.screenToTile(wallCheckScreenX, p.y + this.tileSize / 2);
-				const wallIndex = this.engine.coordsToIndex(wallTile, this.currentMap.dimensions.width);
-				
-				if (isSolid(this.currentMap.map[wallIndex])) {
-					p.vx *= -1;
+					p.x += p.dir * MUSHROOM_SPEED * k;
+					const wallTile = this.screenToTile((p.dir > 0 ? p.x + ts : p.x) + this.mapOffset.x, p.y + ts / 2);
+					if (isSolidMetatile(tiles[this.engine.coordsToIndex(wallTile, W)])) p.dir *= -1;
 				}
 			}
 
 			const player = this.engine.animatedSprites[PlayerName[this.player]];
-			const playerHeight = this.playerSize > Player_Size.Small ? this.tileSize * 2 : this.tileSize;
-			const playerRect = { x: player.position.x, y: player.position.y, w: this.tileSize, h: playerHeight };
+			const playerRect = this.playerHitbox(player);
 
 			const screenX = p.x + this.mapOffset.x;
 			const powerupRect = { x: screenX, y: p.y, w: this.tileSize, h: this.tileSize };
 
-			// Colisión con el hongo
-			if (this.rectsOverlap(playerRect, powerupRect)) {
+			// Colisión con el objeto
+			if (p.state !== "emerging" && this.rectsOverlap(playerRect, powerupRect)) {
 				switch (p.type) {
 					// 1UP
 					case Powerup_Type.Mushroom_1UP:
-						this.lives++;
-						this.engine.playAudio(audio["Life"], false);
+						this.giveLife();
 						break;
 					// Super
 					case Powerup_Type.Mushroom_Super:
+						this.score += 1000;
+						this.spawnScorePopup('1000', screenX, p.y);
 						if (this.playerSize === Player_Size.Small) {
 							this.state = Game_State.Player_Growing;
 							this.growTimer = 0;
@@ -2528,20 +2827,27 @@ class Game {
 							}
 							this.engine.playAudio(audio["Player_Pipe"], false);
 						} else {
-
-							this.score += 1000;
 							this.engine.playAudio(audio["Life"], false);
 						}
 						this.activePowerups.splice(i, 1);
 						continue;
 					// Fire
 					case Powerup_Type.Fire_Flower:
+						this.score += 1000;
+						this.spawnScorePopup('1000', screenX, p.y);
 						if (this.playerSize >= Player_Size.Big) {
 							this.playerSize = Player_Size.Fire;
 						} else {
 							this.playerSize = Player_Size.Big;
 						}
 						this.syncPlayerSpritesOnPowerup();
+						this.engine.playAudio(audio["Life"], false);
+						break;
+					// Estrella
+					case Powerup_Type.Invincible:
+						this.score += 1000;
+						this.spawnScorePopup('1000', screenX, p.y);
+						this.starTimer = STAR_INVINCIBLE_MS;
 						this.engine.playAudio(audio["Life"], false);
 						break;
 				}
@@ -2565,6 +2871,9 @@ class Game {
 				case Powerup_Type.Mushroom_Super: 
 					spriteToDraw = 'Object_Mushroom_Super'; 
 					break;
+				case Powerup_Type.Invincible:
+					this.engine.drawSprite('Object_Star', Math.floor(this.clockMs / 80) % 4, { x: screenX, y: p.y }, this.tileScale, false, 0, Pivot.Top_Left);
+					continue;
 				case Powerup_Type.Fire_Flower:
 					p.animTimer = (p.animTimer + 1) % 16;
 					const frame = Math.floor(p.animTimer / 8);

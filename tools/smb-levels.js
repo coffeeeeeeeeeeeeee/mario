@@ -142,7 +142,8 @@ const ENEMY_TO_ENTITY = {
 // ---------------------------------------------------------------------------------------------
 
 class AreaDecoder {
-	constructor({ lines, areaPointer, worldNumber, areaNumber, report }) {
+	constructor({ lines, areaPointer, worldNumber, areaNumber, levelNumber = 0, report }) {
+		this.levelNumber = levelNumber;
 		this.report = report;
 		this.worldNumber = worldNumber;
 		this.areaNumber = areaNumber;
@@ -161,6 +162,7 @@ class AreaDecoder {
 		const h0 = areaBytes[0], h1 = areaBytes[1];
 		this.foregroundScenery = (h0 & 7) < 4 ? (h0 & 7) : 0;
 		this.backgroundColorCtrl = (h0 & 7) >= 4 ? (h0 & 7) : 0;
+		this.night = this.backgroundColorCtrl !== 0 && this.backgroundColorCtrl !== 5;   // 4, 6 y 7: fondo negro
 		this.playerEntranceCtrl = (h0 >> 3) & 7;
 		this.gameTimerSetting = (h0 >> 6) & 3;
 		this.terrainControl = h1 & 0x0f;
@@ -188,6 +190,7 @@ class AreaDecoder {
 		this.columns = [];
 		this.pipeTops = [];      // caños que llevan a algún lado (extremo superior izquierdo)
 		this.exitPipes = [];     // caños laterales de salida (boca a la izquierda)
+		this.warpZoneCol = null; // columna donde empieza la zona de atajos, si el área la tiene
 		this.piranhas = [];
 		this.flagpole = null;
 
@@ -441,7 +444,7 @@ class AreaDecoder {
 			this.backgroundScenery = (b & 0x30) >> 4;
 		} else {
 			const v = b & 7;
-			if (v >= 4) { this.backgroundColorCtrl = v; this.foregroundScenery = 0; }
+			if (v >= 4) { this.backgroundColorCtrl = v; this.foregroundScenery = 0; if (v !== 5) this.night = true; }
 			else this.foregroundScenery = v;
 		}
 	}
@@ -478,7 +481,8 @@ class AreaDecoder {
 			case 0x22: return this.introPipe(x);
 			case 0x23: return this.flagpoleObject();
 			case 0x24: case 0x25: case 0x26: return this.castleObjectRow(x, index - 0x22);
-			case 0x27: case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2c: case 0x2d: return;
+			case 0x27: this.warpZoneCol = this.currentPageLoc * 16 + this.currentColumnPos; return;   // ScrollLockObject_Warp
+			case 0x28: case 0x29: case 0x2a: case 0x2b: case 0x2c: case 0x2d: return;
 			case 0x2e: return this.alterAreaAttributes(x);
 			default: throw new Error(`Objeto desconocido ${index.toString(16)}`);
 		}
@@ -646,6 +650,9 @@ class AreaDecoder {
 
 	// --- Enemigos ------------------------------------------------------------------------------
 
+	// Los enemigos con el bit 6 sólo existen en el "modo difícil secundario": a partir del 5-3.
+	get secondaryHard() { return this.worldNumber > 4 || (this.worldNumber === 4 && this.levelNumber >= 2); }
+
 	decodeEnemies() {
 		const d = this.enemyBytes;
 		let o = 0, page = 0, sel = 0;
@@ -658,18 +665,32 @@ class AreaDecoder {
 			const col = b0 >> 4;
 			if (row === 0x0e) {
 				const b2 = d[o + 2];
-				if ((b2 >> 5) === this.worldNumber) {
-					warps.push({ x: page * 16 + col, pointer: b1, entrancePage: b2 & 0x1f });
-				}
+				warps.push({ x: page * 16 + col, pointer: b1, world: b2 >> 5, entrancePage: b2 & 0x1f });
 				o += 3; sel = 0; continue;
 			}
 			const id = b1 & 0x3f;
-			if (!(b1 & 0x40)) enemies.push({ x: page * 16 + col, row, id });
+			if (!(b1 & 0x40) || this.secondaryHard) enemies.push({ x: page * 16 + col, row, id });
 			o += 2; sel = 0;
 		}
 		this.enemies = enemies;
-		this.warpEntries = warps;
+		this.allWarpEntries = warps;
+		this.warpEntries = this.warpEntriesFor(this.worldNumber);
 	}
+
+	// Las entradas de cambio de área valen sólo para el mundo que indica su tercer byte; así una
+	// misma sala de bonus sirve a varios mundos.
+	warpEntriesFor(world) { return this.allWarpEntries.filter(e => e.world === world); }
+}
+
+// Caños de la zona de atajos: la pantalla que se bloquea al llegar al objeto de zona. Se toman los
+// caños que llevan a algún lado cerca del objeto y se agrupan por página (la de más caños).
+function warpZonePipes(dec) {
+	if (dec.warpZoneCol === null) return [];
+	const near = dec.pipeTops.filter(p => Math.abs(p.col - dec.warpZoneCol) <= 24);
+	const pages = {};
+	for (const p of near) (pages[Math.floor(p.col / 16)] ||= []).push(p);
+	const best = Object.values(pages).sort((a, b) => b.length - a.length)[0];
+	return best || [];
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -698,7 +719,12 @@ function buildMap(dec, report, label) {
 
 	// Plantas piraña: arriba de la boca del caño, en la columna izquierda
 	const pakkunColor = dec.areaType === AREA_TYPE.Underground ? 'Red' : 'Green';
-	for (const p of dec.piranhas) enemies.push({ type: 'Pakkun', color: pakkunColor, x: p.col, y: p.row - 1 + TOP_ROWS });
+	// (en la zona de atajos el original quita las plantas)
+	const zoneCols = new Set(warpZonePipes(dec).map(p => p.col));
+	for (const p of dec.piranhas) {
+		if (zoneCols.has(p.col)) continue;
+		enemies.push({ type: 'Pakkun', color: pakkunColor, x: p.col, y: p.row - 1 + TOP_ROWS });
+	}
 
 	// Enemigos. En el original una fila de datos r deja al enemigo parado sobre la fila r del
 	// terreno, o sea que ocupa la celda de arriba (r - 1).
@@ -733,26 +759,55 @@ function buildMap(dec, report, label) {
 	return { width, map, enemies };
 }
 
-const WORLD_AREAS = {
-	'1-1': { pointer: 0x25, areaNumber: 0, next: '1-2' },
-	'1-2': { pointer: 0xc0, areaNumber: 2, next: '1-3' },
-	'1-3': { pointer: 0x26, areaNumber: 3, next: '1-4' },
-	'1-4': { pointer: 0x60, areaNumber: 4, next: null },
-};
+// ---------------------------------------------------------------------------------------------
+// Los 8 mundos
+// ---------------------------------------------------------------------------------------------
 
-// Salas de bonus: una misma área del original (L_UndergroundArea3) tiene varias salas, una por
-// cada página de entrada. Cada subnivel es una ventana de dos páginas de esa área.
-const SUBLEVELS = {
-	'1-1b': { pointer: 0xc2, entrancePage: 0, parent: '1-1' },
-	'1-2b': { pointer: 0xc2, entrancePage: 2, parent: '1-2' },
-};
-
-// Puntero de área del original -> nombre del nivel del juego
-const POINTER_TO_LEVEL = { '1:5': '1-1', '2:0': '1-2', '1:6': '1-3', '3:0': '1-4' };
+// Puntero de área del original -> clave "tipo:índice" (ver pointerKey)
 const pointerKey = p => `${(p >> 5) & 3}:${p & 0x1f}`;
+const KEY_BONUS_ROOM = '2:2';    // L_UndergroundArea3: salas de bonus
+const KEY_WARP_ZONE = '1:15';    // L_GroundArea16: zona de atajos del 4-2
+const AREA_KEY_NOTES = { '1:11': 'nivel de nubes (se entra por enredadera)', '1:20': 'nivel de nubes (se entra por enredadera)', '0:0': 'sala de agua', '0:2': 'sala de agua' };
 
-function decodeLevel(lines, name, spec, report) {
-	const dec = new AreaDecoder({ lines, areaPointer: spec.pointer, worldNumber: 0, areaNumber: spec.areaNumber, report });
+// Lee World{n}Areas y le da a cada área su nombre de nivel según el comentario de su etiqueta
+// (";level 1-3/5-3" sirve para el 1-3 y el 5-3). Las áreas sin nivel (pantalla del caño
+// de entrada, salas de bonus) no se generan como niveles.
+function discoverLevels(lines) {
+	const areaLabels = readLabelTable(lines, 'AreaDataAddrLow');
+	const commentOf = label => {
+		let j = lines.findIndex(l => l.startsWith(label + ':')) - 1;
+		while (j > 0 && !lines[j].startsWith(';')) j--;
+		return lines[j];
+	};
+	const levels = [];
+	for (let w = 0; w < 8; w++) {
+		const line = lines.find(l => l.startsWith(`World${w + 1}Areas:`));
+		const pointers = [...line.matchAll(/\$([0-9a-f]{2})/gi)].map(m => parseInt(m[1], 16));
+		pointers.forEach((p, i) => {
+			const label = areaLabels[AREA_DATA_H_OFFSETS[(p >> 5) & 3] + (p & 0x1f)];
+			const m = [...commentOf(label).matchAll(/(\d)-(\d)/g)].find(t => Number(t[1]) === w + 1);
+			if (m) levels.push({ name: `${w + 1}-${m[2]}`, world: w, level: Number(m[2]) - 1, pointer: p, areaNumber: i });
+		});
+	}
+	levels.forEach((lv, i) => { lv.next = levels[i + 1]?.name ?? null; });
+	return levels;
+}
+
+// Tiempo con que arranca un nivel, según los 2 bits de la cabecera (GameTimerData: 400, 300 o 200)
+const GAME_TIMER_BY_SETTING = [400, 400, 300, 200];
+
+// Página desde la que se reinicia un nivel si Mario muere después de pasarla (HalfwayPageNybbles).
+// Hay un byte por cada par de niveles: -1 y -2 en el byte 2*mundo, -3 y -4 en el siguiente; los
+// niveles pares (-1, -3) usan el nibble alto y los impares (-2, -4) el bajo.
+function halfwayPage(lines, world, level) {
+	const bytes = readBlock(lines, 'HalfwayPageNybbles');
+	const b = bytes[2 * world + ((level & 2) ? 1 : 0)];
+	return (level & 1) ? (b & 0x0f) : (b >> 4);
+}
+
+function decodeLevel(lines, spec, report) {
+	const name = spec.name;
+	const dec = new AreaDecoder({ lines, areaPointer: spec.pointer, worldNumber: spec.world, areaNumber: spec.areaNumber, levelNumber: spec.level, report });
 	dec.run();
 	dec.decodeEnemies();
 	const built = buildMap(dec, report, name);
@@ -769,7 +824,8 @@ function decodeLevel(lines, name, spec, report) {
 		report[`${name}: hacha del castillo -> mástil de bandera (x1)`] = 1;
 		delete report[`${name}: ${METATILE_NOTES[MT.Axe]}`];
 	}
-	return { name, dec, ...built };
+	if (dec.areaType === AREA_TYPE.Water) report[`${name}: nivel de agua, el motor no tiene natación (x1)`] = 1;
+	return { name, dec, time: GAME_TIMER_BY_SETTING[dec.gameTimerSetting], halfway: halfwayPage(lines, spec.world, spec.level), ...built };
 }
 
 // Recorta una ventana de columnas [x0, x1] de un nivel ya armado.
@@ -808,67 +864,113 @@ function linkWarps(entries, candidates) {
 	return links;
 }
 
-function generate(lines, report) {
-	const levels = {};
-	for (const [name, spec] of Object.entries(WORLD_AREAS)) levels[name] = decodeLevel(lines, name, spec, report);
+// Mundos a los que llevan los tres caños de una zona de atajos (WarpZoneNumbers en el original);
+// 0x24 y 0 son casilleros sin caño.
+const WARP_ZONE_NUMBERS = [[4, 3, 2, 0], [0x24, 5, 0x24, 0], [8, 7, 6, 0]];
 
-	const bonus = decodeLevel(lines, 'bonus', { pointer: 0xc2, areaNumber: 0 }, {});
-	const subs = {};
-	for (const [name, spec] of Object.entries(SUBLEVELS)) {
-		const x0 = spec.entrancePage * 16, x1 = x0 + 32;
-		const sl = sliceLevel(bonus, x0, x1);
-		const dec = bonus.dec;
-		const inWin = x => x >= x0 && x <= x1;
-		subs[name] = {
-			name, ...sl, x0, spec, areaType: dec.areaType,
-			exitPipes: dec.exitPipes.filter(p => inWin(p.col)).map(p => ({ x: p.col - x0, y: p.row + TOP_ROWS, abs: p.col })),
-			entries: dec.warpEntries.filter(e => inWin(e.x)),
-		};
+function zoneWarps(dec) {
+	const pipes = warpZonePipes(dec);
+	if (!pipes.length) return [];
+	const row = dec.worldNumber === 0 ? 0 : (dec.areaType === AREA_TYPE.Ground ? 2 : 1);
+	const out = [];
+	for (const p of pipes) {
+		const c = p.col % 16;
+		const dest = WARP_ZONE_NUMBERS[row][c < 6 ? 0 : c < 10 ? 1 : 2];
+		if (dest === 0 || dest === 0x24) continue;
+		out.push({ type: 'down', x: p.col, y: p.row + TOP_ROWS, to: `${dest}-1`, spawn: { start: true } });
 	}
+	return out;
+}
 
+function generate(lines, report) {
+	const info = discoverLevels(lines);
+	const infoByName = Object.fromEntries(info.map(l => [l.name, l]));
+	const levelOf = {};                                   // `${mundo}|${clave}` -> nombre
+	for (const l of info) levelOf[`${l.world}|${pointerKey(l.pointer)}`] = l.name;
+
+	const levels = {};
+	for (const spec of info) levels[spec.name] = decodeLevel(lines, spec, report);
+	const bonus = decodeLevel(lines, { name: 'bonus', pointer: 0xc2, world: 0, level: 0, areaNumber: 0 }, {});
+
+	const subs = {};                                      // nombre -> subnivel
 	const warpsOf = {};
 	const addWarp = (levelName, w) => { (warpsOf[levelName] ||= []).push(w); };
+	const subNames = {};                                  // `${padre}|${página}` -> nombre
+	const mainTarget = (world, entry) => levelOf[`${world}|${pointerKey(entry.pointer)}`];
 
-	// Entrada y salida de cada nivel principal
+	// Destino de un caño que lleva a un nivel principal: aparece saliendo del primer caño de la página
+	const spawnInto = (target, entry, sourceLevelName) => {
+		const p = findPipeInPage(levels[target], entry.entrancePage);
+		const spawn = p ? { x: p.x, y: p.y, emerge: 'up' } : { x: entry.entrancePage * 16 + 2, y: 3, emerge: 'drop' };
+		const src = infoByName[sourceLevelName];
+		if (src && src.next !== infoByName[target].next && target !== sourceLevelName) spawn.then = src.next;
+		return spawn;
+	};
+
+	// 1. Entradas y salidas de cada nivel principal
 	for (const [name, lv] of Object.entries(levels)) {
+		const dec = lv.dec;
+		const zone = new Set(warpZonePipes(dec).map(p => p.col));
+		const inZone = p => zone.has(p.col);
 		const cands = [
-			...lv.dec.pipeTops.map(p => ({ x: p.col, y: p.row + TOP_ROWS, type: 'down' })),
-			...lv.dec.exitPipes.map(p => ({ x: p.col, y: p.row + TOP_ROWS, type: 'right' })),
+			...dec.pipeTops.filter(p => !inZone(p)).map(p => ({ x: p.col, y: p.row + TOP_ROWS, type: 'down' })),
+			...dec.exitPipes.map(p => ({ x: p.col, y: p.row + TOP_ROWS, type: 'right' })),
 		];
-		for (const { entry, pipe } of linkWarps(lv.dec.warpEntries, cands)) {
+		for (const w of zoneWarps(dec)) addWarp(name, w);
+		for (const { entry, pipe } of linkWarps(dec.warpEntries, cands)) {
 			const key = pointerKey(entry.pointer);
-			if (key === '2:2') {
-				const sub = Object.entries(subs).find(([, s]) => s.spec.entrancePage === entry.entrancePage && s.spec.parent === name);
-				if (!sub) { report[`${name}: caño hacia una sala de bonus sin subnivel -> sin warp`] = 1; continue; }
-				addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: sub[0], spawn: { x: 2, y: 3, emerge: 'drop' } });
-			} else if (POINTER_TO_LEVEL[key]) {
-				const target = POINTER_TO_LEVEL[key];
-				const p = findPipeInPage(levels[target], entry.entrancePage);
-				const spawn = p ? { x: p.x, y: p.y, emerge: 'up' } : { x: entry.entrancePage * 16 + 2, y: 3, emerge: 'drop' };
-				if (WORLD_AREAS[target].next !== WORLD_AREAS[name].next && target !== name) spawn.then = WORLD_AREAS[name].next;
-				addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: target, spawn });
+			if (key === KEY_BONUS_ROOM) {
+				const sk = `${name}|${entry.entrancePage}`;
+				if (!subNames[sk]) {
+					const taken = Object.keys(subNames).filter(k => k.startsWith(name + '|')).length;
+					subNames[sk] = name + 'bcdefg'[taken];
+					subs[subNames[sk]] = { kind: 'window', parent: name, world: dec.worldNumber, entrancePage: entry.entrancePage };
+				}
+				addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: subNames[sk], spawn: { x: 2, y: 3, emerge: 'drop' } });
+			} else if (key === KEY_WARP_ZONE) {
+				const sn = name + 'w';
+				subs[sn] = { kind: 'area', parent: name, world: dec.worldNumber, pointer: 0x20 | 15 };
+				addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: sn, spawn: { x: 2, y: 3, emerge: 'drop' } });
+			} else if (mainTarget(dec.worldNumber, entry)) {
+				const target = mainTarget(dec.worldNumber, entry);
+				addWarp(name, { type: pipe.type, x: pipe.x, y: pipe.y, to: target, spawn: spawnInto(target, entry, name) });
+			} else {
+				report[`${name}: caño hacia ${AREA_KEY_NOTES[key] || 'un área sin soporte'}, queda como decoración (x1)`] = 1;
 			}
 		}
 	}
 
-	// Salida de cada sala de bonus
+	// 2. Subniveles: ventanas de la sala de bonus y áreas completas (zona de atajos del 4-2)
 	for (const [name, sub] of Object.entries(subs)) {
-		const cands = sub.exitPipes.map(p => ({ x: p.abs, y: p.y, type: 'right', rel: p.x }));
-		for (const { entry, pipe } of linkWarps(sub.entries, cands)) {
-			const target = POINTER_TO_LEVEL[pointerKey(entry.pointer)];
-			if (!target) continue;
-			const p = findPipeInPage(levels[target], entry.entrancePage);
-			const spawn = p ? { x: p.x, y: p.y, emerge: 'up' } : { x: entry.entrancePage * 16 + 2, y: 3, emerge: 'drop' };
-			addWarp(name, { type: 'right', x: pipe.rel, y: pipe.y, to: target, spawn });
+		if (sub.kind === 'window') {
+			const x0 = sub.entrancePage * 16, x1 = x0 + 32;
+			const inWin = x => x >= x0 && x <= x1;
+			Object.assign(sub, sliceLevel(bonus, x0, x1), {
+				areaType: bonus.dec.areaType, night: false, x0,
+				exitPipes: bonus.dec.exitPipes.filter(p => inWin(p.col)).map(p => ({ x: p.col - x0, y: p.row + TOP_ROWS, abs: p.col })),
+				entries: bonus.dec.warpEntriesFor(sub.world).filter(e => inWin(e.x)),
+			});
+			const cands = sub.exitPipes.map(p => ({ x: p.abs, y: p.y, type: 'right', rel: p.x }));
+			for (const { entry, pipe } of linkWarps(sub.entries, cands)) {
+				const target = mainTarget(sub.world, entry);
+				if (!target) continue;
+				addWarp(name, { type: 'right', x: pipe.rel, y: pipe.y, to: target, spawn: spawnInto(target, entry, sub.parent) });
+			}
+		} else {
+			const spec = { name, pointer: sub.pointer, world: sub.world, level: infoByName[sub.parent].level, areaNumber: 0 };
+			const lv = decodeLevel(lines, spec, report);
+			Object.assign(sub, { width: lv.width, map: lv.map, enemies: lv.enemies, areaType: lv.dec.areaType, night: lv.dec.night });
+			for (const w of zoneWarps(lv.dec)) addWarp(name, w);
 		}
 	}
 
 	const out = [];
 	for (const [name, lv] of Object.entries(levels)) {
-		out.push({ world: name, nextWorld: WORLD_AREAS[name].next, hidden: false, type: toWorldType(lv.dec.areaType), width: lv.width, map: lv.map, enemies: lv.enemies, warps: warpsOf[name] || [] });
+		out.push({ world: name, nextWorld: infoByName[name].next, hidden: false, type: toWorldType(lv.dec.areaType), night: lv.dec.night, time: lv.time, halfway: lv.halfway, width: lv.width, map: lv.map, enemies: lv.enemies, warps: warpsOf[name] || [] });
 	}
-	for (const [name, sub] of Object.entries(subs)) {
-		out.push({ world: name, nextWorld: sub.spec.parent, hidden: true, type: toWorldType(sub.areaType), width: sub.width, map: sub.map, enemies: sub.enemies, warps: warpsOf[name] || [] });
+	for (const name of Object.keys(subs).sort()) {
+		const sub = subs[name];
+		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, warps: warpsOf[name] || [] });
 	}
 	return { out, levels, subs };
 }
@@ -894,6 +996,9 @@ function formatLevels(out) {
 		L.push(`\t\tnextWorld: ${JSON.stringify(lv.nextWorld)},`);
 		if (lv.hidden) L.push('\t\thidden: true,');
 		L.push(`\t\ttype: ${lv.type},`);
+		if (lv.night) L.push('\t\tnight: true,');
+		if (lv.time !== undefined) L.push(`\t\ttime: ${lv.time},`);
+		if (lv.halfway) L.push(`\t\thalfway: ${lv.halfway},`);
 		L.push(`\t\tdimensions: { width: ${lv.width}, height: ${MAP_HEIGHT} },`);
 		L.push(`\t\twarps: ${JSON.stringify(lv.warps)},`);
 		L.push('\t\tenemies: [');
@@ -957,4 +1062,4 @@ if (require.main === module) {
 	for (const [k, v] of Object.entries(report)) console.log(`  ${k}${/\(x\d+\)$/.test(k) ? '' : ` (x${v})`}`);
 }
 
-module.exports = { loadAsm, AreaDecoder, buildMap, decodeLevel, generate, formatLevels, ascii, WORLD_AREAS, AREA_TYPE, MAP_HEIGHT, TOP_ROWS, MT };
+module.exports = { loadAsm, AreaDecoder, buildMap, decodeLevel, generate, formatLevels, ascii, AREA_TYPE, MAP_HEIGHT, TOP_ROWS, MT };
