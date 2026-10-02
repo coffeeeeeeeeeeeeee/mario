@@ -195,6 +195,7 @@ async function init() {
 
     await js2d.loadTileset("Overworld_Tiles", overworldTileset, 16, 16);
     await js2d.loadTileset("Underground_Tiles", undergroundTileset, 16, 16);
+    await js2d.loadTileset("Castle_Tiles", castleTileset, 16, 16);
 
     await js2d.loadTileset("Player_Mario_Tiles", marioSmallTileset, 16, 16);
     await js2d.loadTileset("Player_Mario_Big_Tiles", marioBigTileset, 16, 32);

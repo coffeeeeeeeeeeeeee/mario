@@ -118,15 +118,15 @@ const METATILE_SPRITE = {
 	0x1c: 'Block_Pipe_Start_Top', 0x1d: 'Block_Pipe_Body_Top', 0x1e: 'Block_Pipe_End_Top',
 	0x1f: 'Block_Pipe_Start_Bottom', 0x20: 'Block_Pipe_Body_Bottom', 0x21: 'Block_Pipe_End_Bottom',
 	0x24: 'Block_Flagpole_Top', 0x25: 'Block_Flagpole',
-	0x51: 'Block_Brick', 0x52: 'Block_Brick_Middle', 0x54: 'Block_Ground',
+	0x51: 'Block_Brick', 0x52: 'Block_Brick_Middle', 0x54: 'Block_Ground', 0x62: 'Block_Ground',   // 0x62: terreno del castillo
 	0xc0: 'Block_Question', 0xc1: 'Block_Question', 0xc2: 'Object_Coin', 0xc3: 'Object_Coin',
-	0xc4: 'Block_Question_Used',
+	0xc4: 'Block_Used',          // bloque vacío liso (el 'Block_Question_Used' es un cuadro de la animación de la pregunta)
 };
 for (let id = 0x55; id <= 0x59; id++) METATILE_SPRITE[id] = 'Block_Brick';             // ladrillos con contenido (exterior)
 for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle';      // ídem (subterráneo y castillo)
 METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
 METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
-for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x88, 0x89]) METATILE_SPRITE[id] = 'Block_Stairs';
+for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x88, 0x89]) METATILE_SPRITE[id] = 'Block_Stairs';
 
 // Qué entrega un bloque al golpearlo desde abajo
 const BLOCK_ITEM = {
@@ -332,6 +332,9 @@ class Game {
 			case World_Type.Underground:
 				tilesetName = "Underground_Tiles";
 				break;
+			case World_Type.Castle:
+				tilesetName = "Castle_Tiles";
+				break;
 			case World_Type.Overworld:
 			default:
 				tilesetName = "Overworld_Tiles";
@@ -438,6 +441,9 @@ class Game {
 		switch (this.currentMap?.type ?? World_Type.Overworld) {
 			case World_Type.Underground:
 				tilesetName = "Underground_Tiles";
+				break;
+			case World_Type.Castle:
+				tilesetName = "Castle_Tiles";
 				break;
 			case World_Type.Overworld:
 			default:
@@ -643,7 +649,7 @@ class Game {
 		if (BLOCK_ITEM[blockId] === 'coins') {
 			// Ladrillo con monedas: parece un ladrillo hasta el primer golpe y queda vacío al agotarse
 			const info = this.specialBlocks[idx];
-			if (info?.coinsLeft === 0) return 'Block_Question_Used';
+			if (info?.coinsLeft === 0) return 'Block_Used';
 			return info?.revealed ? 'Block_Question' : METATILE_SPRITE[blockId];
 		}
 		return METATILE_SPRITE[blockId] ?? (isSolidMetatile(blockId) ? 'Block_Stairs' : null);
@@ -1846,7 +1852,7 @@ class Game {
 				continue;
 			}
 			// Un bloque oculto se ve como bloque vacío mientras rebota
-			let spriteNameToDraw = HIDDEN_BLOCKS.has(block.originalId) ? 'Block_Question_Used' : this.spriteNameForCell(block.originalId, block.mapIndex);
+			let spriteNameToDraw = HIDDEN_BLOCKS.has(block.originalId) ? 'Block_Used' : this.spriteNameForCell(block.originalId, block.mapIndex);
 			const spriteData = spriteNameToDraw && this.engine.sprites[spriteNameToDraw];
 			if (spriteData) {
 				this.engine.drawSprite(spriteNameToDraw, 0, { x: block.x, y: block.y }, spriteData.scale, false, 0, Pivot.Top_Left);

@@ -117,7 +117,6 @@ for (let i = 0x16; i <= 0x1b; i++) METATILE_NOTES[i] = 'plataforma de árbol u h
 Object.assign(METATILE_NOTES, {
 	0x56: 'ladrillo con enredadera (el motor lo trata como hongo)', 0x5b: 'ladrillo con enredadera (el motor lo trata como hongo)',
 	0x57: 'ladrillo con estrella (el motor lo trata como hongo)', 0x5c: 'ladrillo con estrella (el motor lo trata como hongo)',
-	0x62: 'ladrillo de castillo (se dibuja como bloque duro)',
 	0x63: 'puente (se dibuja como bloque duro)', 0x89: 'puente (se dibuja como bloque duro)',
 	0x64: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x65: 'cañón de Bullet Bill (bloque duro, sin disparos)', 0x66: 'cañón de Bullet Bill (bloque duro, sin disparos)',
 	0x67: 'resorte (bloque duro)', 0x68: 'resorte (bloque duro)',
