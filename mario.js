@@ -3667,16 +3667,27 @@ class Game {
 			for (let physicsStep = 0; physicsStep < physicsSteps; physicsStep++) {
 			const newY = playerPos.y + this.velocityY;
 
+			// Puntos de colisión del original (BlockBuffer_X_Adder y BlockBuffer_Y_Adder), en px del NES contra el sprite de 16 px:
+			// la cabeza es un solo punto en x+8, a 4 px del borde de arriba (2 si es chico, agachado o nada); los pies son dos
+			// puntos en x+3 y x+12; y a los costados hay un punto arriba y otro abajo (x+2 y x+13), a 8 y a 24 px del borde
+			// de arriba (para Mario chico o agachado sólo el de 8, que cae en la mitad del sprite)
+			const kc = this.tileScale;
+			const bodySmall = playerHeight <= this.tileSize + 0.5;
+			const headOff = (bodySmall || this.isWater ? 2 : 4) * kc;
+
 			// Colisión con techo
 			if (this.velocityY < 0) {
 
-				const headCenterTile = this.screenToTile(playerPos.x + this.tileSize / 2, newY);
+				const headCenterTile = this.screenToTile(playerPos.x + 8 * kc, newY + headOff);
 				let hitCeiling = false;
 				if (inBounds(headCenterTile.x, headCenterTile.y)) {
 					const idx = this.engine.coordsToIndex(headCenterTile, mapWidth);
 					this.handleCoinCollision(idx); 
 					const blockId = this.currentMap.map[idx] || 0;
-					if (isSolid(blockId) || HIDDEN_BLOCKS.has(blockId)) {
+					// Regla del original: si el borde de arriba del sprite está a menos de 4 px de una fila de bloques (nibble bajo de Y < 4),
+					// la cabeza ya pasó de largo y el golpe no cuenta; sigue subiendo
+					const yNibble = (((newY - this.tileToScreen(0, 0).y) / kc) % 16 + 16) % 16;
+					if ((isSolid(blockId) || HIDDEN_BLOCKS.has(blockId)) && yNibble >= 4) {
 						let ceilingSpeed = SMB_CEILING_SPEED;
 						const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 						let blockSoundPlayed = false;
@@ -3749,22 +3760,30 @@ class Game {
 						}
 
 						this.killEnemiesAbove(headCenterTile.x, headCenterTile.y);
-						this.velocityY = ceilingSpeed * this.tileScale; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y; hitCeiling = true;
+						this.velocityY = ceilingSpeed * this.tileScale; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y - headOff; hitCeiling = true;   // la cabeza queda dentro del bloque lo que mide su punto, como en el original
 					}
 				}
 				if (!hitCeiling) playerPos.y = newY;
 			}
 			else {
 
-				const bottomLeft = this.screenToTile(playerPos.x + 4, newY + playerHeight);
-				const bottomRight = this.screenToTile(playerPos.x + this.tileSize - 4, newY + playerHeight);
+				const bottomLeft = this.screenToTile(playerPos.x + 3 * kc, newY + playerHeight);
+				const bottomRight = this.screenToTile(playerPos.x + 12 * kc, newY + playerHeight);
 				let foundGround = false;
 				for (let tx = bottomLeft.x; tx <= bottomRight.x; tx++) {
 					if (inBounds(tx, bottomLeft.y)) {
 						const idx = this.engine.coordsToIndex({x: tx, y: bottomLeft.y}, mapWidth);
 						this.handleCoinCollision(idx);
 						if (isSolid(this.currentMap.map[idx])) {
-							playerPos.y = this.tileToScreen(tx, bottomLeft.y).y - playerHeight;
+							const tileTop = this.tileToScreen(tx, bottomLeft.y).y;
+							// Regla del original: con los pies a 5 px o más dentro del bloque (nibble bajo de Y >= 5) no aterriza, lo trata como
+							// un choque de costado (ImpedePlayerMove): frena y lo empuja 1 px hacia atrás
+							if ((newY + playerHeight - tileTop) / kc >= 5) {
+								const back = this.facingDir >= 0 ? -1 : 1;
+								if (back < 0 ? this.xSpeed >= 0 : this.xSpeed <= 0) { playerPos.x += back * kc; this.xSpeed = 0; }
+								break;
+							}
+							playerPos.y = tileTop - playerHeight;
 							this.isOnGround = true; this.velocityY = 0; this.stompChain = 0; foundGround = true; break;
 						}
 					}
@@ -3825,30 +3844,28 @@ class Game {
 
 			// Se aplica el desplazamiento con colisiones; chocar con una pared anula la velocidad
 			const cw = this.engine.getCanvasWidth();
+			const kc = this.tileScale;
+			const bodySmall = playerHeight <= this.tileSize + 0.5;
+			const sideYs = bodySmall ? [8 * kc] : [8 * kc, 24 * kc];
+			const solidAtPt = (px, py) => { const t = this.screenToTile(px, py); if (!inBounds(t.x, t.y)) return false; const id = this.currentMap.map[this.engine.coordsToIndex(t, mapWidth)]; return id !== MT.Flagpole && isSolid(id); };   // el mástil se agarra, no frena
 			if (dx < 0) {
 				const newX = playerPos.x + dx;
-				const leftTop = this.screenToTile(newX + 4, playerPos.y);
-				const leftBottom = this.screenToTile(newX + 4, playerPos.y + playerHeight - 1);
-				let blocked = false;
-				for (let ty = leftTop.y; ty <= leftBottom.y; ty++) {
-					if (inBounds(leftTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: leftTop.x, y: ty}, mapWidth)])) {
-						blocked = true; break;
-					}
-				}
+				const blocked = sideYs.some(dy => solidAtPt(newX + 2 * kc, playerPos.y + dy));
 				// No se puede salir por el borde izquierdo de la pantalla
 				if (blocked || newX < 0) { this.xSpeed = 0; this.blockedDir = -1; this.wallHug = -1; if (!blocked) playerPos.x = Math.max(0, playerPos.x); }
 				else { playerPos.x = newX; this.wallHug = 0; }
 			} else if (dx > 0) {
 				const newX = playerPos.x + dx;
-				const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
-				const rightBottom = this.screenToTile(newX + this.tileSize - 4, playerPos.y + playerHeight - 1);
-				let blocked = false;
+				const sx = newX + 13 * kc;
+				const rightTop = this.screenToTile(sx, playerPos.y);
+				const rightBottom = this.screenToTile(sx, playerPos.y + playerHeight - 1);
+				let blocked = sideYs.some(dy => solidAtPt(sx, playerPos.y + dy));
 				for (let ty = rightTop.y; ty <= rightBottom.y; ty++) {
 					const tileCoords = { x: rightTop.x, y: ty };
 					const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
 					const blockId = this.currentMap.map[mapIndex];
 					this.handleCoinCollision(mapIndex);
-					if (blockId === MT.Flagpole) {
+					if (blockId === MT.Flagpole && sx - this.tileToScreen(tileCoords.x, tileCoords.y).x >= 6 * kc) {
 						const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
 						playerPos.x = poleCoords.x - this.tileSize / 2;
 						let groundYTile = ty;
@@ -3861,10 +3878,6 @@ class Game {
 						this.state = Game_State.Level_Complete; this.levelCompleteState = 'none'; 
 						this.xSpeed = 0;
 						return;
-					}
-					if (inBounds(rightTop.x, ty) && isSolid(this.currentMap.map[this.engine.coordsToIndex({x: rightTop.x, y: ty}, mapWidth)])) {
-						blocked = true;
-						break;
 					}
 				}
 				if (blocked) { this.xSpeed = 0; this.blockedDir = 1; this.wallHug = 1; }
