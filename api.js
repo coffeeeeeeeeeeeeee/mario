@@ -71,7 +71,21 @@
 		return isSolidMetatile(id) ? 1 : 0;
 	}
 
-	function observe(opts = {}) {
+	// Lo que el agente ve alrededor de Mario: la grilla de celdas (13 filas, de la 2 a la 14 del mapa) y los enemigos cercanos
+	function nearbyEnemies(x, left, right, top) {
+		const k = smb.tileScale, out = [];
+		for (const e of smb.enemies || []) {
+			if (e.dead || e.active === false) continue;
+			const rect = smb.enemyScreenRect(e);
+			if (!rect) continue;
+			const ex = (rect.x - smb.mapOffset.x) / k;
+			if (ex + rect.w / k < x - 16 * (left + 2) || ex > x + 16 * (right + 2)) continue;
+			out.push([e, round(ex), round((rect.y - top) / k), round(rect.w / k), round(rect.h / k)]);
+		}
+		return out;
+	}
+
+	function observeFull(opts) {
 		const k = smb.tileScale, top = worldTop();
 		const p = sprite();
 		const m = smb.currentMap;
@@ -85,15 +99,7 @@
 			for (let c = col0; c <= col0 + left + right; c++) row.push(c < 0 || c >= w ? 0 : cellCode(m.map[r * w + c]));
 			grid.push(row);
 		}
-		const enemies = [];
-		for (const e of smb.enemies || []) {
-			if (e.dead || e.active === false) continue;
-			const rect = smb.enemyScreenRect(e);
-			if (!rect) continue;
-			const ex = (rect.x - smb.mapOffset.x) / k;
-			if (ex + rect.w / k < x - 16 * (left + 2) || ex > x + 16 * (right + 2)) continue;
-			enemies.push({ type: e.type, color: e.color ?? null, state: e.state ?? null, x: round(ex), y: round((rect.y - top) / k), w: round(rect.w / k), h: round(rect.h / k), dir: e.dir ?? e.vx ?? 0 });
-		}
+		const enemies = nearbyEnemies(x, left, right, top).map(([e, ex, ey, ew, eh]) => ({ type: e.type, color: e.color ?? null, state: e.state ?? null, x: ex, y: ey, w: ew, h: eh, dir: e.dir ?? e.vx ?? 0 }));
 		const platforms = (smb.platforms || []).map(pl => ({ x: round(pl.x), y: round(pl.y + 32), w: round(pl.w), kind: pl.kind }))
 			.filter(pl => pl.x + pl.w >= x - 16 * (left + 2) && pl.x <= x + 16 * (right + 2));
 		const powerups = (smb.activePowerups || []).map(u => ({ type: u.type, x: round(u.x / k), y: round((u.y - top) / k) }));
@@ -109,6 +115,41 @@
 			grid: { left, right, col: col0, row: 2, cells: grid },
 			enemies, platforms, powerups,
 		};
+	}
+
+	// Lo mismo en arreglos, que pesan mucho menos al pasar por JSON (ver README):
+	//   w nivel, f cuadro, t tiempo, s puntos, c monedas, l vidas, st estado del juego, cam cámara
+	//   m  [x, y, ancho, alto, vx, vy, suelo (0/1), tamaño (0 chico, 1 grande, 2 fuego), mira a (1 o -1), banderas (1 trepa, 2 agua, 4 estrella)]
+	//   g  la grilla como texto de 13 x (left + right + 1) dígitos, fila por fila, y gc la columna de la primera celda
+	//   e  enemigos [tipo, color, x, y, ancho, alto, dir, estado]    p  plataformas [x, y, ancho, tipo]    u  hongos y flores [tipo, x, y]
+	function observeCompact(opts) {
+		const k = smb.tileScale, top = worldTop();
+		const p = sprite();
+		const m = smb.currentMap;
+		const w = m.dimensions.width;
+		const left = opts.left ?? 5, right = opts.right ?? 10;
+		const x = (p.position.x - smb.mapOffset.x) / k;
+		const col0 = Math.floor((x + 8) / 16) - left;
+		let g = '';
+		for (let r = 2; r < 15; r++) {
+			for (let c = col0; c <= col0 + left + right; c++) g += c < 0 || c >= w ? '0' : cellCode(m.map[r * w + c]);
+		}
+		const e = nearbyEnemies(x, left, right, top).map(([en, ex, ey, ew, eh]) => [en.type, en.color ?? null, ex, ey, ew, eh, en.dir ?? en.vx ?? 0, en.state ?? null]);
+		const pl = [];
+		for (const q of smb.platforms || []) if (q.x + q.w >= x - 16 * (left + 2) && q.x <= x + 16 * (right + 2)) pl.push([round(q.x), round(q.y + 32), round(q.w), q.kind]);
+		const u = (smb.activePowerups || []).map(o => [o.type, round(o.x / k), round((o.y - top) / k)]);
+		return {
+			w: m.world, f: smb.nesFrame, t: smb.time, s: smb.score, c: smb.coins, l: smb.lives, st: smb.state, cam: round(-smb.mapOffset.x / k),
+			m: [round(x), round((p.position.y - top) / k), 16, smb.playerHeightPx() / k, round(smb.xSpeed / 4096), round(smb.velocityY / k),
+				smb.isOnGround ? 1 : 0, smb.playerSize, smb.facingDir, (smb.climbVine ? 1 : 0) | (smb.isWater ? 2 : 0) | (smb.starTimer > 0 ? 4 : 0)],
+			g, gc: col0, e, p: pl, u,
+		};
+	}
+
+	// opts.obs: 'full' (lo normal), 'compact' (arreglos, mucho más liviano) o 'none' (sólo recompensa y fin, lo más rápido)
+	function observe(opts = {}) {
+		if (opts.obs === 'none') return null;
+		return opts.obs === 'compact' ? observeCompact(opts) : observeFull(opts);
 	}
 
 	function tick(n) {

@@ -43,15 +43,16 @@ env = SmbClient()
 obs = env.reset(world="1-1", seed=7, size="small")   # size: small, big o fire; hard=True para el modo difícil
 obs, reward, done, info = env.step(2, repeat=4)      # acción 2: derecha + salto, durante 4 cuadros
 
-vec = SmbVecClient(8, worlds=("1-1", "1-2", "2-1"))  # 8 partidas en paralelo, cada una en su hilo
+vec = SmbVecClient(8, worlds=("1-1", "1-2", "2-1"))  # 8 partidas en paralelo, cada una en su hilo (observaciones compactas)
 obs = vec.reset()
 obs, rewards, dones, infos = vec.step([2] * 8)       # la que termina arranca de nuevo sola (info["terminal_obs"] guarda la última)
 ```
 
 - **Observación:** posición, velocidad y estado de Mario (en px del NES, 16 px = una celda), una grilla de 13 filas por 16 columnas alrededor de Mario (0 vacío, 1 sólido, 2 bloque golpeable, 3 moneda, 4 mástil), enemigos, plataformas y hongos o flores cercanos. Con `--browser`, `env.pixels()` da el cuadro achicado en grises.
+- **Formatos de observación** (`obs=` en `reset` y `step`): `"full"` (la de arriba, lo normal), `"compact"` (lo mismo en arreglos, que pesa menos de la mitad) y `"none"` (sólo recompensa y fin). En `compact`: `m` es `[x, y, ancho, alto, vx, vy, suelo, tamaño (0 chico, 1 grande, 2 fuego), mira a, banderas]`, `g` la grilla como texto de 13 x 16 dígitos fila por fila, `e` los enemigos `[tipo, color, x, y, ancho, alto, dir, estado]`, `p` las plataformas, `u` los hongos y flores, y además `w` nivel, `f` cuadro, `t` tiempo, `s` puntos, `c` monedas, `l` vidas. `compact_grid` y `compact_mario` de `smb_env.py` los decodifican.
 - **Acciones:** 14 combinaciones predefinidas (`env.actions`), o una lista de botones (`left`, `right`, `down`, `jump`, `run`, `fire`).
 - **Recompensa:** lo que avanza Mario en x, menos una pequeña penalidad por el reloj del juego, -15 al morir y +50 al llegar al mástil. En `info` vienen los datos crudos para armar otra.
 - **Fin del episodio:** `done` al morir (también por tiempo) o al tomar el mástil; `info["reason"]` dice cuál (`dead` o `clear`).
-- **Velocidad:** con 8 partidas en paralelo por HTTP salen unos 12.000 cuadros por segundo (unas 200 veces el tiempo real); `vector_demo.py` lo mide.
+- **Velocidad:** con 8 partidas en paralelo por HTTP salen unos 8.000 cuadros por segundo con `full`, 14.000 con `compact` y 21.000 con `none` (hasta unas 350 veces el tiempo real), medidos en una máquina de 8 núcleos; `vector_demo.py` los mide.
 - El modo sin navegador da exactamente lo mismo que el navegador, cuadro por cuadro. `node tools/ai/check.js` lo comprueba en los 32 niveles; conviene correrlo después de tocar `mario.js`.
 - Con Gymnasium y NumPy instalados, `smb_env.SuperMarioEnv` ofrece la interfaz estándar `reset/step` y puede sortear niveles en cada episodio.

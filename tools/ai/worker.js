@@ -12,7 +12,7 @@ parentPort.on('message', async ({ id, method, args }) => {
 			case 'info': result = { actions: api.ACTIONS, buttons: api.KEYS, worlds: api.worlds() }; break;
 			case 'reset': result = api.reset(args[0]); break;
 			case 'step': result = api.step(...args); break;
-			case 'observe': result = api.observe(); break;
+			case 'observe': result = api.observe(args[0] || {}); break;
 			case 'pixels': throw new Error('smbApi.pixels no está en el modo sin navegador: arrancá el servidor con --browser');
 			default: throw new Error(`método desconocido: ${method}`);
 		}

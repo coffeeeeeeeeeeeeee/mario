@@ -6,14 +6,14 @@
 //                               no está en /usr/bin/google-chrome)
 //
 //   GET  /api/info                       -> acciones y niveles
-//   POST /api/reset  {world, seed, size, hard, env}      -> observación
-//   POST /api/step   {action, repeat, env}               -> { obs, reward, done, info }
+//   POST /api/reset  {world, seed, size, hard, obs, env} -> observación (obs: "full", "compact" o "none"; ver README)
+//   POST /api/step   {action, repeat, obs, env}          -> { obs, reward, done, info }
 //   GET  /api/observe?env=0              -> observación actual
 //   GET  /api/pixels?w=84&h=84&env=0     -> cuadro en grises (sólo con --browser)
 //
 // Para entrenar con muchas partidas a la vez (cada una en su hilo, en paralelo):
-//   POST /api/vreset {n, worlds, seeds, size, hard}       -> lista de observaciones de las partidas 0 a n-1
-//   POST /api/vstep  {actions, repeat, autoreset}         -> lista de { obs, reward, done, info }, una por acción
+//   POST /api/vreset {n, worlds, seeds, size, hard, obs}  -> lista de observaciones de las partidas 0 a n-1
+//   POST /api/vstep  {actions, repeat, autoreset, obs}    -> lista de { obs, reward, done, info }, una por acción
 //
 // "env" elige una partida independiente; sin él, la 0. Sólo escucha en 127.0.0.1.
 const http = require('http');
@@ -63,7 +63,7 @@ const browserBackend = {
 			case 'info': return page.evaluate(() => ({ actions: smbApi.ACTIONS, buttons: smbApi.KEYS, worlds: smbApi.worlds() }));
 			case 'reset': return page.evaluate(o => smbApi.reset(o), args[0]);
 			case 'step': return page.evaluate(([action, repeat, opts]) => smbApi.step(action, repeat, opts), args);
-			case 'observe': return page.evaluate(() => smbApi.observe());
+			case 'observe': return page.evaluate(o => smbApi.observe(o), args[0] || {});
 			case 'pixels': return page.evaluate(([w, h]) => smbApi.pixels(w, h), args);
 		}
 		throw new Error(`método desconocido: ${method}`);
@@ -131,17 +131,17 @@ async function handleApi(url, body) {
 	switch (url.pathname) {
 		case '/api/info': return onEnv(env, () => backend.call(env, 'info', []));
 		case '/api/reset': return resetEnv(env, body);
-		case '/api/step': return stepEnv(env, body.action, body.repeat, { left: body.left, right: body.right }, body.autoreset);
-		case '/api/observe': return onEnv(env, () => backend.call(env, 'observe', []));
+		case '/api/step': return stepEnv(env, body.action, body.repeat, { left: body.left, right: body.right, obs: body.obs }, body.autoreset);
+		case '/api/observe': return onEnv(env, () => backend.call(env, 'observe', [{ obs: url.searchParams.get('obs') || body.obs }]));
 		case '/api/pixels': return onEnv(env, () => backend.call(env, 'pixels', [+(url.searchParams.get('w') || 84), +(url.searchParams.get('h') || 84)]));
 		case '/api/vreset': {
 			const worlds = [].concat(body.worlds ?? body.world ?? '1-1');
 			return Promise.all(Array.from({ length: body.n || 1 }, (_, i) =>
-				resetEnv(String(i), { world: worlds[i % worlds.length], seed: body.seeds ? body.seeds[i] : (body.seed ?? 0) + i, size: body.size, hard: body.hard })));
+				resetEnv(String(i), { world: worlds[i % worlds.length], seed: body.seeds ? body.seeds[i] : (body.seed ?? 0) + i, size: body.size, hard: body.hard, obs: body.obs })));
 		}
 		case '/api/vstep':
-			return Promise.all(body.actions.map((a, i) => stepEnv(String(i), a, body.repeat, {}, body.autoreset)));
-		default: return null;
+			return Promise.all(body.actions.map((a, i) => stepEnv(String(i), a, body.repeat, { obs: body.obs }, body.autoreset)));
+		default: return undefined;   // ruta desconocida (null es una respuesta válida: obs "none")
 	}
 }
 
@@ -167,7 +167,7 @@ const server = http.createServer((req, res) => {
 			try {
 				const body = raw ? JSON.parse(raw) : {};
 				const out = await handleApi(url, body);
-				if (out === null) { res.writeHead(404); res.end('{"error":"ruta desconocida"}'); return; }
+				if (out === undefined) { res.writeHead(404); res.end('{"error":"ruta desconocida"}'); return; }
 				res.writeHead(200, { 'Content-Type': 'application/json' });
 				res.end(JSON.stringify(out));
 			} catch (e) {
