@@ -251,11 +251,13 @@ const HAMMER_GRAVITY = 0x10 / 256, HAMMER_UP_SPEED = 2;
 const LAKITU_DIFF_ADJ = [0x15, 0x30, 0x40];   // velocidad base de Lakitu, en 1/16 px por cuadro (LakituDiffAdj)
 const LAKITU_EGG_STEPS = 0x80;        // cuadros entre huevos de espinosos
 const LAKITU_RESPAWN_STEPS = 7 * 0x80;
-const SPRING_OFFSETS = [0, 8, 16, 8];              // cuánto baja la parte de arriba en cada cuadro (Jumpspring_Y_PosData)
+const SPRING_OFFSETS = [8, 16, 8, 0];              // cuánto baja la parte de arriba en cada paso (Jumpspring_Y_PosData); en el último rebota
 const SPRING_STEPS_PER_FRAME = 4;                  // cuadros que dura cada paso de la compresión
 const SPRING_BOUNCE = 7, SPRING_BOUNCE_HIGH = 12;  // px del NES por cuadro: rebote normal y apretando el salto
 const SPRING_FORCE = 0x70 / 256;                   // gravedad de Mario tras el rebote (VerticalForce)
-const FLY_CHEEP_GRAVITY = 0.1;                       // px del NES por cuadro al cuadrado de los cheep-cheeps que saltan
+const FLY_CHEEP_GRAVITY = 0x0d / 256, FLY_CHEEP_MAX_SPEED = 5;   // los cheep-cheeps que saltan: gravedad y velocidad máxima (px del NES por cuadro)
+const FLY_CC_X_SPEED = [0x0e, 0x05, 0x06, 0x0e, 0x1c, 0x20, 0x10, 0x0c, 0x1e, 0x22, 0x18, 0x14];   // FlyCCXSpeedData, en 1/16 px por cuadro
+const FLY_CC_X_POS = [0x80, 0x30, 0x40, 0x80, 0x30, 0x50, 0x50, 0x70, 0x20, 0x40, 0x80, 0xa0, 0x70, 0x40, 0x90, 0x68];   // FlyCCXPositionData
 const FLY_CHEEP_TIMERS = [0x10, 0x60, 0x20, 0x48];   // FlyCCTimerData: cuadros hasta el próximo cheep-cheep que salta
 const FRENZY_Y = [32, 16, 112, 48, 0, 64, 128, 80];   // alturas (desde la fila 0 del nivel) de Enemy17YPosData
 const FIREWORK_X = [0x00, 0x30, 0x60, 0x60, 0x00, 0x20];   // FireworksXPosData
@@ -269,7 +271,9 @@ const HURRY_TIME = 100;               // con este tiempo o menos suena la músic
 const TIME_WARNING_MS = 3000;           // lo que dura el aviso de poco tiempo antes de la música apurada
 const SHELL_REVIVE = 0x10 * 21, SHELL_REVIVE_HARD = 0x0b * 21;   // cuadros hasta que un caparazón pisado se levanta (RevivalRateData)
 const SHELL_WIGGLE = 63;                                       // los últimos cuadros se sacude antes de volver
-const HURRY_PLAYBACK_RATE = 1.25;    // cuánto se acelera la melodía en los niveles sin pista propia
+// Cuánto se acelera la melodía en los niveles sin pista apurada propia. El original pasa a la fila siguiente de
+// MusicLengthLookupTbl (las notas duran menos): subterráneo 24/36, agua 3/4 y castillo 4/5 de lo que duraban
+const HURRY_PLAYBACK_RATE = { [World_Type.Underground]: 1.5, [World_Type.Underwater]: 4 / 3, [World_Type.Castle]: 1.25 };
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
 const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
@@ -1792,9 +1796,19 @@ class Game {
 		if (mode === 'fly') {
 			this.frenzyTimer = FLY_CHEEP_TIMERS[Math.floor(Math.random() * 4)];
 			if (this.enemies.filter(e => e.flying).length >= (this.secondaryHard ? 4 : 3)) return;
-			const dir = Math.random() < 0.5 ? -1 : 1;
-			this.enemies.push({ ...base, type: 'Cheep', flying: true, x: screenLeft + (0.15 + Math.random() * 0.7) * W, y: H + ts,
-				dir, vx: dir * (0.9 + Math.random() * 1.1) * k, vy: -5 * k, origY: H, bobDown: false });
+			// InitFlyingCheepCheep: sale por debajo de la pantalla, cerca de Mario; la velocidad y el lado salen de tablas
+			// indexadas por unos bits al azar y por lo rápido que va Mario (si corre o va hacia la izquierda, más rápido)
+			const rnd = n => Math.floor(Math.random() * n);
+			const r0 = rnd(4);
+			const ps = Math.floor(this.xSpeed / 256);
+			const seed = ps === 0 ? 0 : (ps > 0 && ps < 0x19 ? 4 : 8);
+			let c = r0 + seed;
+			if (rnd(4) !== 0) c = rnd(16);
+			let idx = seed + r0, spd = FLY_CC_X_SPEED[idx], dir = 1;
+			if (ps === 0) { idx = c; if (c & 2) { spd = -spd; dir = -1; } }
+			const playerX = player.position.x - this.mapOffset.x;
+			const x = (idx & 2) ? playerX + FLY_CC_X_POS[idx] * k : playerX - FLY_CC_X_POS[idx] * k;
+			this.enemies.push({ ...base, type: 'Cheep', flying: true, x, y: H + 8 * k, dir, vx: dir * Math.abs(spd) / 16 * k, vy: -FLY_CHEEP_MAX_SPEED * k, origY: H, bobDown: false });
 			return;
 		}
 		this.frenzyTimer = 32;
@@ -1995,7 +2009,7 @@ class Game {
 					sp.pressed = jumpDown;
 					if (--sp.timer <= 0) {
 						sp.timer = SPRING_STEPS_PER_FRAME;
-						if (++sp.anim > 4) {
+						if (++sp.anim > 3) {   // en el cuarto paso (compresión 0) sale el rebote
 							sp.anim = 0;
 							this.velocityY = -sp.force * k;
 							this.jumpForceUp = this.jumpForceDown = SPRING_FORCE;
@@ -2284,7 +2298,7 @@ class Game {
 			// Cheep-cheep que salta del agua: sube a 5 px por cuadro, se frena y vuelve a caer
 			enemy.x += enemy.vx;
 			enemy.y += enemy.vy;
-			enemy.vy += FLY_CHEEP_GRAVITY * k;
+			enemy.vy = Math.min(enemy.vy + FLY_CHEEP_GRAVITY * k, FLY_CHEEP_MAX_SPEED * k);
 			if (enemy.vy > 0 && enemy.y > this.engine.getCanvasHeight() + this.tileSize) return 'remove';
 			return;
 		}
@@ -3531,6 +3545,9 @@ class Game {
 			const risenEnough = (this.jumpOriginY - playerPos.y) >= this.tileScale;
 			const force = (rising && (this.jumpHeld || !risenEnough)) ? this.jumpForceUp : this.jumpForceDown;
 			this.velocityY = Math.min(this.velocityY + force * this.tileScale, SMB_MAX_FALL_SPEED * this.tileScale);
+			// Sobre una plataforma o un resorte Mario sigue "en el suelo" en cada paso, antes de elegir la animación y de leer
+			// el salto; si no, la caída que acaba de sumar la gravedad lo mostraba cayendo y no lo dejaba saltar
+			this.snapToPlatform(playerPos, playerHeight);
 			}
 
 
@@ -4488,7 +4505,7 @@ class Game {
 			case World_Type.Underwater: theme = audio["Underwater_Theme"]; break;
 			case World_Type.Castle: theme = audio["Castle_Theme"]; break;
 		}
-		if (theme && hurry && this.currentMap.type !== World_Type.Overworld) theme.playbackRate = HURRY_PLAYBACK_RATE;
+		if (theme && hurry && HURRY_PLAYBACK_RATE[this.currentMap.type]) theme.playbackRate = HURRY_PLAYBACK_RATE[this.currentMap.type];
 		return theme;
 	}
 
