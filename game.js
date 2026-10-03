@@ -185,7 +185,7 @@ function animate(timestamp) {
     let dt = timestamp - js2d.last_timestamp;
     js2d.last_timestamp = timestamp;
 
-    update(dt);
+    if (!window.smbManual) update(dt);   // con ?api (api.js) el que avanza los cuadros es el agente
     requestAnimationFrame(animate);
 }
 

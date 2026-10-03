@@ -1,0 +1,193 @@
+// API para que un agente (una IA) juegue. Se activa con ?api en la URL (index.html?api) y no hace nada si no está.
+//
+// En este modo el juego no corre solo: cada llamada a step() avanza cuadros de 1/60 s exactos, así que la partida es
+// determinista (mismo nivel, misma semilla y mismas acciones dan siempre lo mismo) y puede ir más rápido que el tiempo real.
+// El sonido se apaga. Todas las posiciones están en píxeles del NES (16 px = una celda), con y = 0 en el borde de arriba del
+// mapa (las dos primeras filas son la barra de estado; el juego se ve de la fila 2 a la 14).
+//
+//   smbApi.reset({ world: '1-1', seed: 7, size: 'small' })  -> observación inicial
+//   smbApi.step(2, 4)                                         -> { obs, reward, done, info } tras 4 cuadros con la acción 2
+//
+// Acciones: un número de smbApi.ACTIONS, una lista de botones (['right', 'jump']) o un objeto ({ right: true, jump: true }).
+// Botones: left, right, down, jump, run, fire.
+(() => {
+	if (!/[?&]api(&|=|$)/.test(location.search)) return;
+	window.smbManual = true;   // game.js deja de llamar a update() por su cuenta
+
+	// El sonido no sirve acá y los jingles con callback atarían la partida al tiempo real
+	js2d.playAudio = () => {};
+	js2d.playAudioOverlap = () => {};
+
+	const FRAME = PHYSICS_STEP_MS;
+	const KEYS = { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown', jump: 'ArrowUp', run: 'ShiftLeft', fire: 'Space' };
+	const ACTIONS = [
+		[],                                  // 0 nada
+		['right'],                           // 1
+		['right', 'jump'],                   // 2
+		['right', 'run'],                    // 3
+		['right', 'run', 'jump'],            // 4
+		['jump'],                            // 5
+		['left'],                            // 6
+		['left', 'jump'],                    // 7
+		['left', 'run'],                     // 8
+		['left', 'run', 'jump'],             // 9
+		['down'],                            // 10 (agacharse y entrar a los caños)
+		['fire'],                            // 11
+		['right', 'run', 'fire'],            // 12
+		['right', 'run', 'jump', 'fire'],    // 13
+	];
+
+	const SIZES = { small: Player_Size.Small, big: Player_Size.Big, fire: Player_Size.Fire };
+	const SIZE_NAME = { [Player_Size.Small]: 'small', [Player_Size.Big]: 'big', [Player_Size.Fire]: 'fire' };
+
+	const sprite = () => js2d.animatedSprites[smb.currentPlayerSpriteName()];
+	const worldTop = () => smb.tileToScreen(0, 0).y;
+	const round = v => Math.round(v * 100) / 100;
+
+	// Mismo generador que usa el juego para el azar, sembrado a partir de un número
+	function seedRandom(seed) {
+		let a = seed >>> 0;
+		const next = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) & 0xff; };
+		for (let i = 0; i < 7; i++) smb.lfsr[i] = next();
+		if (!smb.lfsr.some(b => b)) smb.lfsr[0] = 0xa5;
+	}
+
+	function pressed(action) {
+		let names;
+		if (typeof action === 'number') names = ACTIONS[action] ?? [];
+		else if (Array.isArray(action)) names = action;
+		else names = Object.keys(action || {}).filter(n => action[n]);
+		const on = new Set(names);
+		for (const [name, code] of Object.entries(KEYS)) js2d.keysPressed[code] = on.has(name);
+	}
+
+	// Qué hay en cada celda, para el agente: 0 vacío, 1 sólido (suelo, bloque duro, caño, bloque usado), 2 bloque que se golpea
+	// (ladrillo o de interrogación), 3 moneda, 4 mástil. Los bloques ocultos no se ven, como para el jugador.
+	function cellCode(id) {
+		if (!id || HIDDEN_BLOCKS.has(id)) return 0;
+		if (isCoinMetatile(id)) return 3;
+		if (id === MT.Flagpole || id === MT.FlagpoleTop) return 4;
+		if (isBumpableMetatile(id)) return 2;
+		return isSolidMetatile(id) ? 1 : 0;
+	}
+
+	function observe(opts = {}) {
+		const k = smb.tileScale, top = worldTop();
+		const p = sprite();
+		const m = smb.currentMap;
+		const w = m.dimensions.width;
+		const left = opts.left ?? 5, right = opts.right ?? 10;
+		const x = (p.position.x - smb.mapOffset.x) / k;
+		const col0 = Math.floor((x + 8) / 16) - left;
+		const grid = [];
+		for (let r = 2; r < 15; r++) {
+			const row = [];
+			for (let c = col0; c <= col0 + left + right; c++) row.push(c < 0 || c >= w ? 0 : cellCode(m.map[r * w + c]));
+			grid.push(row);
+		}
+		const enemies = [];
+		for (const e of smb.enemies || []) {
+			if (e.dead || e.active === false) continue;
+			const rect = smb.enemyScreenRect(e);
+			if (!rect) continue;
+			const ex = (rect.x - smb.mapOffset.x) / k;
+			if (ex + rect.w / k < x - 16 * (left + 2) || ex > x + 16 * (right + 2)) continue;
+			enemies.push({ type: e.type, color: e.color ?? null, state: e.state ?? null, x: round(ex), y: round((rect.y - top) / k), w: round(rect.w / k), h: round(rect.h / k), dir: e.dir ?? e.vx ?? 0 });
+		}
+		const platforms = (smb.platforms || []).map(pl => ({ x: round(pl.x), y: round(pl.y + 32), w: round(pl.w), kind: pl.kind }))
+			.filter(pl => pl.x + pl.w >= x - 16 * (left + 2) && pl.x <= x + 16 * (right + 2));
+		const powerups = (smb.activePowerups || []).map(u => ({ type: u.type, x: round(u.x / k), y: round((u.y - top) / k) }));
+		return {
+			world: m.world, frame: smb.nesFrame, time: smb.time, state: smb.state, coins: smb.coins, score: smb.score, lives: smb.lives,
+			mario: {
+				x: round(x), y: round((p.position.y - top) / k), w: 16, h: smb.playerHeightPx() / k,
+				vx: round(smb.xSpeed / 4096), vy: round(smb.velocityY / k),
+				onGround: !!smb.isOnGround, size: SIZE_NAME[smb.playerSize], facing: smb.facingDir, climbing: !!smb.climbVine,
+				water: !!smb.isWater, star: smb.starTimer > 0,
+			},
+			camera: round(-smb.mapOffset.x / k),
+			grid: { left, right, col: col0, row: 2, cells: grid },
+			enemies, platforms, powerups,
+		};
+	}
+
+	function tick(n) {
+		for (let i = 0; i < n; i++) update(FRAME);
+	}
+
+	let last = null;   // lo que se mide para la recompensa
+
+	function snapshot() {
+		const p = sprite();
+		return { world: smb.currentMap.world, x: (p.position.x - smb.mapOffset.x) / smb.tileScale, time: smb.time, score: smb.score };
+	}
+
+	function reset(opts = {}) {
+		const idx = smb.availableWorlds.indexOf(opts.world ?? '1-1');
+		if (idx < 0) throw new Error(`No existe el nivel ${opts.world}`);
+		pressed([]);
+		smb.difficulty = opts.hard ? 'HARD' : 'NORMAL';
+		smb.currentWorldIndex = idx;
+		smb.selectPlayer(opts.player ?? 0);
+		// La pantalla negra del principio no se espera
+		for (let i = 0; i < 600 && smb.state !== Game_State.Playing; i++) {
+			if (smb.state === Game_State.Black_Screen) smb.screenTimer = smb.screenDuration + 1;
+			tick(1);
+		}
+		if (smb.state !== Game_State.Playing) throw new Error(`No se pudo empezar el nivel (estado ${smb.state})`);
+		if (opts.seed !== undefined) seedRandom(opts.seed);
+		if (opts.size && opts.size !== 'small') {
+			smb.playerSize = SIZES[opts.size] ?? Player_Size.Small;
+			if (smb.playerSize > Player_Size.Small) {
+				// Mario grande nace un cuadro más alto: se lo apoya donde estaba parado
+				const small = js2d.animatedSprites[PlayerName[smb.player]], big = sprite();
+				big.position.x = small.position.x; big.position.y = small.position.y - smb.tileSize;
+			}
+		}
+		tick(1);
+		last = snapshot();
+		return observe(opts);
+	}
+
+	function step(action, repeat = 4, opts = {}) {
+		if (!last) throw new Error('Falta llamar a reset()');
+		let reward = 0, done = false, reason = null, flag = false;
+		const startTime = last.time;
+		for (let i = 0; i < repeat; i++) {
+			pressed(action);
+			tick(1);
+			const now = snapshot();
+			const st = smb.state;
+			// Avanzar en x es lo que se premia; un cambio de nivel (caño, laberinto) no cuenta como avance
+			if (now.world === last.world) reward += now.x - last.x;
+			last = now;
+			if (st === Game_State.Player_Dying) { done = true; reason = 'dead'; break; }
+			if (st === Game_State.Level_Complete) { done = true; reason = 'clear'; flag = true; break; }
+			if (st === Game_State.Title_Menu || st === Game_State.Black_Screen && smb.screenType === Black_Screen_Type.Game_Over) { done = true; reason = 'over'; break; }
+		}
+		const clockPenalty = Math.min(0, last.time - startTime) * 0.1;   // el reloj del juego corre: apurarse rinde
+		reward = round(reward + clockPenalty - (reason === 'dead' ? 15 : 0) + (flag ? 50 : 0));
+		const obs = observe(opts);
+		return { obs, reward, done, info: { reason, x: last.x, time: last.time, score: last.score, world: last.world } };
+	}
+
+	// Cuadro actual achicado, en grises (0 a 255), por si se prefiere aprender de la imagen
+	function pixels(width = 84, height = 84) {
+		const c = document.createElement('canvas');
+		c.width = width; c.height = height;
+		const ctx = c.getContext('2d');
+		ctx.imageSmoothingEnabled = true;
+		ctx.drawImage(js2d.canvas ?? document.getElementById('game'), 0, 0, width, height);
+		const d = ctx.getImageData(0, 0, width, height).data;
+		const out = new Array(width * height);
+		for (let i = 0; i < out.length; i++) out[i] = Math.round(0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]);
+		return { width, height, data: out };
+	}
+
+	window.smbApi = {
+		ACTIONS, KEYS: Object.keys(KEYS),
+		ready: () => typeof smb !== 'undefined' && !!smb && !!smb.currentMap,
+		worlds: () => smb.availableWorlds.filter(n => n !== '0-0'),
+		reset, step, observe, pixels,
+	};
+})();

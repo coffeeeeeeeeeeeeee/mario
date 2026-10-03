@@ -1,0 +1,7 @@
+{
+  "name": "smb-ai-server",
+  "private": true,
+  "description": "Servidor local que expone el juego (index.html?api) por HTTP para que un agente lo juegue",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "playwright-core": "^1.40.0" }
+}

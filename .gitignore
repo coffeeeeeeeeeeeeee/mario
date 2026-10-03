@@ -2,3 +2,7 @@
 # Desensamblado de SMB (referencia local, no se versiona)
 tools/smbdis.asm
 tools/smb.nes
+
+# Servidor de la API para IA
+tools/ai/node_modules/
+__pycache__/
