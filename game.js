@@ -82,6 +82,7 @@ function update(dt) {
         case Game_State.Title_Menu:
             // smb.loadMap("0-0");
             smb.drawMenu();
+            smb.updateDemoIdle(dt);
             break;
 
         case Game_State.Settings_Menu:
@@ -151,7 +152,6 @@ function update(dt) {
             smb.updateEnemies(dt);
             smb.updatePowerups();
             smb.updateCoins();
-            smb.updateAndDrawScorePopups();
 
             smb.beginWorldCamera();
             smb.drawBackground();
@@ -164,6 +164,7 @@ function update(dt) {
             smb.drawEnemies(dt);
             smb.drawPlayer(PlayerName[smb.player], dt);
             smb.drawForegroundBlocks();
+            smb.updateAndDrawScorePopups();   // después del fondo, para que se vean
             smb.endWorldCamera();
             smb.drawUI();
             smb.drawWarpZoneText();
@@ -257,6 +258,7 @@ async function init() {
 
     for (let i = 0; i < 4; i++) js2d.defineSpriteFromTileset(`Platform_Tile_${i}`, "Platform_Tiles", i, 0, 1, tileScale);
     js2d.defineSpriteFromTileset("Bubble", "Bubble_Tiles", 0, 0, 1, tileScale);
+    js2d.defineSpriteFromTileset("Score_Popup", "Score_Tiles", 0, 0, 11, tileScale);
     js2d.defineSpriteFromTileset("Vine_Segment", "Vine_Tiles", 0, 0, 2, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Spring", "Spring_Tiles", 0, 0, 3, tileScale);
     js2d.defineSpriteFromTileset("Enemy_Koopa_Buzzy", "Enemy_Extra_Tiles", 0, 0, 2, tileScale);

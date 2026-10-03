@@ -408,6 +408,16 @@ sheet('Vine_Tiles', 32, 8, 16, 8, (cv, ox, oy) => {
 // Burbuja de Mario bajo el agua: tile $74 de sprites con la paleta 2 del agua
 sheet('Bubble_Tiles', 8, 8, 8, 8, (cv, ox, oy) => putTile(cv, ox, oy, SPR, 0x74, WATER.spr[2]));
 
+// Números flotantes de los puntos (FloateyNumTileData): cada uno son dos tiles de 8x8, con la paleta 2 de sprites del área.
+// Orden: 100, 200, 400, 500, 800, 1000, 2000, 4000, 5000, 8000 y 1UP
+sheet('Score_Tiles', 176, 8, 16, 8, (cv, ox, oy) => {
+	const t = asmBytes('FloateyNumTileData');   // los dos primeros bytes son de relleno
+	for (let i = 0; i < 11; i++) {
+		putTile(cv, ox + i * 16, oy, SPR, t[2 + i * 2], GROUND.spr[2]);
+		putTile(cv, ox + i * 16 + 8, oy, SPR, t[3 + i * 2], GROUND.spr[2]);
+	}
+});
+
 // --- Bolas de fuego ----------------------------------------------------------------------------
 
 sheet('Fireball_Spin_Tiles', 32, 8, 8, 8, (cv, ox, oy) => {

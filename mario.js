@@ -274,6 +274,12 @@ const SHELL_WIGGLE = 63;                                       // los últimos c
 // Cuánto se acelera la melodía en los niveles sin pista apurada propia. El original pasa a la fila siguiente de
 // MusicLengthLookupTbl (las notas duran menos): subterráneo 24/36, agua 3/4 y castillo 4/5 de lo que duraban
 const HURRY_PLAYBACK_RATE = { [World_Type.Underground]: 1.5, [World_Type.Underwater]: 4 / 3, [World_Type.Castle]: 1.25 };
+const SCORE_POPUP_INDEX = { '100': 0, '200': 1, '400': 2, '500': 3, '800': 4, '1000': 5, '2000': 6, '4000': 7, '5000': 8, '8000': 9, '1UP': 10 };   // celda de Score_Tiles
+// Demo del título (DemoActionData / DemoTimingData): sin tocar nada durante 24 intervalos de 21 cuadros, Mario juega solo el
+// 1-1 con estos movimientos grabados. Bits de cada acción: 1 derecha, 2 izquierda, $40 B (correr), $80 A (saltar)
+const DEMO_IDLE_STEPS = 24 * 21;
+const DEMO_ACTIONS = [0x01, 0x80, 0x02, 0x81, 0x41, 0x80, 0x01, 0x42, 0xc2, 0x02, 0x80, 0x41, 0xc1, 0x41, 0xc1, 0x01, 0xc1, 0x01, 0x02, 0x80, 0x00];
+const DEMO_TIMES = [0x9b, 0x10, 0x18, 0x05, 0x2c, 0x20, 0x24, 0x15, 0x5a, 0x10, 0x20, 0x28, 0x30, 0x20, 0x10, 0x80, 0x20, 0x30, 0x30, 0x01, 0xff, 0x00];   // en cuadros; el 0 final termina el demo
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
 const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
@@ -307,6 +313,9 @@ class Game {
 	lfsr = new Uint8Array([0xa5, 0, 0, 0, 0, 0, 0]);
 	nesFrame = 0;          // contador de cuadros (FrameCounter)
 	twoPlayers = false;    // partida de dos jugadores alternados
+	demoMode = false;      // Mario juega solo en el título
+	demoIdle = 0;          // cuadros que lleva el título sin que se toque nada
+	demoIndex = -1; demoTimer = 0; demoBackup = null;
 	playerStates = null;   // lo que lleva cada jugador (vidas, puntos, nivel...) cuando no está jugando
 	afterDeath = 'restart'; // qué sigue tras una muerte: 'restart', 'switch' o 'title'
 	
@@ -451,6 +460,28 @@ class Game {
 		this.beaten = this.engine.getCookie("smb_beaten") === "true";
 		const savedSFX = this.engine.getCookie("smb_sfx");
 		this.sfxEnabled = savedSFX !== "false";
+
+		// La opción de efectos de sonido apaga todo menos la música y los jingles; el demo del título va en silencio
+		const jingles = new Set(Object.entries(audio).filter(([k]) => /Theme|Level_Clear|Player_Die/.test(k)).map(([, a]) => a));
+		for (const fn of ['playAudio', 'playAudioOverlap']) {
+			const orig = this.engine[fn].bind(this.engine);
+			this.engine[fn] = (a, ...rest) => {
+				if (this.demoMode) return;
+				if (!this.sfxEnabled && !jingles.has(a)) return;
+				return orig(a, ...rest);
+			};
+		}
+
+		// Cualquier tecla, clic o toque corta el demo y reinicia la espera
+		const onActivity = e => {
+			if (this.demoMode) {
+				this.endDemo();
+				if (e && e.code) delete this.engine.keysPressed[e.code];   // que la tecla que lo cortó no active también el menú
+				this.engine.mouseButtons[0] = false;
+			}
+			this.demoIdle = 0;
+		};
+		['keydown', 'mousedown', 'touchstart'].forEach(ev => window.addEventListener(ev, onActivity));
 
 		this.HILL_SMALL_PATTERN = [
 			[' ', 'T', ' '],
@@ -990,6 +1021,63 @@ class Game {
 		return name;
 	}
 
+	// --- Demo del título ---------------------------------------------------------------------------
+
+	// Se llama en cada cuadro del título: si pasó la espera, arranca el demo
+	updateDemoIdle(dt) {
+		if (this.state !== Game_State.Title_Menu || this.demoMode) { this.demoIdle = 0; return; }
+		this.demoIdle += dt * NES_FPS / 1000;
+		if (this.demoIdle >= DEMO_IDLE_STEPS) this.startDemo();
+	}
+
+	startDemo() {
+		this.demoBackup = {
+			player: this.player, lives: this.lives, score: this.score, coins: this.coins, worldIndex: this.currentWorldIndex,
+			playerSize: this.playerSize, halfwayPage: this.halfwayPage, hidden1UpFlag: this.hidden1UpFlag,
+			twoPlayers: this.twoPlayers, playerStates: this.playerStates, savedState: this.savedState,
+		};
+		this.demoMode = true;
+		this.stopAllMusic();
+		this.player = Player.Mario; this.lives = 1; this.score = 0; this.coins = 0;
+		this.twoPlayers = false; this.playerStates = null;
+		this.currentWorldIndex = Math.max(0, this.availableWorlds.indexOf('1-1'));
+		this.halfwayPage = 0; this.hidden1UpFlag = false; this.playerSize = Player_Size.Small; this.playerIsVisible = true;
+		this.resetLevelState();
+		this.demoIndex = -1; this.demoTimer = 0;
+		this.state = Game_State.Playing;
+	}
+
+	// Un cuadro del demo: pone en las teclas lo que dice la grabación
+	demoStep() {
+		if (this.demoTimer <= 0) {
+			this.demoIndex++;
+			this.demoTimer = DEMO_TIMES[this.demoIndex] ?? 0;
+			if (!this.demoTimer) { this.endDemo(); return; }
+		}
+		const a = DEMO_ACTIONS[this.demoIndex];
+		this.demoTimer--;
+		const k = this.engine.keysPressed;
+		k['ArrowRight'] = !!(a & 0x01); k['ArrowLeft'] = !!(a & 0x02); k['ArrowUp'] = !!(a & 0x80); k['ShiftLeft'] = !!(a & 0x40);
+	}
+
+	endDemo() {
+		if (!this.demoMode) return;
+		this.demoMode = false;
+		const k = this.engine.keysPressed;
+		k['ArrowRight'] = k['ArrowLeft'] = k['ArrowUp'] = k['ShiftLeft'] = false;
+		const b = this.demoBackup || {};
+		this.stopAllMusic();
+		this.activePowerups = []; this.activeCoins = []; this.bumpingBlocks = []; this.scorePopups = []; this.brickParticles = []; this.activeFireballs = [];
+		this.enemies = []; this.climbVine = null; this.isInvincible = false; this.starTimer = 0; this.velocityY = 0;
+		this.player = b.player ?? Player.Mario; this.lives = b.lives ?? DEFAULT_LIVES; this.score = b.score ?? 0; this.coins = b.coins ?? 0;
+		this.currentWorldIndex = b.worldIndex ?? 0; this.playerSize = b.playerSize ?? Player_Size.Small; this.halfwayPage = b.halfwayPage ?? 0;
+		this.hidden1UpFlag = b.hidden1UpFlag ?? false; this.twoPlayers = !!b.twoPlayers; this.playerStates = b.playerStates ?? null; this.savedState = b.savedState ?? null;
+		this.loadMap("0-0");
+		this.mapOffset.x = 0; this.maxMapOffsetX = 0;
+		this.demoIdle = 0;
+		this.state = Game_State.Title_Menu;
+	}
+
 	// Pausa (Start en el original): el juego se congela, la música se detiene y suena el sonido de pausa. No hay texto
 	pauseGame() {
 		if (this.state !== Game_State.Playing) return;
@@ -1093,6 +1181,7 @@ class Game {
 	}
 
 	killPlayer() {
+		if (this.demoMode) { this.endDemo(); return; }
 		if (this.state === Game_State.Playing) {
 			this.state = Game_State.Player_Dying;
 			this.deathTimer = 0;
@@ -1288,7 +1377,7 @@ class Game {
 		this.physicsAccumulator -= this.physicsSteps * PHYSICS_STEP_MS;
 		if (this.starTimer > 0) this.starTimer = Math.max(0, this.starTimer - dt);
 		this.swimTimer = Math.max(0, this.swimTimer - this.physicsSteps);
-		for (let i = 0; i < this.physicsSteps; i++) { this.rngStep(); this.nesFrame++; }
+		for (let i = 0; i < this.physicsSteps; i++) { this.rngStep(); this.nesFrame++; if (this.demoMode) this.demoStep(); }
 	}
 
 	giveLife() {
@@ -3874,17 +3963,24 @@ class Game {
 		}
 	}
 
+	// Número flotante de puntos: sube 1 px por cuadro y dura 48 cuadros (FloateyNum_Timer), dibujado con los tiles de la ROM
 	spawnScorePopup(text, x, y) {
-		this.scorePopups.push({ text: text, x: x, y: y, timer: 90 });
+		this.scorePopups.push({ text: text, x: x, y: y, timer: 48 });
 	}
 
 	updateAndDrawScorePopups() {
 		for (let i = this.scorePopups.length - 1; i >= 0; i--) {
 			const popup = this.scorePopups[i];
 
-			popup.y -= 0.5 * (this.tileScale / SPRITE_SCALE) * this.fk;
+			popup.y -= this.tileScale * this.fk;
 			popup.timer -= this.fk;
-			this.engine.drawTextCustom(font, popup.text, TEXT_SIZE, Color.WHITE, {x: popup.x, y: popup.y}, "center");
+			const idx = SCORE_POPUP_INDEX[popup.text];
+			if (idx !== undefined) {
+				const k = this.tileScale;
+				this.engine.drawSprite('Score_Popup', idx, { x: popup.x - 8 * k, y: popup.y - 8 * k }, k, false, 0, Pivot.Top_Left);
+			} else {
+				this.engine.drawTextCustom(font, popup.text, TEXT_SIZE, Color.WHITE, {x: popup.x, y: popup.y}, "center");
+			}
 			if (popup.timer <= 0) {
 				this.scorePopups.splice(i, 1);
 			}
@@ -4631,7 +4727,7 @@ class Game {
 	// y después la versión apurada: en el exterior, una pista aparte; en los demás tipos de nivel, la misma melodía
 	// más rápida.
 	getCurrentThemeAudio() {
-		if (!this.currentMap) return null;
+		if (!this.currentMap || this.demoMode) return null;
 		const playing = this.state === Game_State.Playing;
 		const star = playing && this.starTimer > 0;
 		const hurry = playing && this.time > 0 && this.time <= HURRY_TIME;

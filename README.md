@@ -16,6 +16,8 @@ Las flechas y `W` `A` `S` `D` hacen lo mismo.
 | `Esc` | Salir al menú sin guardar | Volver |
 | `E` | Editor de niveles | |
 
+Si en el título no se toca nada durante unos 8 segundos, Mario juega solo el 1-1 (demo); cualquier tecla o clic lo corta.
+
 En el editor: flechas para mover la vista, rueda del ratón para elegir el bloque, clic izquierdo para colocar y clic derecho para borrar.
 
 En celulares y tablets aparecen una palanca (mover), un botón A (saltar) y un botón B (bola de fuego).
