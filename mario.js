@@ -217,6 +217,7 @@ const FOREGROUND_METATILES = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x1c, 0x1d, 0x
 NON_SOLID_BLOCKS.add(0x0b); NON_SOLID_BLOCKS.add(0x0c); NON_SOLID_BLOCKS.add(MT.Axe);   // cadena y hacha: se tocan, no frenan
 for (let id = 0x45; id <= 0x4b; id++) NON_SOLID_BLOCKS.add(id);   // castillo: decoración
 const isSolidMetatile = id => id > 0 && id < 0x100 && !NON_SOLID_BLOCKS.has(id);
+const isBumpableMetatile = id => BLOCK_ITEM[id] !== undefined || PLAIN_BRICKS.has(id);   // lo que se golpea desde abajo; el resto (suelo, duro, vacío, caños) sólo suena y frena
 const isCoinMetatile = id => id === MT.Coin || id === MT.CoinWater;
 
 // Marcadores de enemigo del editor: ids fuera del rango de metatiles, para colocarlos en la grilla.
@@ -306,6 +307,7 @@ class Game {
 	state = Game_State.Title_Menu;
 	player = Player.Mario;
 	playerSize = Player_Size.Small;
+	blockBounceTimer = 0;   // cuadros que quedan del rebote del último bloque golpeado
 	currentMap = null;
 	savedState = null;
 	// Generador de números pseudoaleatorios del original (PseudoRandomBitReg): 7 bytes que giran un bit por cuadro, con la
@@ -1957,13 +1959,22 @@ class Game {
 				if (this.loopPass >= 3) {
 					const failed = (this.loopCorrect || 0) < 3;
 					this.loopPass = this.loopCorrect = 0;
-					if (failed) this.loopBack();
+					if (failed) this.loopBack(edge / 16);
 				}
-			} else if (!ok) this.loopBack();
+			} else if (!ok) this.loopBack(edge / 16);
 		}
 	}
 
-	loopBack() {
+	loopBack(edgeCol) {
+		// Como en el original, lo que ya está en pantalla no se vuelve a armar: Mario sigue parado sobre el mismo terreno y lo
+		// que sale por la derecha es lo que había cuatro páginas atrás. Acá el mapa es fijo, así que las columnas visibles se
+		// copian a su nuevo lugar antes de mover la vista
+		const ts = this.tileSize, { width: mw, height: mh } = this.currentMap.dimensions, back = LOOP_BACK_PAGES * 16;
+		const left = Math.max(0, Math.floor(-this.mapOffset.x / ts));
+		for (let c = left; c < edgeCol; c++) {
+			if (c - back < 0) continue;
+			for (let r = 0; r < mh; r++) this.currentMap.map[r * mw + c - back] = this.currentMap.map[r * mw + c];
+		}
 		const d = LOOP_BACK_PAGES * 256 * this.tileScale;
 		this.mapOffset.x = Math.min(0, this.mapOffset.x + d);
 		this.maxMapOffsetX = this.mapOffset.x;
@@ -3666,6 +3677,7 @@ class Game {
 
 			for (let physicsStep = 0; physicsStep < physicsSteps; physicsStep++) {
 			const newY = playerPos.y + this.velocityY;
+			if (this.blockBounceTimer > 0) this.blockBounceTimer--;
 
 			// Puntos de colisión del original (BlockBuffer_X_Adder y BlockBuffer_Y_Adder), en px del NES contra el sprite de 16 px:
 			// la cabeza es un solo punto en x+8, a 4 px del borde de arriba (2 si es chico, agachado o nada); los pies son dos
@@ -3691,6 +3703,13 @@ class Game {
 						let ceilingSpeed = SMB_CEILING_SPEED;
 						const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 						let blockSoundPlayed = false;
+						// Como en el original: un bloque macizo suena y frena el salto (velocidad 1), sin rebotar; bajo el agua, o mientras el
+						// golpe anterior sigue rebotando (BlockBounceTimer, 16 cuadros), el bloque tampoco se procesa
+						const bumpable = isBumpableMetatile(blockId);
+						if (!bumpable || this.isWater || this.blockBounceTimer > 0) {
+							if (!bumpable) this.engine.playAudioOverlap(audio["Player_Bump"]);
+							this.velocityY = kc; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y - headOff; hitCeiling = true;
+						} else {
 
 						if (PLAIN_BRICKS.has(blockId)) {
 							const idxAbove = idx - mapWidth;
@@ -3759,8 +3778,10 @@ class Game {
 							}
 						}
 
+						this.blockBounceTimer = 16;
 						this.killEnemiesAbove(headCenterTile.x, headCenterTile.y);
 						this.velocityY = ceilingSpeed * this.tileScale; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y - headOff; hitCeiling = true;   // la cabeza queda dentro del bloque lo que mide su punto, como en el original
+						}
 					}
 				}
 				if (!hitCeiling) playerPos.y = newY;
