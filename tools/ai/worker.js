@@ -9,7 +9,7 @@ parentPort.on('message', async ({ id, method, args }) => {
 		const api = await ready;
 		let result;
 		switch (method) {
-			case 'info': result = { actions: api.ACTIONS, buttons: api.KEYS, worlds: api.worlds() }; break;
+			case 'info': result = { actions: api.ACTIONS, buttons: api.KEYS, worlds: api.worlds(), levels: api.levels() }; break;
 			case 'reset': result = api.reset(args[0]); break;
 			case 'step': result = api.step(...args); break;
 			case 'observe': result = api.observe(args[0] || {}); break;

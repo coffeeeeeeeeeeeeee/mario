@@ -13,9 +13,36 @@ Las posiciones van en píxeles del NES (16 px = una celda). La grilla (`obs["gri
 Con obs="compact" la observación viene en arreglos (mucho más liviana, ver el README) y con obs="none" no viene ninguna.
 `compact_grid(obs)` devuelve su grilla como lista de filas de texto, y `compact_mario(obs)` el estado de Mario como diccionario.
 """
+import fnmatch
 import http.client
 import json
 import urllib.parse
+
+
+TIPOS = {"exterior": "overworld", "subterraneo": "underground", "agua": "water", "castillo": "castle"}
+
+
+def resolve_worlds(spec, levels):
+    """Elige niveles con una lista separada por comas: nombres (1-1), comodines (1-*, *-4), grupos (todos, exterior, subterraneo,
+    agua, castillo) y, con un - delante, los que se sacan (todos,-8-4 o 1-*,-1-4). `levels` es la lista de /api/info."""
+    names = [l["name"] for l in levels]
+    chosen = []
+    for tok in (t.strip() for t in spec.split(",")):
+        if not tok:
+            continue
+        neg, t = tok[0] in "-!", tok.lstrip("-!")
+        if t == "todos":
+            found = names
+        elif t in TIPOS:
+            found = [l["name"] for l in levels if l["type"] == TIPOS[t]]
+        else:
+            found = [n for n in names if fnmatch.fnmatchcase(n, t)]
+        if not found:
+            raise ValueError(f"no hay niveles que coincidan con '{tok}' (hay {names[0]} a {names[-1]}; grupos: todos, {', '.join(TIPOS)})")
+        chosen = [n for n in chosen if n not in found] if neg else chosen + [n for n in found if n not in chosen]
+    if not chosen:
+        raise ValueError("no quedó ningún nivel")
+    return chosen
 
 
 GRID_COLS = 16   # 5 columnas a la izquierda de Mario, la suya y 10 a la derecha
@@ -72,6 +99,13 @@ class SmbVecClient:
     def reset(self):
         return self.http.request("/api/vreset", self.opts)
 
+    def reset_one(self, i, world="1-1", seed=None, size=None):
+        """Reinicia sólo la partida i (por ejemplo, en otro nivel)."""
+        body = {"world": world, "size": size or self.opts["size"], "hard": self.opts["hard"], "obs": self.obs, "env": str(i)}
+        if seed is not None:
+            body["seed"] = seed
+        return self.http.request("/api/reset", body)
+
     def step(self, actions):
         out = self.http.request("/api/vstep", {"actions": list(actions), "repeat": self.repeat, "autoreset": self.autoreset, "obs": self.obs})
         return [o["obs"] for o in out], [o["reward"] for o in out], [o["done"] for o in out], [o["info"] for o in out]
@@ -84,6 +118,7 @@ class SmbClient:
         info = self._get("/api/info")
         self.actions = info["actions"]
         self.worlds = info["worlds"]
+        self.levels = info["levels"]   # [{name, type, width}] de los 32 niveles
 
     def _call(self, path, body=None):
         return self.http.request(path, None if body is None else {**body, "env": self.env})

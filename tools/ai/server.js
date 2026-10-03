@@ -10,6 +10,7 @@
 //   POST /api/step   {action, repeat, obs, env}          -> { obs, reward, done, info }
 //   GET  /api/observe?env=0              -> observación actual
 //   GET  /api/pixels?w=84&h=84&env=0     -> cuadro en grises (sólo con --browser)
+//   GET  /watch                          -> página para ver las partidas en vivo (?n=4 partidas, ?speed=2)
 //
 // Para entrenar con muchas partidas a la vez (cada una en su hilo, en paralelo):
 //   POST /api/vreset {n, worlds, seeds, size, hard, obs}  -> lista de observaciones de las partidas 0 a n-1
@@ -60,7 +61,7 @@ const browserBackend = {
 	async call(env, method, args) {
 		const page = await pageFor(env);
 		switch (method) {
-			case 'info': return page.evaluate(() => ({ actions: smbApi.ACTIONS, buttons: smbApi.KEYS, worlds: smbApi.worlds() }));
+			case 'info': return page.evaluate(() => ({ actions: smbApi.ACTIONS, buttons: smbApi.KEYS, worlds: smbApi.worlds(), levels: smbApi.levels() }));
 			case 'reset': return page.evaluate(o => smbApi.reset(o), args[0]);
 			case 'step': return page.evaluate(([action, repeat, opts]) => smbApi.step(action, repeat, opts), args);
 			case 'observe': return page.evaluate(o => smbApi.observe(o), args[0] || {});
@@ -110,13 +111,54 @@ function onEnv(env, fn) {
 
 const lastReset = new Map();   // cómo se reinició cada partida, para el autoreset
 
-function resetEnv(env, opts) {
+// Registro de lo que juega cada partida, para poder verla en /watch: cómo arrancó cada episodio y las acciones de cada paso.
+// Como el juego es determinista, repetir eso en un navegador da exactamente la misma partida.
+const recordings = new Map();   // env -> { next, list: [episodio, ...] }
+const MAX_EPISODES = 4, MAX_RECORDED_STEPS = 20000;
+
+function recorder(env) {
+	if (!recordings.has(env)) recordings.set(env, { next: 0, list: [] });
+	return recordings.get(env);
+}
+
+function recStart(env, opts) {
+	const r = recorder(env);
+	const prev = r.list[r.list.length - 1];
+	if (prev) prev.done = true;
+	r.list.push({ id: r.next++, opts: { world: opts.world ?? '1-1', seed: opts.seed, size: opts.size, hard: opts.hard }, actions: [], repeats: [], done: false, final: null });
+	if (r.list.length > MAX_EPISODES) r.list.shift();
+}
+
+function recStep(env, action, repeat, out) {
+	const ep = recorder(env).list.at(-1);
+	if (!ep || ep.done || ep.actions.length >= MAX_RECORDED_STEPS) return;
+	ep.actions.push(action ?? 0);
+	ep.repeats.push(repeat ?? 4);
+	ep.final = { x: out.info.x, reason: out.info.reason };
+	if (out.done) ep.done = true;
+}
+
+function watchState(env, cur, from) {
+	const list = recorder(env).list;
+	const latest = list.at(-1) || null;
+	const ep = cur >= 0 ? list.find(e => e.id === cur) : latest;
+	const start = ep && ep.id === cur ? from : 0;
+	return {
+		latest: latest ? latest.id : -1,
+		ep: ep && { id: ep.id, opts: ep.opts, done: ep.done, final: ep.final, actions: ep.actions.slice(start), repeats: ep.repeats.slice(start) },
+	};
+}
+
+async function resetEnv(env, opts) {
 	lastReset.set(env, opts);
-	return onEnv(env, () => backend.call(env, 'reset', [opts]));
+	const out = await onEnv(env, () => backend.call(env, 'reset', [opts]));
+	recStart(env, opts);
+	return out;
 }
 
 async function stepEnv(env, action, repeat, extra, autoreset) {
 	const out = await onEnv(env, () => backend.call(env, 'step', [action ?? 0, repeat ?? 4, extra]));
+	recStep(env, action, repeat, out);
 	if (autoreset && out.done) {
 		const opts = { ...(lastReset.get(env) || {}) };
 		opts.seed = (opts.seed ?? 0) + 1;
@@ -134,6 +176,7 @@ async function handleApi(url, body) {
 		case '/api/step': return stepEnv(env, body.action, body.repeat, { left: body.left, right: body.right, obs: body.obs }, body.autoreset);
 		case '/api/observe': return onEnv(env, () => backend.call(env, 'observe', [{ obs: url.searchParams.get('obs') || body.obs }]));
 		case '/api/pixels': return onEnv(env, () => backend.call(env, 'pixels', [+(url.searchParams.get('w') || 84), +(url.searchParams.get('h') || 84)]));
+		case '/api/watch': return watchState(env, +(url.searchParams.get('ep') ?? -1), +(url.searchParams.get('from') || 0));
 		case '/api/vreset': {
 			const worlds = [].concat(body.worlds ?? body.world ?? '1-1');
 			return Promise.all(Array.from({ length: body.n || 1 }, (_, i) =>
@@ -145,7 +188,24 @@ async function handleApi(url, body) {
 	}
 }
 
+// /watch: la grilla de partidas (watch.html); /watch?api&env=N: una partida, que es el juego de siempre (index.html) más watch.js
+function serveWatch(url, res) {
+	if (url.pathname === '/watch.js') {
+		res.writeHead(200, { 'Content-Type': 'text/javascript' });
+		fs.createReadStream(path.join(__dirname, 'watch.js')).pipe(res);
+	} else if (url.searchParams.has('env')) {
+		const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8').replace('</body>', '\t<script src="/watch.js"></script>\n</body>');
+		res.writeHead(200, { 'Content-Type': 'text/html' });
+		res.end(html);
+	} else {
+		res.writeHead(200, { 'Content-Type': 'text/html' });
+		fs.createReadStream(path.join(__dirname, 'watch.html')).pipe(res);
+	}
+}
+
 function serveStatic(url, res) {
+	if (url.pathname === '/watch' || url.pathname === '/watch.js') return serveWatch(url, res);
+	if (url.pathname === '/favicon.ico') { res.writeHead(204); res.end(); return; }
 	let rel = decodeURIComponent(url.pathname);
 	if (rel === '/') rel = '/index.html';
 	const file = path.join(ROOT, rel);

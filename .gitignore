@@ -6,3 +6,5 @@ tools/smb.nes
 # Servidor de la API para IA
 tools/ai/node_modules/
 __pycache__/
+.entrenamiento/
+tools/ai/.venv/

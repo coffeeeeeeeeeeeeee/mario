@@ -46,6 +46,7 @@
 
 	// Mismo generador que usa el juego para el azar, sembrado a partir de un número
 	function seedRandom(seed) {
+		if (seed === undefined) { smb.lfsr.set([0xa5, 0, 0, 0, 0, 0, 0]); return; }   // el estado de arranque del original
 		let a = seed >>> 0;
 		const next = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) & 0xff; };
 		for (let i = 0; i < 7; i++) smb.lfsr[i] = next();
@@ -157,6 +158,8 @@
 	}
 
 	let last = null;   // lo que se mide para la recompensa
+	let mainWorld = null;   // el último de los 32 niveles en que estuvo (las salas secretas no cuentan)
+	let mainLevels = new Set();
 
 	function snapshot() {
 		const p = sprite();
@@ -168,7 +171,12 @@
 		if (idx < 0) throw new Error(`No existe el nivel ${opts.world}`);
 		pressed([]);
 		smb.difficulty = opts.hard ? 'HARD' : 'NORMAL';
+		// El generador de azar se siembra antes de cargar el nivel: algunos enemigos (los paratroopas que saltan) toman de él su
+		// primer tiempo al crearse, y si no el episodio dependería de lo que se jugó antes
+		seedRandom(opts.seed);
 		smb.currentWorldIndex = idx;
+		mainLevels = new Set(smb.availableWorlds.filter(n => n !== '0-0'));
+		mainWorld = opts.world ?? '1-1';
 		smb.selectPlayer(opts.player ?? 0);
 		// La pantalla negra del principio no se espera
 		for (let i = 0; i < 600 && smb.state !== Game_State.Playing; i++) {
@@ -176,7 +184,9 @@
 			tick(1);
 		}
 		if (smb.state !== Game_State.Playing) throw new Error(`No se pudo empezar el nivel (estado ${smb.state})`);
-		if (opts.seed !== undefined) seedRandom(opts.seed);
+		// Los contadores de cuadros y de tiempo siguen de un episodio al siguiente; en cero, el episodio sólo depende de cómo se
+		// reinició (el original usa la paridad del contador para, por ejemplo, la dirección con que aparecen algunos enemigos)
+		smb.growTimer = 0; smb.invincibleTimer = 0; smb.deathTimer = 0; smb.jumpOriginY = 0; smb.nesFrame = 0; smb.clockMs = 0; smb.physicsAccumulator = 0; smb.coinAnimAcc = 0; smb.pakkunAnimAcc = 0; smb.musicResumeAt = 0;
 		if (opts.size && opts.size !== 'small') {
 			smb.playerSize = SIZES[opts.size] ?? Player_Size.Small;
 			if (smb.playerSize > Player_Size.Small) {
@@ -199,17 +209,24 @@
 			tick(1);
 			const now = snapshot();
 			const st = smb.state;
-			// Avanzar en x es lo que se premia; un cambio de nivel (caño, laberinto) no cuenta como avance
-			if (now.world === last.world) reward += now.x - last.x;
+			// Avanzar en x es lo que se premia; un salto de más de 48 px en un paso (el laberinto que devuelve a Mario, un caño) no cuenta
+			const dx = now.x - last.x;
+			if (now.world === last.world && Math.abs(dx) <= 48) reward += dx;
+			// Pasar a otro nivel de los 32 (el caño del final de los niveles de agua, una zona de atajos) cuenta como completar el
+			// actual; entrar a una sala secreta, o volver de ella, no
+			const nextMain = now.world !== last.world && mainLevels.has(now.world) && now.world !== mainWorld;
+			if (mainLevels.has(now.world)) mainWorld = now.world;
 			last = now;
 			if (st === Game_State.Player_Dying) { done = true; reason = 'dead'; break; }
-			if (st === Game_State.Level_Complete) { done = true; reason = 'clear'; flag = true; break; }
+			if (st === Game_State.Level_Complete || nextMain) { done = true; reason = 'clear'; flag = true; break; }
+			// Fuera del final del mapa (nadando, en un nivel de agua) no hay nada más: se da por perdido
+			if (now.x > smb.currentMap.dimensions.width * 16 + 16) { done = true; reason = 'out'; break; }
 			if (st === Game_State.Title_Menu || st === Game_State.Black_Screen && smb.screenType === Black_Screen_Type.Game_Over) { done = true; reason = 'over'; break; }
 		}
 		const clockPenalty = Math.min(0, last.time - startTime) * 0.1;   // el reloj del juego corre: apurarse rinde
-		reward = round(reward + clockPenalty - (reason === 'dead' ? 15 : 0) + (flag ? 50 : 0));
+		reward = round(reward + clockPenalty - (reason === 'dead' || reason === 'out' ? 15 : 0) + (flag ? 50 : 0));
 		const obs = observe(opts);
-		return { obs, reward, done, info: { reason, x: last.x, time: last.time, score: last.score, world: last.world } };
+		return { obs, reward, done, info: { reason, x: last.x, time: last.time, score: last.score, world: last.world, width: smb.currentMap.dimensions.width * 16 } };
 	}
 
 	// Cuadro actual achicado, en grises (0 a 255), por si se prefiere aprender de la imagen
@@ -229,6 +246,11 @@
 		ACTIONS, KEYS: Object.keys(KEYS),
 		ready: () => typeof smb !== 'undefined' && !!smb && !!smb.currentMap,
 		worlds: () => smb.availableWorlds.filter(n => n !== '0-0'),
+		// Los 32 niveles con su tipo (overworld, underground, water, castle) y su ancho en px
+		levels: () => smb.availableWorlds.filter(n => n !== '0-0').map(n => {
+			const m = map.find(x => x.world === n);
+			return { name: n, type: ['overworld', 'underground', 'water', 'castle'][m.type] ?? 'overworld', width: m.dimensions.width * 16 };
+		}),
 		reset, step, observe, pixels,
 	};
 })();

@@ -52,7 +52,22 @@ obs, rewards, dones, infos = vec.step([2] * 8)       # la que termina arranca de
 - **Formatos de observación** (`obs=` en `reset` y `step`): `"full"` (la de arriba, lo normal), `"compact"` (lo mismo en arreglos, que pesa menos de la mitad) y `"none"` (sólo recompensa y fin). En `compact`: `m` es `[x, y, ancho, alto, vx, vy, suelo, tamaño (0 chico, 1 grande, 2 fuego), mira a, banderas]`, `g` la grilla como texto de 13 x 16 dígitos fila por fila, `e` los enemigos `[tipo, color, x, y, ancho, alto, dir, estado]`, `p` las plataformas, `u` los hongos y flores, y además `w` nivel, `f` cuadro, `t` tiempo, `s` puntos, `c` monedas, `l` vidas. `compact_grid` y `compact_mario` de `smb_env.py` los decodifican.
 - **Acciones:** 14 combinaciones predefinidas (`env.actions`), o una lista de botones (`left`, `right`, `down`, `jump`, `run`, `fire`).
 - **Recompensa:** lo que avanza Mario en x, menos una pequeña penalidad por el reloj del juego, -15 al morir y +50 al llegar al mástil. En `info` vienen los datos crudos para armar otra.
-- **Fin del episodio:** `done` al morir (también por tiempo) o al tomar el mástil; `info["reason"]` dice cuál (`dead` o `clear`).
+- **Fin del episodio:** `done` al morir (también por tiempo), al completar el nivel o al salirse por el final del mapa (nadando); `info["reason"]` dice cuál: `dead`, `clear` u `out`. Se completa un nivel al tomar el mástil o el hacha, y también al pasar a otro de los 32 niveles (el caño del final de los niveles de agua, las zonas de atajos); entrar a una sala secreta, o volver de ella, no cuenta. Los saltos de más de 48 px en un paso (el laberinto que devuelve a Mario, un caño) no suman ni restan recompensa.
 - **Velocidad:** con 8 partidas en paralelo por HTTP salen unos 8.000 cuadros por segundo con `full`, 14.000 con `compact` y 21.000 con `none` (hasta unas 350 veces el tiempo real), medidos en una máquina de 8 núcleos; `vector_demo.py` los mide.
 - El modo sin navegador da exactamente lo mismo que el navegador, cuadro por cuadro. `node tools/ai/check.js` lo comprueba en los 32 niveles; conviene correrlo después de tocar `mario.js`.
 - Con Gymnasium y NumPy instalados, `smb_env.SuperMarioEnv` ofrece la interfaz estándar `reset/step` y puede sortear niveles en cada episodio.
+
+### Entrenar una IA y verla jugar
+
+`entrenar.sh` arranca el servidor y el entrenamiento (PPO, de Stable-Baselines3) y abre en el navegador una vista en vivo con las partidas:
+
+```
+./entrenar.sh setup                                   # una vez: instala PyTorch (CPU) y Stable-Baselines3 en tools/ai/.venv (~1 GB)
+./entrenar.sh start --worlds 1-1,2-1 --steps 2000000  # entrena y abre http://127.0.0.1:8777/watch
+./entrenar.sh status | logs | watch                   # cómo viene, seguir el registro, volver a abrir la vista
+./entrenar.sh stop                                    # detiene todo y guarda el modelo en .entrenamiento/modelos/
+```
+
+`--worlds` acepta los 32 niveles: nombres (`1-1`), comodines (`1-*`, `*-4`), grupos (`todos`, `exterior`, `subterraneo`, `agua`, `castillo`) y, con un `-` delante, los que se sacan. Por ejemplo `--worlds "todos,-5-*,-6-*"` entrena en todos menos los mundos 5 y 6, que quedan para evaluar si lo aprendido sirve en niveles nuevos (`python3 tools/ai/train.py worlds` los lista con su tipo).
+
+La vista (`/watch?n=4&speed=1`, con botones ×1 a ×8) repite en el navegador las partidas que juega el agente: el servidor guarda cómo arrancó cada episodio y sus acciones, y como el juego es determinista sale exactamente lo mismo, con un pequeño retraso; al terminar un episodio salta al más nuevo. Arriba de cada partida se ve qué episodio es y si la repetición coincidió con la del entrenamiento. `python3 tools/ai/train.py eval --model modelo --worlds 1-1,2-1,3-1` mide cuánto avanza un modelo por nivel; para ver si aprendió a jugar en general hay que evaluar en niveles que no estuvieron en el entrenamiento.

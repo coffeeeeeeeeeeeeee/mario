@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Partidas en vivo</title>
+	<style>
+		html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px monospace; overflow: hidden; }
+		#bar { height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 10px; box-sizing: border-box; }
+		#bar button { font: inherit; background: #333; color: #ddd; border: 1px solid #555; padding: 2px 10px; cursor: pointer; }
+		#bar button.on { background: #6a4; color: #000; }
+		#grid { position: relative; }
+		.cell { position: absolute; overflow: hidden; }
+		.cell iframe { border: 0; width: 640px; height: 480px; transform-origin: top left; image-rendering: pixelated; }
+	</style>
+</head>
+<body>
+	<div id="bar"><span id="title"></span></div>
+	<div id="grid"></div>
+	<script>
+		// Cada partida va en su propio iframe de 640x480, el tamaño con el que corre el entrenamiento: el juego calcula sus
+		// medidas a partir de la ventana, y con otro tamaño la repetición podría diferir en el último decimal. Se achica con CSS.
+		const q = new URLSearchParams(location.search);
+		const n = Math.max(1, Math.min(16, +(q.get('n') || 4)));
+		let speed = +(q.get('speed') || 1);
+		const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+		const grid = document.getElementById('grid'), frames = [];
+		for (let i = 0; i < n; i++) {
+			const cell = document.createElement('div');
+			cell.className = 'cell';
+			const f = document.createElement('iframe');
+			f.src = `/watch?api&env=${i}&speed=${speed}`;
+			cell.appendChild(f);
+			grid.appendChild(cell);
+			frames.push({ cell, f });
+		}
+		function layout() {
+			const bar = document.getElementById('bar').offsetHeight;
+			const s = Math.min(innerWidth / (cols * 640), (innerHeight - bar) / (rows * 480));
+			grid.style.width = cols * 640 * s + 'px';
+			grid.style.height = rows * 480 * s + 'px';
+			grid.style.left = (innerWidth - cols * 640 * s) / 2 + 'px';
+			frames.forEach(({ cell, f }, i) => {
+				cell.style.width = 640 * s + 'px'; cell.style.height = 480 * s + 'px';
+				cell.style.left = (i % cols) * 640 * s + 'px'; cell.style.top = Math.floor(i / cols) * 480 * s + 'px';
+				f.style.transform = `scale(${s})`;
+			});
+		}
+		const bar = document.getElementById('bar');
+		document.getElementById('title').textContent = `${n} partida${n > 1 ? 's' : ''} en vivo · velocidad:`;
+		const buttons = [1, 2, 4, 8].map(v => {
+			const b = document.createElement('button');
+			b.textContent = '×' + v;
+			b.onclick = () => { speed = v; buttons.forEach((x, k) => x.classList.toggle('on', [1, 2, 4, 8][k] === v)); frames.forEach(({ f }) => f.contentWindow.postMessage({ speed: v }, '*')); };
+			b.classList.toggle('on', v === speed);
+			bar.appendChild(b);
+			return b;
+		});
+		addEventListener('resize', layout);
+		layout();
+	</script>
+</body>
+</html>

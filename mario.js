@@ -812,6 +812,8 @@ class Game {
 			// No borrar!
 			this.pristineMapData = JSON.parse(JSON.stringify(this.currentMap.map));
 
+			// Lo que quedaba suelto del nivel anterior (un hongo, monedas que saltan, bolas de fuego) no pasa al nuevo
+			this.activePowerups = []; this.activeCoins = []; this.bumpingBlocks = []; this.scorePopups = []; this.brickParticles = []; this.activeFireballs = [];
 			this.createEnemies();
 			// En el agua la gravedad es la liviana de la natación; en tierra, la del salto parado
 			this.jumpForceUp = this.isWater ? SWIM_FORCE_UP : SMB_JUMP.standing.up;
@@ -846,6 +848,7 @@ class Game {
 		this.frenzyFilter = 0;
 		this.hasLakitu = (this.currentMap.enemies || []).some(e => e.type === 'Lakitu');
 		this.lakituTimer = 0;
+		this.frenzyTimer = 0; this.bubbleTimer = BUBBLE_STEPS;   // los tiempos del nivel anterior no pasan al nuevo
 		const base = (this.currentMap.platforms || []).map((d0) => {
 			let d = d0;
 			if (this.secondaryHard && d.w === 48) d = { ...d, w: 32 };   // en el modo difícil las plataformas grandes miden 32 px
