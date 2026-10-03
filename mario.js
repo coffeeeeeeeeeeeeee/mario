@@ -2393,7 +2393,14 @@ class Game {
 
 		const playerRect = this.playerHitbox(player);
 
-		if (enemy.state === 'stomped' || enemy.state === 'falling' || !this.rectsOverlap(playerRect, this.enemyHitRect(enemy) ?? enemyRect)) return;
+		const overlapping = this.rectsOverlap(playerRect, this.enemyHitRect(enemy) ?? enemyRect);
+		if (!overlapping) { enemy.touching = false; return; }
+		if (enemy.state === 'stomped' || enemy.state === 'falling') return;
+		// Como en el original (bit 0 de Enemy_CollisionBits), cada contacto se resuelve una sola vez: mientras Mario siga
+		// encimado con el enemigo no se vuelve a patear ni a lastimar. Así no mata el caparazón recién pateado ni el koopa
+		// que se levanta justo donde está Mario.
+		if (enemy.touching) return;
+		enemy.touching = true;
 
 		// Con la estrella, Mario se lleva puesto a cualquier enemigo
 		if (this.starTimer > 0) {
