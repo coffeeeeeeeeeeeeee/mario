@@ -424,10 +424,9 @@ class Game {
 		// Settings Menu
 		this.currentSettingsSelection = 0;
 		const savedDifficulty = this.engine.getCookie("smb_difficulty");
-		this.difficulty = (savedDifficulty || "NORMAL").toUpperCase(); // EASY, NORMAL, HARD; HARD es el modo difícil primario del original
+		this.difficulty = (savedDifficulty || "NORMAL").toUpperCase() === "HARD" ? "HARD" : "NORMAL"; // NORMAL o HARD; HARD es el modo difícil primario del original (un EASY guardado antes pasa a NORMAL)
 		// Al terminar el juego se desbloquean la selección de mundo y el modo difícil, como en el original
 		this.beaten = this.engine.getCookie("smb_beaten") === "true";
-		if (!this.beaten && this.difficulty === "HARD") this.difficulty = "NORMAL";
 		const savedSFX = this.engine.getCookie("smb_sfx");
 		this.sfxEnabled = savedSFX !== "false";
 
@@ -722,8 +721,10 @@ class Game {
 	tileToScreen(tx, ty) {
 		const mapHeight = this.currentMap.dimensions.height;
 		const offsetY = mapHeight * this.tileSize - this.engine.getCanvasHeight();
-		const x = Math.round(tx * this.tileSize + this.mapOffset.x);
-		const y = Math.round(ty * this.tileSize + this.mapOffset.y - offsetY);
+		// Sin redondear: js2d ajusta los bordes de cada tile a píxeles físicos, y si cada tile se redondea por su cuenta antes
+		// (con una densidad de píxeles fraccionaria, como 1,25 o 1,5) queda una rendija de 1 px entre tiles vecinos
+		const x = tx * this.tileSize + this.mapOffset.x;
+		const y = ty * this.tileSize + this.mapOffset.y - offsetY;
 		return { x, y };
 	}
 
@@ -2742,7 +2743,7 @@ class Game {
 		this.engine.drawTextCustom(font, titleText, TEXT_SIZE * 2, "#ffffff", titlePos, "center");
 
 		const settingsOptions = [
-			{ label: "DIFFICULTY", values: this.beaten ? ["EASY", "NORMAL", "HARD"] : ["EASY", "NORMAL"], getValue: () => this.difficulty, setValue: (v) => { this.difficulty = v; this.engine.setCookie("smb_difficulty", v, 365); } },
+			{ label: "DIFFICULTY", values: ["NORMAL", "HARD"], getValue: () => this.difficulty, setValue: (v) => { this.difficulty = v; this.engine.setCookie("smb_difficulty", v, 365); } },
 			{ label: "VOLUME", values: [], getValue: () => Math.round(this.volume * 100) + "%", setValue: null },
 			{ label: "SOUND EFFECTS", values: ["ON", "OFF"], getValue: () => this.sfxEnabled ? "ON" : "OFF", setValue: (v) => { this.sfxEnabled = v === "ON"; this.engine.setCookie("smb_sfx", this.sfxEnabled, 365); } },
 			{ label: "BACK", values: [], getValue: () => "", setValue: null }
