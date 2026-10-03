@@ -225,13 +225,14 @@ const FLAME_W = 24, FLAME_H = 8;
 const BRIDGE_COLLAPSE_MS = 4 * 1000 / 60;                  // un tile del puente cada 4 cuadros (BridgeCollapse)
 const BASE_GRAVITY_NES = 0.4;   // px del NES por cuadro al cuadrado, para la caída automática de Mario al final
 const BULLET_BILL_SPEED = 1.5;       // px del NES por cuadro (el original lo mueve a $e8/16)
-const CANNON_MIN_STEPS = 120, CANNON_RANGE_STEPS = 120;   // cuadros entre disparos de un cañón, mínimo y variación
-const CANNON_NEAR_TILES = 3;         // un cañón no dispara si Mario está más cerca que esto
+const CANNON_TIMER = 14;             // el temporizador de un cañón tras disparar (baja de a uno cada vez que sale sorteado)
+const CANNON_NEAR = 40;              // px del NES: más cerca que esto el Bullet Bill muere al salir
 const CANNON_MAX_BILLS = 3;
 const PLATFORM_LIFT_SPEED = 0.94;      // px del NES por cuadro de las plataformas que suben o bajan
-const PLATFORM_VERT_AMPLITUDE = 40, PLATFORM_VERT_RATE = 0.02;   // la que sube y baja: amplitud y fase por cuadro
-const PLATFORM_HORI_AMPLITUDE = 40, PLATFORM_HORI_RATE = 0.025;  // la que va y viene
-const PLATFORM_DROP_GRAVITY = 0.1, PLATFORM_DROP_MAX = 2;        // la que cae al pisarla
+const PLATFORM_ACCEL = 5 / 256, PLATFORM_MAX_SPEED = 3;           // la que sube y baja y el balancín: aceleran de a 5/256 hasta 3 px por cuadro
+const PLATFORM_VERT_HALF = 64;                                    // la que sube y baja oscila 64 px a cada lado de su centro
+const PLATFORM_HORI_MAX = 14;                                     // la que va y viene: velocidad máxima en 1/16 px (XMoveCntr_Platform)
+const PLATFORM_DROP_GRAVITY = 0x7f / 256, PLATFORM_DROP_MAX = 2;  // la que cae al pisarla
 const PLATFORM_FALL_GRAVITY = 0.2;                               // balancín que se suelta
 const PLATFORM_BALANCE_LIMIT = 13;                               // el balancín se suelta si una sube hasta acá
 const HAMMER_THROW_STEPS = 0x30;       // cuadros entre martillos (HammerThrowTmrData); en el modo difícil, 0x1c
@@ -247,6 +248,7 @@ const SPRING_STEPS_PER_FRAME = 4;                  // cuadros que dura cada paso
 const SPRING_BOUNCE = 7, SPRING_BOUNCE_HIGH = 12;  // px del NES por cuadro: rebote normal y apretando el salto
 const SPRING_FORCE = 0x70 / 256;                   // gravedad de Mario tras el rebote (VerticalForce)
 const FLY_CHEEP_GRAVITY = 0.1;                       // px del NES por cuadro al cuadrado de los cheep-cheeps que saltan
+const FLY_CHEEP_TIMERS = [0x10, 0x60, 0x20, 0x48];   // FlyCCTimerData: cuadros hasta el próximo cheep-cheep que salta
 const FRENZY_Y = [32, 16, 112, 48, 0, 64, 128, 80];   // alturas (desde la fila 0 del nivel) de Enemy17YPosData
 const FIREWORK_X = [0x00, 0x30, 0x60, 0x60, 0x00, 0x20];   // FireworksXPosData
 const FIREWORK_Y = [0x60, 0x40, 0x70, 0x40, 0x60, 0x30];   // FireworksYPosData
@@ -423,6 +425,9 @@ class Game {
 		this.currentSettingsSelection = 0;
 		const savedDifficulty = this.engine.getCookie("smb_difficulty");
 		this.difficulty = (savedDifficulty || "NORMAL").toUpperCase(); // EASY, NORMAL, HARD; HARD es el modo difícil primario del original
+		// Al terminar el juego se desbloquean la selección de mundo y el modo difícil, como en el original
+		this.beaten = this.engine.getCookie("smb_beaten") === "true";
+		if (!this.beaten && this.difficulty === "HARD") this.difficulty = "NORMAL";
 		const savedSFX = this.engine.getCookie("smb_sfx");
 		this.sfxEnabled = savedSFX !== "false";
 
@@ -778,13 +783,18 @@ class Game {
 		this.climbVine = null;
 		this.loopPrevRight = null; this.loopPass = 0; this.loopCorrect = 0;
 		this.cameraY = 0;
+		this.lakituStopped = false;
+		this.frenzyFilter = 0;
 		this.hasLakitu = (this.currentMap.enemies || []).some(e => e.type === 'Lakitu');
 		this.lakituTimer = 0;
 		const base = (this.currentMap.platforms || []).map((d0) => {
 			let d = d0;
 			if (this.secondaryHard && d.w === 48) d = { ...d, w: 32 };   // en el modo difícil las plataformas grandes miden 32 px
 			const p = { ...d, ox: d.x, oy: d.y, vx: 0, vy: 0, rider: false, t: d.kind === 'vert' ? -Math.PI / 2 : 0, active: false, falling: false };
-			if (d.kind === 'vert') p.cy = d.y + PLATFORM_VERT_AMPLITUDE;
+			// La que sube y baja (InitVertPlatform): si empieza en la mitad de arriba de la pantalla (y < 0x80 del NES) su centro
+			// está 64 px más abajo y arranca desde arriba; si no, su centro está 64 px más arriba y arranca desde abajo
+			if (d.kind === 'vert') p.cy = d.y + 32 < 0x80 ? d.y + PLATFORM_VERT_HALF : d.y - PLATFORM_VERT_HALF;
+			p.pc = 0; p.sc = 0; p.f = 0;
 			return p;
 		});
 		base.forEach((p, i) => { if (p.pair !== undefined) { p.partner = base[p.pair]; p.first = i < p.pair; } });
@@ -798,7 +808,7 @@ class Game {
 		this.cannons = [];
 		const mw = this.currentMap.dimensions.width, mapIds = this.currentMap.map || [];
 		for (let i = 0; i < mapIds.length; i++) {
-			if (mapIds[i] === 0x64) this.cannons.push({ tx: i % mw, ty: Math.floor(i / mw), timer: CANNON_MIN_STEPS + Math.floor(Math.random() * CANNON_RANGE_STEPS) });
+			if (mapIds[i] === 0x64) this.cannons.push({ tx: i % mw, ty: Math.floor(i / mw), timer: 0 });
 		}
 		for (const e0 of this.currentMap.enemies || []) {
 			const e = (this.primaryHard && e0.type === 'Goomba') ? { ...e0, type: 'Koopa', color: 'Buzzy' } : e0;
@@ -1431,10 +1441,10 @@ class Game {
 		this.updateLoops(player, screenRight);
 		this.updateVines(player);
 		this.updateBubbles(player);
-		if (this.hasLakitu && !this.enemies.some(e => e.type === 'Lakitu') && ++this.lakituTimer >= LAKITU_RESPAWN_STEPS * 0.5) {
+		if (this.hasLakitu && !this.lakituStopped && !this.enemies.some(e => e.type === 'Lakitu') && (this.lakituTimer += this.physicsSteps) >= LAKITU_RESPAWN_STEPS) {
 			// Si lo derrotan, otro Lakitu vuelve a aparecer por la derecha pasado un rato
 			this.lakituTimer = 0;
-			this.enemies.push({ id: this.enemies.length, type: 'Lakitu', color: null, x: screenRight + 2 * ts, y: ts * 1.4, dir: -1, vx: -1, vy: 0, vx0: 0, state: 'walking', throwTimer: LAKITU_EGG_STEPS, active: true, anim: 0 });
+			this.enemies.push({ id: this.enemies.length, type: 'Lakitu', color: null, x: screenRight + 2 * ts, y: ts * 1.4 - (this.cameraY || 0), dir: -1, vx: -1, vy: 0, vx0: 0, state: 'walking', throwTimer: LAKITU_EGG_STEPS, active: true, anim: 0 });
 		}
 		this.updatePlatforms(player, screenLeft, screenRight);
 		this.updateSprings(player);
@@ -1473,7 +1483,7 @@ class Game {
 		if (enemy.type === 'BowserFlame') return this.stepBowserFlame(enemy);
 		if (NPC_TYPES.has(enemy.type)) return;
 		if (enemy.type === 'Podoboo') { this.stepPodoboo(enemy); return; }
-		if (enemy.type === 'Lakitu') { this.stepLakitu(enemy, player); return; }
+		if (enemy.type === 'Lakitu') return this.stepLakitu(enemy, player);
 		if (enemy.type === 'Hammer') return this.stepHammer(enemy);
 		if (enemy.type === 'Spiny' || enemy.type === 'HammerBro') enemy.anim = (enemy.anim || 0) + 1;
 		if (enemy.type === 'Spiny' && enemy.state === 'egg') { this.stepSpinyEgg(enemy, player); return; }
@@ -1693,14 +1703,20 @@ class Game {
 		this.createEnemies();
 	}
 
-	// Ataque continuo de los niveles (AreaFrenzy): cheep-cheeps que saltan, Bullet Bills desde la derecha o,
-	// en el agua, cheep-cheeps que nadan desde la derecha. Rige desde que la pantalla llega a su marca hasta la marca de fin.
+	// Ataque continuo de los niveles (AreaFrenzy): cheep-cheeps que saltan, Bullet Bills desde la derecha o, en el agua,
+	// cheep-cheeps que nadan desde la derecha. Rige desde que la pantalla llega a su marca hasta la marca de fin, y las
+	// marcas de fin también retiran a Lakitu. Los que nadan o vuelan salen cada 32 cuadros o según FlyCCTimerData; el Bullet
+	// Bill sale de a uno. La altura sale de Enemy17YPosData sin repetir hasta usar las ocho.
 	updateFrenzy(player, screenLeft, screenRight) {
 		const list = this.currentMap.frenzy;
 		if (!list || !list.length) return;
 		const ts = this.tileSize, k = this.tileScale, W = this.engine.getCanvasWidth(), H = this.engine.getCanvasHeight();
 		let mode = null;
 		for (const f of list) if (f.x * ts <= screenRight) mode = f.kind;
+		if (mode === 'stop' && !this.lakituStopped) {
+			this.lakituStopped = true;
+			for (const e of this.enemies) if (e.type === 'Lakitu') e.state = 'leaving';
+		}
 		if (!mode || mode === 'stop') return;
 		this.frenzyTimer = (this.frenzyTimer || 0) - this.physicsSteps;
 		if (this.frenzyTimer > 0) return;
@@ -1708,40 +1724,53 @@ class Game {
 		const color = world === 2 ? 'Grey' : 'Red';
 		const base = { id: this.enemies.length, color, state: 'walking', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true, anim: 0, frame: 0, swimPhase: 0, force: 0, floatTimer: 0 };
 		if (mode === 'fly') {
-			this.frenzyTimer = 16 + Math.floor(Math.random() * 80);
+			this.frenzyTimer = FLY_CHEEP_TIMERS[Math.floor(Math.random() * 4)];
 			if (this.enemies.filter(e => e.flying).length >= (this.secondaryHard ? 4 : 3)) return;
 			const dir = Math.random() < 0.5 ? -1 : 1;
 			this.enemies.push({ ...base, type: 'Cheep', flying: true, x: screenLeft + (0.15 + Math.random() * 0.7) * W, y: H + ts,
-				dir, vx: dir * (0.9 + Math.random() * 1.1) * k, vy: -(5 + Math.random() * 1.5) * k, origY: H, bobDown: false });
+				dir, vx: dir * (0.9 + Math.random() * 1.1) * k, vy: -5 * k, origY: H, bobDown: false });
+			return;
+		}
+		this.frenzyTimer = 32;
+		// Altura: se sortea entre las que todavía no salieron
+		if (this.frenzyFilter === undefined || this.frenzyFilter === 0xff) this.frenzyFilter = 0;
+		let idx = Math.floor(Math.random() * 8);
+		while (this.frenzyFilter & (1 << idx)) idx = (idx + 1) & 7;
+		this.frenzyFilter |= 1 << idx;
+		const y = ts * 1.2 + FRENZY_Y[idx] / 128 * (H - ts * 3.2);   // dentro de la parte visible
+		if (this.currentMap.type === World_Type.Underwater) {
+			if (this.enemies.filter(e => e.type === 'Cheep' && e.frenzy).length >= 3) return;
+			this.enemies.push({ ...base, type: 'Cheep', frenzy: true, x: screenRight + ts, y, dir: -1, vx: -1, vy: 0, origY: y, bobDown: false });
 		} else {
-			const y = ts * 1.2 + FRENZY_Y[Math.floor(Math.random() * 8)] / 128 * (H - ts * 3.2);   // dentro de la parte visible
-			if (this.currentMap.type === World_Type.Underwater) {
-				this.frenzyTimer = 32;
-				this.enemies.push({ ...base, type: 'Cheep', x: screenRight + ts, y, dir: -1, vx: -1, vy: 0, origY: y, bobDown: false });
-			} else {
-				this.frenzyTimer = 40 + Math.floor(Math.random() * 60);
-				if (this.enemies.filter(e => e.type === 'BulletBill').length >= CANNON_MAX_BILLS) return;
-				this.enemies.push({ ...base, type: 'BulletBill', color: null, x: screenRight + ts, y, dir: -1, vx: -1, vy: 0 });
-			}
+			if (this.enemies.some(e => e.type === 'BulletBill' && e.frenzy)) return;
+			this.engine.playAudioOverlap(audio["Bowser_Fire"]);
+			this.enemies.push({ ...base, type: 'BulletBill', frenzy: true, color: null, x: screenRight + ts, y, dir: -1, vx: -1, vy: 0 });
 		}
 	}
 
-	// Los cañones a la vista disparan un Bullet Bill hacia Mario cada tanto, si Mario no está pegado al cañón
+	// Cañones (ProcessCannons): por cada hueco libre (hay tres para Bullet Bills) se sortea cada cuadro un cañón de los seis de
+	// la tabla; si el sorteado existe, está pasada la página 0 y su temporizador llegó a cero, dispara y lo reinicia en 14; si
+	// no, el temporizador baja de a uno. Un Bullet Bill nace y muere enseguida si Mario está a menos de 40 px del cañón.
 	updateCannons(player, screenLeft, screenRight) {
-		const ts = this.tileSize;
+		const ts = this.tileSize, k = this.tileScale;
 		const playerX = player.position.x - this.mapOffset.x;
-		for (const c of this.cannons || []) {
-			const cx = c.tx * ts;
-			if (cx + ts < screenLeft || cx > screenRight) continue;
-			c.timer -= this.physicsSteps;
-			if (c.timer > 0) continue;
-			c.timer = CANNON_MIN_STEPS + Math.floor(Math.random() * CANNON_RANGE_STEPS);
-			if (Math.abs(playerX - cx) < CANNON_NEAR_TILES * ts) continue;
-			if (this.enemies.filter(e => e.type === 'BulletBill').length >= CANNON_MAX_BILLS) continue;
-			const pos = this.tileToScreen(c.tx, c.ty);
-			const dir = playerX < cx ? -1 : 1;
-			this.enemies.push({ id: this.enemies.length, type: 'BulletBill', color: null, x: cx - this.mapOffset.x + this.mapOffset.x, y: pos.y, dir, vx: dir, vy: 0, state: 'walking', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true });
-			this.engine.playAudioOverlap(audio["Shell"]);
+		const visible = (this.cannons || []).filter(c => { const cx = c.tx * ts; return c.tx >= 16 && cx + ts >= screenLeft && cx <= screenRight; }).sort((a, b) => a.tx - b.tx).slice(0, 6);
+		if (!visible.length) return;
+		const mask = this.secondaryHard ? 8 : 16;
+		for (let st = 0; st < this.physicsSteps; st++) {
+			const free = CANNON_MAX_BILLS - this.enemies.filter(e => e.type === 'BulletBill' && !e.frenzy).length;
+			for (let slot = 0; slot < free; slot++) {
+				const c = visible[Math.floor(Math.random() * mask)];
+				if (!c) continue;
+				if (c.timer > 0) { c.timer--; continue; }
+				c.timer = CANNON_TIMER;
+				const cx = c.tx * ts;
+				if (Math.abs(playerX - cx) < CANNON_NEAR * k) continue;
+				const pos = this.tileToScreen(c.tx, c.ty);
+				const dir = playerX < cx ? -1 : 1;
+				this.enemies.push({ id: this.enemies.length, type: 'BulletBill', color: null, x: cx, y: pos.y, dir, vx: dir, vy: 0, state: 'walking', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true });
+				this.engine.playAudioOverlap(audio["Bowser_Fire"]);
+			}
 		}
 	}
 
@@ -1774,6 +1803,11 @@ class Game {
 			return;
 		}
 		enemy.anim++;
+		if (enemy.state === 'leaving') {
+			// Al llegar la marca de fin del ataque, Lakitu se va por la derecha y ya no vuelve
+			enemy.x += 2 * k; enemy.vx = 1;
+			return enemy.x + this.mapOffset.x > this.engine.getCanvasWidth() + this.tileSize * 2 ? 'remove' : undefined;
+		}
 		const playerX = player.position.x - this.mapOffset.x;
 		const dx = (playerX - enemy.x) / k;
 		const toward = dx < 0 ? -1 : 1;
@@ -1793,7 +1827,8 @@ class Game {
 		}
 		enemy.x += enemy.moveDir * speed / 16 * k;
 		enemy.vx = enemy.moveDir;
-		enemy.y = this.tileSize * 1.4;   // flota cerca del borde de arriba de la pantalla
+		// En el original flota en la fila de arriba de todo del nivel; acá se lo deja a 1,4 tiles del borde visible, que sigue a la cámara
+		enemy.y = this.tileSize * 1.4 - (this.cameraY || 0);
 		if (--enemy.throwTimer <= 0) {
 			enemy.throwTimer = LAKITU_EGG_STEPS;
 			const spinies = this.enemies.filter(e => e.type === 'Spiny').length;
@@ -1945,8 +1980,21 @@ class Game {
 		const k = this.tileScale;
 		const prevX = p.x;
 		switch (p.kind) {
-			case 'vert': p.t += PLATFORM_VERT_RATE; p.y = p.cy + Math.sin(p.t) * PLATFORM_VERT_AMPLITUDE; break;
-			case 'hori': p.t += PLATFORM_HORI_RATE; p.x = p.ox + Math.sin(p.t) * PLATFORM_HORI_AMPLITUDE; break;
+			case 'vert':
+				p.vy = Math.max(-PLATFORM_MAX_SPEED, Math.min(PLATFORM_MAX_SPEED, p.vy + (p.y < p.cy ? PLATFORM_ACCEL : -PLATFORM_ACCEL)));
+				p.y += p.vy;
+				break;
+			case 'hori': {
+				// Dos contadores: cada 4 cuadros la velocidad sube de a 1/16 px hasta 14/16 y vuelve a bajar; el bit 1 del primario
+				// decide el sentido, así que recorre izquierda, vuelta, derecha y vuelta
+				p.f++;
+				if (p.f % 4 === 0) {
+					if (!(p.pc & 1)) { if (p.sc === PLATFORM_HORI_MAX) p.pc++; else p.sc++; }
+					else if (p.sc === 0) p.pc++; else p.sc--;
+				}
+				p.x += (p.pc & 2 ? 1 : -1) * p.sc / 16;
+				break;
+			}
 			case 'lift':
 				p.y += p.dir * PLATFORM_LIFT_SPEED;
 				if (p.y >= 224) p.y -= 256; else if (p.y < -32) p.y += 256;
@@ -1962,9 +2010,12 @@ class Game {
 				const o = p.partner;
 				if (p.falling) { p.vy += PLATFORM_FALL_GRAVITY; p.y += p.vy; break; }
 				if (o && p.first && !o.falling) {
-					// Una baja y la otra sube de a 1 px mientras Mario está en una; si una llega arriba se sueltan las dos
-					if (p.rider && !o.rider) { p.y += 1; o.y -= 1; }
-					else if (o.rider && !p.rider) { p.y -= 1; o.y += 1; }
+					// La de Mario baja y la otra sube, acelerando de a 5/256 hasta 3 px por cuadro; sin Mario frenan.
+					// Si una llega arriba se sueltan las dos
+					if (p.rider && !o.rider) p.vy = Math.min(PLATFORM_MAX_SPEED, p.vy + PLATFORM_ACCEL);
+					else if (o.rider && !p.rider) p.vy = Math.max(-PLATFORM_MAX_SPEED, p.vy - PLATFORM_ACCEL);
+					else p.vy = Math.abs(p.vy) <= PLATFORM_ACCEL ? 0 : p.vy - Math.sign(p.vy) * PLATFORM_ACCEL;
+					p.y += p.vy; o.y -= p.vy;
 					if (Math.min(p.y, o.y) <= PLATFORM_BALANCE_LIMIT) { p.falling = o.falling = true; p.vy = o.vy = 0; }
 				}
 				break;
@@ -2607,19 +2658,26 @@ class Game {
 			this.currentSelection++;
 		}
 
+		// Con el juego terminado, izquierda y derecha eligen el mundo de partida (siempre el primer nivel de cada uno)
+		const worldStarts = this.availableWorlds.map((w, i) => (/-1$/.test(w) ? i : -1)).filter(i => i >= 0);
+		let worldStep = 0;
 		if(this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA']){
 			this.engine.keysPressed['ArrowLeft'] = false;
 			this.engine.keysPressed['KeyA'] = false;
-			this.currentWorldIndex--;
+			worldStep = -1;
 		}
 		if(this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD']){
 			this.engine.keysPressed['ArrowRight'] = false;
 			this.engine.keysPressed['KeyD'] = false;
-			this.currentWorldIndex++;
+			worldStep = 1;
 		}
-
-		const worldCount = this.availableWorlds.length;
-		this.currentWorldIndex = ((this.currentWorldIndex % worldCount) + worldCount) % worldCount;
+		if (this.beaten && worldStep !== 0 && worldStarts.length) {
+			let at = worldStarts.indexOf(this.currentWorldIndex);
+			if (at < 0) at = worldStep > 0 ? -1 : 0;   // desde el título (sin mundo elegido) la primera flecha va al 1-1 o al 8-1
+			this.currentWorldIndex = worldStarts[(at + worldStep + worldStarts.length) % worldStarts.length];
+		} else if (!this.beaten) {
+			this.currentWorldIndex = 0;
+		}
 
 		if(this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']){
 			executeMenuSelection();
@@ -2657,6 +2715,7 @@ class Game {
 			y: this.engine.getCanvasHeight() * 0.65 + menuGap * numButtons + menuGap / 2 + TEXT_SIZE
 		};
 		this.engine.drawTextCustom(font, topScore, TEXT_SIZE, "#ffffff", topScorePos, "center");
+		if (this.beaten) this.engine.drawTextCustom(font, "LEFT / RIGHT: SELECT WORLD", TEXT_SIZE * 0.6, "#ffffff", { x: topScorePos.x, y: topScorePos.y + TEXT_SIZE * 1.6 }, "center");
 
 		const volumePercentage = Math.round(this.volume * 100);
 		const volumeText = `VOL ${volumePercentage}%`;
@@ -2683,7 +2742,7 @@ class Game {
 		this.engine.drawTextCustom(font, titleText, TEXT_SIZE * 2, "#ffffff", titlePos, "center");
 
 		const settingsOptions = [
-			{ label: "DIFFICULTY", values: ["EASY", "NORMAL", "HARD"], getValue: () => this.difficulty, setValue: (v) => { this.difficulty = v; this.engine.setCookie("smb_difficulty", v, 365); } },
+			{ label: "DIFFICULTY", values: this.beaten ? ["EASY", "NORMAL", "HARD"] : ["EASY", "NORMAL"], getValue: () => this.difficulty, setValue: (v) => { this.difficulty = v; this.engine.setCookie("smb_difficulty", v, 365); } },
 			{ label: "VOLUME", values: [], getValue: () => Math.round(this.volume * 100) + "%", setValue: null },
 			{ label: "SOUND EFFECTS", values: ["ON", "OFF"], getValue: () => this.sfxEnabled ? "ON" : "OFF", setValue: (v) => { this.sfxEnabled = v === "ON"; this.engine.setCookie("smb_sfx", this.sfxEnabled, 365); } },
 			{ label: "BACK", values: [], getValue: () => "", setValue: null }
@@ -2839,7 +2898,8 @@ class Game {
 		const ts = this.tileSize, ctx = this.engine.ctx;
 		const player = this.engine.animatedSprites[this.currentPlayerSpriteName()];
 		const hidden = Math.max(0, -this.tileToScreen(0, 0).y);   // lo que queda por encima de la pantalla (hasta la fila 0 del mapa)
-		const target = (this.climbVine && player) ? Math.min(hidden, Math.max(0, ts * 2.5 - player.position.y)) : 0;
+		// La cámara sube cuando Mario pasa por arriba del borde visible (trepando, saltando alto o sobre plataformas altas)
+		const target = player ? Math.min(hidden, Math.max(0, ts * 2.5 - player.position.y)) : 0;
 		this.cameraY = (this.cameraY || 0) + (target - (this.cameraY || 0)) * Math.min(1, 0.15 * this.fk);
 		if (Math.abs(this.cameraY - target) < 0.5) this.cameraY = target;
 		if (this.cameraY <= 0) { this.cameraShift = false; return; }
@@ -3602,6 +3662,7 @@ class Game {
 	startAxeEnding(playerPos, playerHeight) {
 		const ax = this.currentMap.axe, mw = this.currentMap.dimensions.width, map = this.currentMap.map;
 		this.stopAllMusic();
+		if (parseInt(this.currentMap.world, 10) === 8) this.completeGame();
 		this.state = Game_State.Level_Complete;
 		this.levelCompleteState = 'axe_collapse';
 		this.axeTimer = 0;
@@ -3624,12 +3685,20 @@ class Game {
 		playerPos.y = this.tileToScreen(ax.x, ax.y + 1).y - playerHeight;
 	}
 
+	// Terminar el 8-4 desbloquea la selección de mundo y el modo difícil, que queda puesto
+	completeGame() {
+		this.beaten = true;
+		this.difficulty = "HARD";
+		this.engine.setCookie("smb_beaten", "true", 3650);
+		this.engine.setCookie("smb_difficulty", "HARD", 365);
+	}
+
 	// Mensaje de Toad o de la princesa al final del castillo
 	drawAxeMessage() {
 		const world = parseInt(this.currentMap.world, 10);
 		const who = PlayerName[this.player].toUpperCase();
 		const lines = world === 8
-			? [`THANK YOU ${who}!`, 'YOUR QUEST IS OVER.', 'WE PRESENT YOU A NEW QUEST.']
+			? [`THANK YOU ${who}!`, 'YOUR QUEST IS OVER.', 'WE PRESENT YOU A NEW QUEST.', 'PRESS LEFT OR RIGHT AT THE TITLE', 'TO SELECT A WORLD.']
 			: [`THANK YOU ${who}!`, 'BUT OUR PRINCESS IS IN', 'ANOTHER CASTLE!'];
 		const cx = this.engine.getCanvasWidth() / 2;
 		lines.forEach((t, i) => this.engine.drawTextCustom(font, t, TEXT_SIZE, Color.WHITE, { x: cx, y: this.tileSize * (2.2 + i * 0.8) }, "center"));
@@ -3809,6 +3878,7 @@ class Game {
 					if (nextWorldName) {
 						this.startNextLevel(nextWorldName);
 					} else {
+						this.currentWorldIndex = 0;
 						this.state = Game_State.Title_Menu;
 					}
 				}
