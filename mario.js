@@ -354,6 +354,7 @@ class Game {
 	runningTimer = 0;
 	isSkidding = false;
 	blockedDir = 0;
+	wallHug = 0;     // sentido (-1 o 1) en que Mario está apoyado contra una pared, o 0
 	physicsSteps = 0;
 	fk = 1;
 	clockMs = 0;
@@ -1133,6 +1134,9 @@ class Game {
 
 		// El choque con una pared del cuadro anterior anula el sentido en que se empujaba
 		const pushed = (dir !== 0 && dir === this.blockedDir) ? 0 : dir;
+		// Mientras Mario siga apretando contra una pared (caño, bloque) no corre en el lugar: la animación de correr se
+		// suprime hasta que suelte el botón, cambie de lado o se despegue de la pared
+		if (dir === 0 || dir !== this.wallHug) this.wallHug = 0;
 		this.blockedDir = 0;
 
 		if (this.runningTimer > 0) this.runningTimer--;
@@ -3556,7 +3560,7 @@ class Game {
 			}
 			if (this.isSkidding && !wasSkidding) this.engine.playAudioOverlap(audio["Player_Skid"]);
 			player.flipped = this.facingDir < 0;
-			const isMoving = this.xSpeed !== 0;
+			const isMoving = this.xSpeed !== 0 && this.wallHug === 0;
 
 			const animPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 			if (this.climbVine) this.engine.setAnimationForSprite(currentSpriteName, `${animPrefix}_${this.climbMoving ? 'Fall' : 'Slide'}`);
@@ -3582,8 +3586,8 @@ class Game {
 					}
 				}
 				// No se puede salir por el borde izquierdo de la pantalla
-				if (blocked || newX < 0) { this.xSpeed = 0; this.blockedDir = -1; if (!blocked) playerPos.x = Math.max(0, playerPos.x); }
-				else playerPos.x = newX;
+				if (blocked || newX < 0) { this.xSpeed = 0; this.blockedDir = -1; this.wallHug = -1; if (!blocked) playerPos.x = Math.max(0, playerPos.x); }
+				else { playerPos.x = newX; this.wallHug = 0; }
 			} else if (dx > 0) {
 				const newX = playerPos.x + dx;
 				const rightTop = this.screenToTile(newX + this.tileSize - 4, playerPos.y);
@@ -3613,7 +3617,7 @@ class Game {
 						break;
 					}
 				}
-				if (blocked) { this.xSpeed = 0; this.blockedDir = 1; }
+				if (blocked) { this.xSpeed = 0; this.blockedDir = 1; this.wallHug = 1; }
 				else {
 					// La pantalla empieza a seguir a Mario a los 80 px de 256 (un poco menos de lo que avanza) y
 					// del todo a los 112 px; acá se usa la misma proporción del ancho de la ventana
@@ -3624,6 +3628,7 @@ class Game {
 						if (playerPos.x < cw * (112 / 256) && dx >= 2 * k) scroll = dx - k;
 					}
 					playerPos.x += dx - scroll;
+					if (!blocked) this.wallHug = 0;
 					if (scroll > 0) { this.mapOffset.x -= scroll; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); }
 				}
 			}

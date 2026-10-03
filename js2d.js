@@ -1844,10 +1844,14 @@ class Js2d {
 		// escala es fraccionaria; con bordes absolutos, dos tiles vecinos comparten el mismo borde.
 		if (rotation === 0 && !flipped) {
 			const dpr = this.dpr || 1;
-			const x0 = Math.round((pos.x + drawOffsetX) * dpr) / dpr;
-			const y0 = Math.round((pos.y + drawOffsetY) * dpr) / dpr;
-			const x1 = Math.round((pos.x + drawOffsetX + dWidth) * dpr) / dpr;
-			const y1 = Math.round((pos.y + drawOffsetY + dHeight) * dpr) / dpr;
+			// Redondeo con un sesgo mínimo: el borde derecho de un tile y el izquierdo del siguiente son el mismo valor, pero
+			// calculados por caminos distintos pueden diferir en el último decimal; justo en un empate (n,5 px físicos) uno
+			// redondeaba para arriba y el otro para abajo y quedaba una rendija de 1 px que aparecía y desaparecía al scrollear.
+			const snap = v => Math.floor(v * dpr + 0.5 + 1e-4) / dpr;
+			const x0 = snap(pos.x + drawOffsetX);
+			const y0 = snap(pos.y + drawOffsetY);
+			const x1 = snap(pos.x + drawOffsetX + dWidth);
+			const y1 = snap(pos.y + drawOffsetY + dHeight);
 			this.ctx.drawImage(image, sx, sy, sWidth, sHeight, x0, y0, x1 - x0, y1 - y0);
 			return;
 		}
