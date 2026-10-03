@@ -5,34 +5,75 @@
     obs = env.reset(world="1-1", seed=7)
     obs, reward, done, info = env.step(2, repeat=4)      # acción 2: derecha + salto
 
-Si Gymnasium y NumPy están instalados, también hay `SuperMarioEnv`, con la interfaz estándar reset/step.
+Para entrenar con muchas partidas a la vez (cada una en su hilo, en paralelo) está `SmbVecClient`. Si Gymnasium y NumPy están
+instalados, también hay `SuperMarioEnv`, con la interfaz estándar reset/step.
 Las posiciones van en píxeles del NES (16 px = una celda). La grilla (`obs["grid"]["cells"]`) tiene 13 filas, de la
 2 a la 14 del mapa, y 16 columnas alrededor de Mario; vale 0 vacío, 1 sólido, 2 bloque golpeable, 3 moneda, 4 mástil.
 """
+import http.client
 import json
-import urllib.request
+import urllib.parse
+
+
+class _Http:
+    """Conexión persistente: abrir una por pedido le cuesta más que correr el paso del juego."""
+
+    def __init__(self, url):
+        u = urllib.parse.urlparse(url)
+        self.host, self.port = u.hostname, u.port or 80
+        self.conn = None
+
+    def request(self, path, body=None):
+        for attempt in (0, 1):
+            try:
+                if self.conn is None:
+                    self.conn = http.client.HTTPConnection(self.host, self.port, timeout=120)
+                if body is None:
+                    self.conn.request("GET", path)
+                else:
+                    self.conn.request("POST", path, json.dumps(body), {"Content-Type": "application/json"})
+                out = json.loads(self.conn.getresponse().read())
+                break
+            except (http.client.HTTPException, ConnectionError):
+                self.conn = None   # el servidor cerró la conexión: se reintenta una vez con una nueva
+                if attempt:
+                    raise
+        if isinstance(out, dict) and "error" in out:
+            raise RuntimeError(out["error"])
+        return out
+
+
+class SmbVecClient:
+    """n partidas en paralelo. Con autoreset (lo normal), la partida que termina arranca de nuevo sola: la observación que
+    devuelve es la del nuevo comienzo y la última de la anterior queda en info["terminal_obs"]."""
+
+    def __init__(self, n, url="http://127.0.0.1:8777", worlds=("1-1",), size="small", hard=False, seed=0, repeat=4, autoreset=True):
+        self.n, self.repeat, self.autoreset = n, repeat, autoreset
+        self.http = _Http(url)
+        self.opts = {"n": n, "worlds": list(worlds), "size": size, "hard": hard, "seed": seed}
+
+    def reset(self):
+        return self.http.request("/api/vreset", self.opts)
+
+    def step(self, actions):
+        out = self.http.request("/api/vstep", {"actions": list(actions), "repeat": self.repeat, "autoreset": self.autoreset})
+        return [o["obs"] for o in out], [o["reward"] for o in out], [o["done"] for o in out], [o["info"] for o in out]
 
 
 class SmbClient:
     def __init__(self, url="http://127.0.0.1:8777", env=0):
-        self.url = url.rstrip("/")
+        self.http = _Http(url)
         self.env = env
         info = self._get("/api/info")
         self.actions = info["actions"]
         self.worlds = info["worlds"]
 
     def _call(self, path, body=None):
-        data = None if body is None else json.dumps({**body, "env": self.env}).encode()
-        req = urllib.request.Request(self.url + path, data=data, headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=60) as r:
-            out = json.loads(r.read())
-        if isinstance(out, dict) and "error" in out:
-            raise RuntimeError(out["error"])
-        return out
+        return self.http.request(path, None if body is None else {**body, "env": self.env})
 
     def _get(self, path):
         sep = "&" if "?" in path else "?"
-        return self._call(f"{path}{sep}env={self.env}")
+        return self.http.request(f"{path}{sep}env={self.env}")
 
     def reset(self, world="1-1", seed=None, size="small", hard=False):
         body = {"world": world, "size": size, "hard": hard}
