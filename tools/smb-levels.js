@@ -2,7 +2,7 @@
 //
 // Lee tools/smbdis.asm (el desensamblado, que no se versiona) y reproduce el algoritmo de
 // DecodeAreaData / ProcessAreaData del juego original para generar los mapas en el formato de
-// assets.js: una grilla de metatiles y una lista de enemigos por nivel.
+// levels_smb.js: una grilla de metatiles y una lista de enemigos por nivel.
 //
 // Uso:  node tools/smb-levels.js [--ascii] [--out levels_smb.js]
 //
@@ -1074,6 +1074,11 @@ function generate(lines, report) {
 		const sub = subs[name];
 		out.push({ world: name, nextWorld: sub.parent, hidden: true, type: toWorldType(sub.areaType), night: sub.night, width: sub.width, map: sub.map, enemies: sub.enemies, scenery: sub.scenery, platforms: sub.platforms, frenzy: sub.frenzy, exit: sub.exit, warps: warpsOf[name] || [] });
 	}
+	// El 0-0 es el fondo del menú y de los ajustes: un piso liso de una fila y nada más (con los cerros y arbustos del
+	// fondo con parallax apoyados encima)
+	const TITLE_W = 30;
+	const titleMap = new Array(TITLE_W * MAP_HEIGHT).fill(0).map((_, i) => (i >= TITLE_W * (MAP_HEIGHT - 1) ? TERRAIN_METATILES[AREA_TYPE.Ground] : 0));
+	out.unshift({ world: '0-0', nextWorld: out[0].world, hidden: false, type: toWorldType(AREA_TYPE.Ground), night: false, width: TITLE_W, map: titleMap, enemies: [], platforms: [], warps: [] });   // sin scenery: el menú dibuja su propio fondo con parallax
 	return { out, levels, subs };
 }
 
@@ -1092,6 +1097,7 @@ function formatLevels(out) {
 	L.push('// x, y es la celda superior izquierda del caño. spawn indica dónde aparece Mario en el destino:');
 	L.push('// emerge "up" (sale de un caño) o "drop" (cae); then reemplaza el nextWorld del destino.');
 	L.push('');
+	L.push('const map = [];');
 	L.push('map.push(');
 	out.forEach((lv, i) => {
 		L.push('\t{');
@@ -1115,9 +1121,11 @@ function formatLevels(out) {
 		L.push('\t\tplatforms: [');
 		for (const p of lv.platforms || []) L.push('\t\t\t' + JSON.stringify(p) + ',');
 		L.push('\t\t],');
-		L.push('\t\tscenery: [');
-		for (let i = 0; i < lv.scenery.length; i += 30) L.push('\t\t\t' + lv.scenery.slice(i, i + 30).join(',') + ',');
-		L.push('\t\t],');
+		if (lv.scenery) {
+			L.push('\t\tscenery: [');
+			for (let i = 0; i < lv.scenery.length; i += 30) L.push('\t\t\t' + lv.scenery.slice(i, i + 30).join(',') + ',');
+			L.push('\t\t],');
+		}
 		L.push('\t\tmap: [');
 		for (let r = 0; r < MAP_HEIGHT; r++) {
 			L.push('\t\t\t' + lv.map.slice(r * lv.width, (r + 1) * lv.width).join(',') + ',');

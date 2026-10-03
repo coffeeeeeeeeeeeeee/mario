@@ -100,6 +100,14 @@ const TOUCH_CONTROLS = {
 const COIN_SPIN_VELOCITY = 15;
 const BLACK_SCREEN_DURATION = 2000;
 
+// Tipo de área de un nivel (AreaType del original, con el exterior primero)
+const World_Type = {
+	Overworld:		0,
+	Underground:	1,
+	Underwater:		2,
+	Castle:			3,
+};
+
 const Game_State = {
 	Title_Menu:		0,
 	Pause:			1,
@@ -2666,23 +2674,23 @@ class Game {
 			this.currentSelection++;
 		}
 
-		// Izquierda y derecha eligen el mundo de partida (siempre el primer nivel de cada uno)
-		const worldStarts = this.availableWorlds.map((w, i) => (/-1$/.test(w) ? i : -1)).filter(i => i >= 0);
-		let worldStep = 0;
+		// Izquierda y derecha eligen el nivel de partida, de a uno: 1-1, 1-2, 1-3, 1-4, 2-1... (el 0-0 es el del menú)
+		const levelIdx = this.availableWorlds.map((w, i) => (w === '0-0' ? -1 : i)).filter(i => i >= 0);
+		let levelStep = 0;
 		if(this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA']){
 			this.engine.keysPressed['ArrowLeft'] = false;
 			this.engine.keysPressed['KeyA'] = false;
-			worldStep = -1;
+			levelStep = -1;
 		}
 		if(this.engine.keysPressed['ArrowRight'] || this.engine.keysPressed['KeyD']){
 			this.engine.keysPressed['ArrowRight'] = false;
 			this.engine.keysPressed['KeyD'] = false;
-			worldStep = 1;
+			levelStep = 1;
 		}
-		if (worldStep !== 0 && worldStarts.length) {
-			let at = worldStarts.indexOf(this.currentWorldIndex);
-			if (at < 0) at = worldStep > 0 ? -1 : 0;   // desde el título (sin mundo elegido) la primera flecha va al 1-1 o al 8-1
-			this.currentWorldIndex = worldStarts[(at + worldStep + worldStarts.length) % worldStarts.length];
+		if (levelStep !== 0 && levelIdx.length) {
+			let at = levelIdx.indexOf(this.currentWorldIndex);
+			if (at < 0) at = levelStep > 0 ? -1 : 0;   // desde el menú la primera flecha va al primer nivel o al último
+			this.currentWorldIndex = levelIdx[(at + levelStep + levelIdx.length) % levelIdx.length];
 		}
 
 		if(this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']){
@@ -2721,7 +2729,6 @@ class Game {
 			y: this.engine.getCanvasHeight() * 0.65 + menuGap * numButtons + menuGap / 2 + TEXT_SIZE
 		};
 		this.engine.drawTextCustom(font, topScore, TEXT_SIZE, "#ffffff", topScorePos, "center");
-		this.engine.drawTextCustom(font, "LEFT / RIGHT: SELECT WORLD", TEXT_SIZE * 0.6, "#ffffff", { x: topScorePos.x, y: topScorePos.y + TEXT_SIZE * 1.6 }, "center");
 
 		const volumePercentage = Math.round(this.volume * 100);
 		const volumeText = `VOL ${volumePercentage}%`;

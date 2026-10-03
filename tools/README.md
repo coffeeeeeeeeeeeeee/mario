@@ -20,8 +20,8 @@ Probado con Node 20.
 ### `smb-levels.js`: niveles
 
 Reproduce el algoritmo de `DecodeAreaData` / `ProcessAreaData` del juego original y genera
-`levels_smb.js` con los 8 mundos (1-1 a 8-4) y sus subniveles; `index.html` lo carga después de
-`assets.js`.
+`levels_smb.js` con los 8 mundos (1-1 a 8-4), sus subniveles y el 0-0, el fondo del menú. Ese archivo
+define la lista global `map`; `index.html` lo carga antes de `mario.js`.
 
 ```
 node tools/smb-levels.js --out levels_smb.js     # genera el archivo
