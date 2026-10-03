@@ -10,10 +10,14 @@
 	const hud = document.createElement('div');
 	hud.style.cssText = 'position:fixed;left:6px;top:4px;z-index:10;font:12px monospace;color:#fff;text-shadow:1px 1px 2px #000;pointer-events:none;white-space:pre';
 	document.body.appendChild(hud);
+	// Aviso grande para las pantallas que no tienen partida (si se pide ver más pantallas que partidas hay en el entrenamiento)
+	const empty = document.createElement('div');
+	empty.style.cssText = 'position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;text-align:center;background:#1a1a1a;color:#bbb;font:22px monospace;padding:30px;line-height:1.5';
+	document.body.appendChild(empty);
 
 	const FRAME = 1000 / 60;
 	const HOLD_FRAMES = 90;   // pausa al final de cada episodio
-	let ep = null, stepIdx = 0, sub = 0, ended = false, hold = 0, needNext = false, polling = false, last = null, status = '';
+	let envs = 0, ep = null, stepIdx = 0, sub = 0, ended = false, hold = 0, needNext = false, polling = false, last = null, status = '';
 
 	function begin(next) {
 		ep = next;
@@ -27,6 +31,7 @@
 		try {
 			const cur = ep && !needNext ? ep.id : -1;
 			const r = await (await fetch(`/api/watch?env=${env}&ep=${cur}&from=${ep && !needNext ? ep.actions.length : 0}`)).json();
+			envs = r.envs;
 			if (!ep || needNext) {
 				if (r.ep && (!ep || r.ep.id !== ep.id)) begin(r.ep);
 			} else if (r.ep && r.ep.id === ep.id) {
@@ -71,6 +76,9 @@
 		prev = t;
 		for (let n = 0; acc >= FRAME && n < 16; n++, acc -= FRAME) frame();
 		if (acc > FRAME * 16) acc = 0;
+		const noData = !ep && envs > 0 && +env >= envs;
+		empty.style.display = noData ? 'flex' : 'none';
+		if (noData) empty.textContent = `Sin partida para la pantalla ${+env + 1}: el entrenamiento tiene ${envs}. Para ver más pantallas, entrená con --envs ${+env + 1} o más.`;
 		hud.textContent = ep
 			? `partida ${env} · episodio ${ep.id} · ${ep.opts.world} · paso ${stepIdx}/${ep.actions.length}${ep.done ? '' : '+'} · x ${last ? Math.round(last.info.x) : 0}${status ? ' · ' + status : ''}${needNext ? ' · esperando el siguiente' : ''}`
 			: `partida ${env} · esperando datos del entrenamiento`;

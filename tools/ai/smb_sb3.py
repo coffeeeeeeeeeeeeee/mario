@@ -46,14 +46,28 @@ class SmbSb3VecEnv(VecEnv):
 
     def _begin(self):
         self.world = [None] * self.num_envs
+        self.recent = []   # los últimos niveles sorteados
         self.steps = [0] * self.num_envs
         self.best_x = [0.0] * self.num_envs
         self.last_gain = [0] * self.num_envs
         self.ret = [0.0] * self.num_envs
 
+    def _pick_world(self, i):
+        """Sortea un nivel, evitando los que ya están jugando las otras partidas mientras haya otros: así los lotes de
+        entrenamiento (y la vista en vivo) muestran un surtido de niveles y no el mismo en todas."""
+        in_use = {w for j, w in enumerate(self.world) if j != i and w is not None}
+        # También se evitan los de los últimos episodios: la vista en vivo repite las partidas con un poco de retraso, y así
+        # tampoco coinciden dos niveles iguales ahí
+        blocked = in_use | set(self.recent)
+        free = [w for w in self.worlds if w not in blocked] or [w for w in self.worlds if w not in in_use]
+        w = self.rng.choice(free or self.worlds)
+        self.recent.append(w)
+        del self.recent[:max(0, len(self.recent) - min(len(self.worlds) - 1, 2 * self.num_envs))]
+        return w
+
     def _start(self, i):
         self.seed_counter += 1
-        self.world[i] = self.rng.choice(self.worlds)
+        self.world[i] = self._pick_world(i)
         self.steps[i], self.best_x[i], self.last_gain[i], self.ret[i] = 0, 0.0, 0, 0.0
         return featurize(self.client.reset_one(i, self.world[i], seed=self.seed_counter))
 

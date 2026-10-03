@@ -139,11 +139,12 @@ function recStep(env, action, repeat, out) {
 }
 
 function watchState(env, cur, from) {
-	const list = recorder(env).list;
+	const list = (recordings.get(env) || { list: [] }).list;   // sin crear el registro de una partida que no existe
 	const latest = list.at(-1) || null;
 	const ep = cur >= 0 ? list.find(e => e.id === cur) : latest;
 	const start = ep && ep.id === cur ? from : 0;
 	return {
+		envs: [...recordings.values()].filter(r => r.list.length).length,   // cuántas partidas hay en marcha, para saber qué pantallas tienen datos
 		latest: latest ? latest.id : -1,
 		ep: ep && { id: ep.id, opts: ep.opts, done: ep.done, final: ep.final, actions: ep.actions.slice(start), repeats: ep.repeats.slice(start) },
 	};

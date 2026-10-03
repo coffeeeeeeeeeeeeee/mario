@@ -2,21 +2,24 @@
 # Entrena una IA para jugar y deja ver las partidas en vivo en el navegador.
 #
 #   ./entrenar.sh setup                 instala lo que hace falta (una vez): un entorno de Python con PyTorch y Stable-Baselines3
-#   ./entrenar.sh start [opciones]      arranca el servidor del juego y el entrenamiento, y abre la vista en vivo
+#   ./entrenar.sh start [opciones]      arranca el servidor del juego y el entrenamiento, y abre la vista en vivo; si ya hay un
+#                                       modelo guardado, CONTINÚA desde ahí (con los mismos niveles) en vez de empezar de cero
 #   ./entrenar.sh stop                  detiene todo y guarda el modelo
 #   ./entrenar.sh status                dice si está corriendo y cómo viene
 #   ./entrenar.sh logs                  sigue el registro del entrenamiento
 #   ./entrenar.sh watch                 abre de nuevo la vista en vivo
 #
 # Opciones de start:
-#   --worlds 1-1,2-1     niveles en los que entrena (se sortea uno en cada episodio)        [1-1]
+#   --worlds 1-1,2-1     niveles en los que entrena (se sortea uno en cada episodio, y cada partida toma uno distinto)  [todos]
 #                        acepta comodines (1-*, *-4), grupos (todos, exterior, subterraneo, agua, castillo) y, con un
 #                        - delante, los que se sacan: "todos,-8-4" o "todos,-5-*,-6-*" (para evaluar en los que faltan)
 #   --steps 2000000      pasos de entrenamiento (cada paso son 4 cuadros del juego)         [1000000]
 #   --envs 8             partidas en paralelo                                              [8]
 #   --name modelo        nombre del modelo, que queda en .entrenamiento/modelos/            [modelo]
-#   --resume modelo      seguir desde un modelo guardado antes (nombre o ruta)
-#   --watch 4            cuántas partidas se ven a la vez en la vista en vivo               [4]
+#   --nuevo              empezar de cero aunque haya un modelo guardado (el viejo queda como modelo.copia-FECHA.zip)
+#   --resume modelo      seguir desde otro modelo guardado antes (nombre o ruta); sin esto se sigue el del --name
+#   --watch 6            cuántas pantallas se ven a la vez al abrir la vista (1, 2, 4, 6, 8 o 16; se cambia en la
+#                        propia página). Sólo hay datos para tantas como --envs                [6]
 #   --speed 2            velocidad de la vista en vivo (1, 2, 4 u 8)                        [1]
 #   --port 8777          puerto del servidor                                               [8777]
 #   --no-browser         no abrir el navegador (la dirección se muestra igual)
@@ -39,7 +42,7 @@ if [ -z "$PY" ]; then
 	if [ -x "$VENV/bin/python" ]; then PY="$VENV/bin/python"; else PY=python3; fi
 fi
 
-WORLDS=1-1; STEPS=1000000; ENVS=8; NAME=modelo; RESUME=""; WATCH=4; SPEED=1; PORT=8777; OPEN=1
+WORLDS=todos; STEPS=1000000; ENVS=8; NAME=modelo; RESUME=""; WATCH=6; SPEED=1; PORT=8777; OPEN=1; NEW=0
 
 die() { echo "Error: $*" >&2; exit 1; }
 alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
@@ -51,6 +54,15 @@ open_url() {
 		elif command -v open >/dev/null 2>&1; then open "$1" >/dev/null 2>&1 &
 		else echo "(no encontré cómo abrir el navegador: abrí la dirección a mano)"; fi
 	fi
+}
+
+# Arranca un proceso en segundo plano, en su propia sesión (así se lo puede detener con todo lo que lanza), y guarda su pid.
+# El pid lo escribe el propio proceso: con setsid, $! a veces es el de un intermediario que ya terminó.
+launch() {   # $1 archivo de pid, $2 archivo de registro, resto: el comando
+	local pf=$1 lf=$2; shift 2
+	rm -f "$pf"
+	setsid bash -c 'echo $$ > "$0"; exec "$@"' "$pf" "$@" > "$lf" 2>&1 < /dev/null &
+	for _ in $(seq 1 30); do [ -s "$pf" ] && break; sleep 0.1; done
 }
 
 load_settings() {   # el puerto y la vista que se usaron al arrancar
@@ -67,6 +79,9 @@ cmd_setup() {
 }
 
 cmd_start() {
+	# Lo que se usó la vez anterior (niveles, partidas, vista...) queda como valor por defecto, así que arrancar sin opciones
+	# sigue con lo mismo
+	load_settings
 	while [ $# -gt 0 ]; do
 		case "$1" in
 			--worlds) WORLDS=$2; shift 2 ;;
@@ -78,9 +93,11 @@ cmd_start() {
 			--speed) SPEED=$2; shift 2 ;;
 			--port) PORT=$2; shift 2 ;;
 			--no-browser) OPEN=0; shift ;;
+			--nuevo) NEW=1; shift ;;
 			*) die "opción desconocida: $1 (mirá el principio de este archivo)" ;;
 		esac
 	done
+	[ "$WATCH" -le "$ENVS" ] 2>/dev/null || echo "Aviso: la vista pide $WATCH pantallas pero el entrenamiento tiene $ENVS partidas; las que sobren quedan sin datos (para verlas, --envs $WATCH)."
 	command -v node >/dev/null || die "falta node"
 	if ! "$PY" -c "import stable_baselines3" 2>/dev/null; then
 		# En una ventana interactiva (por ejemplo, desde el acceso directo) se ofrece instalarlo en el momento
@@ -94,15 +111,25 @@ cmd_start() {
 	mkdir -p "$RUN/modelos"
 	if alive "$RUN/train.pid" || alive "$RUN/server.pid"; then die "ya hay un entrenamiento en marcha (./entrenar.sh status, ./entrenar.sh stop)"; fi
 
-	local resume_args=()
+	local resume_args=() own="$RUN/modelos/$NAME.zip"
 	if [ -n "$RESUME" ]; then
 		[ -f "$RESUME" ] || RESUME="$RUN/modelos/${RESUME%.zip}.zip"
 		[ -f "$RESUME" ] || die "no encuentro el modelo para --resume"
 		resume_args=(--resume "$RESUME")
+	elif [ "$NEW" = 1 ]; then
+		if [ -f "$own" ]; then
+			local copia="$RUN/modelos/$NAME.copia-$(date +%Y%m%d-%H%M%S).zip"
+			mv "$own" "$copia"; [ -f "$RUN/modelos/$NAME.json" ] && mv "$RUN/modelos/$NAME.json" "${copia%.zip}.json"
+			echo "Empezando de cero; el modelo anterior quedó en $copia"
+		fi
+	elif [ -f "$own" ]; then
+		resume_args=(--resume "$own")   # lo normal: seguir con lo aprendido
 	fi
 
-	PORT=$PORT setsid node tools/ai/server.js > "$RUN/server.log" 2>&1 < /dev/null &
-	echo $! > "$RUN/server.pid"
+	if curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1; then
+		die "el puerto $PORT ya está en uso (¿otro entrenamiento que sigue en marcha? probá ./entrenar.sh stop o --port)"
+	fi
+	PORT=$PORT launch "$RUN/server.pid" "$RUN/server.log" node tools/ai/server.js
 	for _ in $(seq 1 50); do
 		curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1 && break
 		alive "$RUN/server.pid" || { cat "$RUN/server.log"; die "el servidor no arrancó"; }
@@ -110,12 +137,12 @@ cmd_start() {
 	done
 	curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1 || die "el servidor no contesta en el puerto $PORT"
 
-	setsid "$PY" -u tools/ai/train.py train --worlds "$WORLDS" --steps "$STEPS" --envs "$ENVS" --out "$RUN/modelos/$NAME" \
-		--url "http://127.0.0.1:$PORT" "${resume_args[@]}" > "$RUN/train.log" 2>&1 < /dev/null &
-	echo $! > "$RUN/train.pid"
-	printf 'PORT=%s\nWATCH=%s\nSPEED=%s\nNAME=%s\n' "$PORT" "$WATCH" "$SPEED" "$NAME" > "$RUN/settings"
+	launch "$RUN/train.pid" "$RUN/train.log" "$PY" -u tools/ai/train.py train --worlds "$WORLDS" --steps "$STEPS" --envs "$ENVS" \
+		--out "$RUN/modelos/$NAME" --url "http://127.0.0.1:$PORT" "${resume_args[@]}"
+	printf 'PORT=%q\nWATCH=%q\nSPEED=%q\nNAME=%q\nWORLDS=%q\nSTEPS=%q\nENVS=%q\n' "$PORT" "$WATCH" "$SPEED" "$NAME" "$WORLDS" "$STEPS" "$ENVS" > "$RUN/settings"
 
-	echo "Entrenando en $WORLDS ($STEPS pasos, $ENVS partidas en paralelo)."
+	if [ ${#resume_args[@]} -gt 0 ]; then echo "Continuando desde ${resume_args[1]}."; else echo "Empezando de cero."; fi
+	echo "Entrenando en $WORLDS ($STEPS pasos más, $ENVS partidas en paralelo)."
 	echo "Vista en vivo: $(url)"
 	echo "Registro:      ./entrenar.sh logs      Detener y guardar: ./entrenar.sh stop"
 	open_url "$(url)"

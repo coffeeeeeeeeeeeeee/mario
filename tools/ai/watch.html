@@ -5,7 +5,8 @@
 	<title>Partidas en vivo</title>
 	<style>
 		html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px monospace; overflow: hidden; }
-		#bar { height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 10px; box-sizing: border-box; }
+		#bar { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; box-sizing: border-box; white-space: nowrap; }
+		#bar span { display: inline-flex; gap: 4px; }
 		#bar button { font: inherit; background: #333; color: #ddd; border: 1px solid #555; padding: 2px 10px; cursor: pointer; }
 		#bar button.on { background: #6a4; color: #000; }
 		#grid { position: relative; }
@@ -14,17 +15,19 @@
 	</style>
 </head>
 <body>
-	<div id="bar"><span id="title"></span></div>
+	<div id="bar"><span>pantallas:</span><span id="counts"></span><span style="margin-left:14px">velocidad:</span><span id="speeds"></span><span id="note" style="margin-left:14px;color:#9a9"></span></div>
 	<div id="grid"></div>
 	<script>
 		// Cada partida va en su propio iframe de 640x480, el tamaño con el que corre el entrenamiento: el juego calcula sus
 		// medidas a partir de la ventana, y con otro tamaño la repetición podría diferir en el último decimal. Se achica con CSS.
+		const COUNTS = [1, 2, 4, 6, 8, 16], SPEEDS = [1, 2, 4, 8];
 		const q = new URLSearchParams(location.search);
-		const n = Math.max(1, Math.min(16, +(q.get('n') || 4)));
-		let speed = +(q.get('speed') || 1);
-		const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+		let n = +(q.get('n') || 4);
+		if (!COUNTS.includes(n)) n = COUNTS.reduce((best, c) => (Math.abs(c - n) < Math.abs(best - n) ? c : best), 4);
+		let speed = SPEEDS.includes(+q.get('speed')) ? +q.get('speed') : 1;
 		const grid = document.getElementById('grid'), frames = [];
-		for (let i = 0; i < n; i++) {
+
+		function addFrame(i) {
 			const cell = document.createElement('div');
 			cell.className = 'cell';
 			const f = document.createElement('iframe');
@@ -33,9 +36,15 @@
 			grid.appendChild(cell);
 			frames.push({ cell, f });
 		}
+
 		function layout() {
 			const bar = document.getElementById('bar').offsetHeight;
-			const s = Math.min(innerWidth / (cols * 640), (innerHeight - bar) / (rows * 480));
+			// La distribución (columnas x filas) que deja las pantallas más grandes en esta ventana
+			let cols = 1, rows = n, s = 0;
+			for (let c = 1; c <= n; c++) {
+				const r = Math.ceil(n / c), size = Math.min(innerWidth / (c * 640), (innerHeight - bar) / (r * 480));
+				if (size > s + 1e-9) { s = size; cols = c; rows = r; }
+			}
 			grid.style.width = cols * 640 * s + 'px';
 			grid.style.height = rows * 480 * s + 'px';
 			grid.style.left = (innerWidth - cols * 640 * s) / 2 + 'px';
@@ -45,18 +54,37 @@
 				f.style.transform = `scale(${s})`;
 			});
 		}
-		const bar = document.getElementById('bar');
-		document.getElementById('title').textContent = `${n} partida${n > 1 ? 's' : ''} en vivo · velocidad:`;
-		const buttons = [1, 2, 4, 8].map(v => {
-			const b = document.createElement('button');
-			b.textContent = '×' + v;
-			b.onclick = () => { speed = v; buttons.forEach((x, k) => x.classList.toggle('on', [1, 2, 4, 8][k] === v)); frames.forEach(({ f }) => f.contentWindow.postMessage({ speed: v }, '*')); };
-			b.classList.toggle('on', v === speed);
-			bar.appendChild(b);
-			return b;
-		});
+
+		// Al cambiar la cantidad se conservan las partidas que ya estaban (no se recargan) y sólo se suman o se quitan las demás
+		function setCount(c) {
+			n = c;
+			while (frames.length < n) addFrame(frames.length);
+			while (frames.length > n) frames.pop().cell.remove();
+			buttons.counts.forEach((b, k) => b.classList.toggle('on', COUNTS[k] === n));
+			q.set('n', n); history.replaceState(null, '', '?' + q);
+			document.getElementById('note').textContent = n > 8 ? 'con muchas pantallas el navegador se carga; bajá la velocidad si se traba' : '';
+			layout();
+		}
+
+		function setSpeed(v) {
+			speed = v;
+			buttons.speeds.forEach((b, k) => b.classList.toggle('on', SPEEDS[k] === v));
+			frames.forEach(({ f }) => f.contentWindow.postMessage({ speed: v }, '*'));
+		}
+
+		const buttons = { counts: [], speeds: [] };
+		for (const [list, key, box, fn, label] of [[COUNTS, 'counts', 'counts', setCount, v => v], [SPEEDS, 'speeds', 'speeds', setSpeed, v => '×' + v]]) {
+			for (const v of list) {
+				const b = document.createElement('button');
+				b.textContent = label(v);
+				b.onclick = () => fn(v);
+				document.getElementById(box).appendChild(b);
+				buttons[key].push(b);
+			}
+		}
+		setSpeed(speed);
+		setCount(n);
 		addEventListener('resize', layout);
-		layout();
 	</script>
 </body>
 </html>

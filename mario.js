@@ -73,6 +73,7 @@ const JUMP_BY_SPEED = [SMB_JUMP.standing, SMB_JUMP.standing, SMB_JUMP.walking, S
 const SWIM_STROKE_SPEED = -1.5;           // $fe más la fracción $80
 const SWIM_FORCE_UP = 0x0d / 256;
 const SWIM_FORCE_DOWN = 0x0a / 256;
+const SWIM_CEILING_Y = 0x14, SWIM_CEILING_FORCE = 0x18 / 256;   // ProcSwim: por encima de esa altura la fuerza de subida del agua pasa a $18 (un techo blando)
 const SWIM_TIMER_STEPS = 0x20;            // JumpSwimTimer: se puede dar otra brazada en seguida
 // Altura de Mario al tocar el mástil (en píxeles del NES) -> premio (FlagpoleYPosData, FlagpoleScoreMods)
 const FLAGPOLE_Y_DATA = [0x18, 0x22, 0x50, 0x68, 0x90];
@@ -2254,6 +2255,9 @@ class Game {
 		}
 	}
 
+	// La Y de Mario en el original (Player_Y_Position), en px del NES: los pies menos 32 px (para el chico, el borde de arriba menos 16)
+	swimY(playerPos, playerHeight) { return (playerPos.y + playerHeight - this.tileToScreen(0, 0).y) / this.tileScale - 32; }
+
 	platformBaseY() { return this.tileToScreen(0, 2).y; }
 
 	platformRect(p) {
@@ -3826,6 +3830,9 @@ class Game {
 			// apretado (o sin haber subido todavía 1 px) rige la fuerza suave; soltando o cayendo, la fuerte.
 			const rising = this.velocityY < 0;
 			const risenEnough = (this.jumpOriginY - playerPos.y) >= this.tileScale;
+			// Nadando, cerca de la superficie el original frena mucho la subida (ProcSwim): sin eso Mario sale del agua y de la pantalla.
+			// Su Y es la de los pies menos 32 px (para el chico, el borde de arriba menos 16)
+			if (this.isWater && this.swimY(playerPos, playerHeight) < SWIM_CEILING_Y) this.jumpForceUp = SWIM_CEILING_FORCE;
 			const force = (rising && (this.jumpHeld || !risenEnough)) ? this.jumpForceUp : this.jumpForceDown;
 			this.velocityY = Math.min(this.velocityY + force * this.tileScale, SMB_MAX_FALL_SPEED * this.tileScale);
 			// Sobre una plataforma o un resorte Mario sigue "en el suelo" en cada paso, antes de elegir la animación y de leer
@@ -3937,6 +3944,8 @@ class Game {
 					this.jumpOriginY = playerPos.y;
 					this.isOnGround = false;
 					this.swimTimer = SWIM_TIMER_STEPS;
+					// Cerca de la superficie la brazada no da impulso hacia arriba, para no nadar fuera del agua
+					if (this.swimY(playerPos, playerHeight) < SWIM_CEILING_Y) this.velocityY = 0;
 					this.engine.playAudioOverlap(audio["Player_Stomp"]);
 				}
 			} else if (jumpDown && !this.jumpHeld && this.isOnGround) {

@@ -63,11 +63,14 @@ obs, rewards, dones, infos = vec.step([2] * 8)       # la que termina arranca de
 
 ```
 ./entrenar.sh setup                                   # una vez: instala PyTorch (CPU) y Stable-Baselines3 en tools/ai/.venv (~1 GB)
-./entrenar.sh start --worlds 1-1,2-1 --steps 2000000  # entrena y abre http://127.0.0.1:8777/watch
+./entrenar.sh start                                    # entrena en los 32 niveles y abre http://127.0.0.1:8777/watch
+./entrenar.sh start --worlds 1-1,2-1 --steps 2000000  # o sólo en algunos
 ./entrenar.sh status | logs | watch                   # cómo viene, seguir el registro, volver a abrir la vista
 ./entrenar.sh stop                                    # detiene todo y guarda el modelo en .entrenamiento/modelos/
 ```
 
+Si ya hay un modelo guardado, `start` lo continúa (con los mismos niveles y opciones de la vez anterior, y contando los pasos acumulados) en vez de empezar de cero; para empezar de cero está `--nuevo`, que guarda una copia del modelo viejo. Cada partida toma un nivel distinto de los que están en juego, así que la vista muestra un surtido (`--watch 6` por defecto).
+
 `--worlds` acepta los 32 niveles: nombres (`1-1`), comodines (`1-*`, `*-4`), grupos (`todos`, `exterior`, `subterraneo`, `agua`, `castillo`) y, con un `-` delante, los que se sacan. Por ejemplo `--worlds "todos,-5-*,-6-*"` entrena en todos menos los mundos 5 y 6, que quedan para evaluar si lo aprendido sirve en niveles nuevos (`python3 tools/ai/train.py worlds` los lista con su tipo).
 
-La vista (`/watch?n=4&speed=1`, con botones ×1 a ×8) repite en el navegador las partidas que juega el agente: el servidor guarda cómo arrancó cada episodio y sus acciones, y como el juego es determinista sale exactamente lo mismo, con un pequeño retraso; al terminar un episodio salta al más nuevo. Arriba de cada partida se ve qué episodio es y si la repetición coincidió con la del entrenamiento. `python3 tools/ai/train.py eval --model modelo --worlds 1-1,2-1,3-1` mide cuánto avanza un modelo por nivel; para ver si aprendió a jugar en general hay que evaluar en niveles que no estuvieron en el entrenamiento.
+La vista (`/watch`) deja elegir arriba cuántas pantallas ver a la vez (1, 2, 4, 6, 8 o 16) y la velocidad (×1 a ×8); `--watch N` fija la cantidad con que abre. Sólo hay datos para tantas pantallas como partidas tenga el entrenamiento (`--envs`, 8 por defecto): para ver 16 hay que entrenar con `--envs 16`, y las que sobren avisan que no tienen partida. La vista repite en el navegador las partidas que juega el agente: el servidor guarda cómo arrancó cada episodio y sus acciones, y como el juego es determinista sale exactamente lo mismo, con un pequeño retraso; al terminar un episodio salta al más nuevo. Arriba de cada partida se ve qué episodio es y si la repetición coincidió con la del entrenamiento. `python3 tools/ai/train.py eval --model modelo --worlds 1-1,2-1,3-1` mide cuánto avanza un modelo por nivel; para ver si aprendió a jugar en general hay que evaluar en niveles que no estuvieron en el entrenamiento.
