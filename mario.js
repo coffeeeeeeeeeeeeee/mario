@@ -2659,7 +2659,7 @@ class Game {
 			this.currentSelection++;
 		}
 
-		// Con el juego terminado, izquierda y derecha eligen el mundo de partida (siempre el primer nivel de cada uno)
+		// Izquierda y derecha eligen el mundo de partida (siempre el primer nivel de cada uno)
 		const worldStarts = this.availableWorlds.map((w, i) => (/-1$/.test(w) ? i : -1)).filter(i => i >= 0);
 		let worldStep = 0;
 		if(this.engine.keysPressed['ArrowLeft'] || this.engine.keysPressed['KeyA']){
@@ -2672,12 +2672,10 @@ class Game {
 			this.engine.keysPressed['KeyD'] = false;
 			worldStep = 1;
 		}
-		if (this.beaten && worldStep !== 0 && worldStarts.length) {
+		if (worldStep !== 0 && worldStarts.length) {
 			let at = worldStarts.indexOf(this.currentWorldIndex);
 			if (at < 0) at = worldStep > 0 ? -1 : 0;   // desde el título (sin mundo elegido) la primera flecha va al 1-1 o al 8-1
 			this.currentWorldIndex = worldStarts[(at + worldStep + worldStarts.length) % worldStarts.length];
-		} else if (!this.beaten) {
-			this.currentWorldIndex = 0;
 		}
 
 		if(this.engine.keysPressed['Enter'] || this.engine.keysPressed['Space']){
@@ -2716,7 +2714,7 @@ class Game {
 			y: this.engine.getCanvasHeight() * 0.65 + menuGap * numButtons + menuGap / 2 + TEXT_SIZE
 		};
 		this.engine.drawTextCustom(font, topScore, TEXT_SIZE, "#ffffff", topScorePos, "center");
-		if (this.beaten) this.engine.drawTextCustom(font, "LEFT / RIGHT: SELECT WORLD", TEXT_SIZE * 0.6, "#ffffff", { x: topScorePos.x, y: topScorePos.y + TEXT_SIZE * 1.6 }, "center");
+		this.engine.drawTextCustom(font, "LEFT / RIGHT: SELECT WORLD", TEXT_SIZE * 0.6, "#ffffff", { x: topScorePos.x, y: topScorePos.y + TEXT_SIZE * 1.6 }, "center");
 
 		const volumePercentage = Math.round(this.volume * 100);
 		const volumeText = `VOL ${volumePercentage}%`;
@@ -3686,7 +3684,7 @@ class Game {
 		playerPos.y = this.tileToScreen(ax.x, ax.y + 1).y - playerHeight;
 	}
 
-	// Terminar el 8-4 desbloquea la selección de mundo y el modo difícil, que queda puesto
+	// Terminar el 8-4 pone el modo difícil (la selección de mundo está siempre disponible)
 	completeGame() {
 		this.beaten = true;
 		this.difficulty = "HARD";
@@ -3699,7 +3697,7 @@ class Game {
 		const world = parseInt(this.currentMap.world, 10);
 		const who = PlayerName[this.player].toUpperCase();
 		const lines = world === 8
-			? [`THANK YOU ${who}!`, 'YOUR QUEST IS OVER.', 'WE PRESENT YOU A NEW QUEST.', 'PRESS LEFT OR RIGHT AT THE TITLE', 'TO SELECT A WORLD.']
+			? [`THANK YOU ${who}!`, 'YOUR QUEST IS OVER.', 'WE PRESENT YOU A NEW QUEST.']
 			: [`THANK YOU ${who}!`, 'BUT OUR PRINCESS IS IN', 'ANOTHER CASTLE!'];
 		const cx = this.engine.getCanvasWidth() / 2;
 		lines.forEach((t, i) => this.engine.drawTextCustom(font, t, TEXT_SIZE, Color.WHITE, { x: cx, y: this.tileSize * (2.2 + i * 0.8) }, "center"));
