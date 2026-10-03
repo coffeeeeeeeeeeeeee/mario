@@ -179,6 +179,7 @@ function backgroundSheet(name, paletteLabel, { groundId, extras }) {
 		for (let id = 0x45; id <= 0x4b; id++) put(id - 0x45, 5, id);
 		// ...y el resto de la escenografía de fondo: valla, tronco, árboles, ola y relleno de agua
 		[0x4d, 0x4e, 0x0d, 0x0e, 0x0f, 0x86, 0x87].forEach((id, k) => put(7 + k, 5, id));
+		put(14, 5, 0x22);   // ladrillo de las áreas de agua
 
 		// Fila 4: nubes, colina y arbustos (sólo tienen sentido en el exterior, pero ocupan lo mismo)
 		[0x80, 0x81, 0x82, 0x83, 0x84, 0x85].forEach((id, k) => put(k, 4, id));
@@ -487,11 +488,21 @@ function main() {
 		manifest[s.name] = { x: 0, y, w: s.w, h: s.h, tw: s.tw, th: s.th };
 	}
 
+	// Paletas para la estrella: con ella Mario recorre las 4 paletas de sprites del área (la suya y las tres del área). El motor
+	// recolorea los cuadros de Mario cambiando cada uno de sus tres colores por el que le toca en la paleta elegida
+	const toRgb = n => rgb(n).slice(0, 3);
+	const starPalettes = {
+		player: { Mario: playerPal(0).slice(1).map(toRgb), Luigi: playerPal(1).slice(1).map(toRgb), Fire: playerPal(2).slice(1).map(toRgb) },
+		// En el orden de World_Type: exterior, subterráneo, agua y castillo
+		areas: ['GroundPaletteData', 'UndergroundPaletteData', 'WaterPaletteData', 'CastlePaletteData']
+			.map(l => [1, 2, 3].map(g => areaPalettes(l).spr[g].slice(1).map(toRgb))),
+	};
+
 	fs.writeFileSync(OUT_PNG, atlas.png());
 	const b64 = fs.readFileSync(OUT_PNG).toString('base64');
 	fs.writeFileSync(OUT_JS,
 		'// Generado por tools/build-atlas.js desde la ROM. No editar a mano.\n' +
-		`const ATLAS = {\n\timage: "data:image/png;base64,${b64}",\n\tsheets: ${JSON.stringify(manifest, null, 1).replace(/\n\s*/g, ' ')},\n};\n`);
+		`const ATLAS = {\n\timage: "data:image/png;base64,${b64}",\n\tsheets: ${JSON.stringify(manifest, null, 1).replace(/\n\s*/g, ' ')},\n\tstarPalettes: ${JSON.stringify(starPalettes)},\n};\n`);
 	console.log(`Escrito ${path.relative(ROOT, OUT_PNG)} (${width}x${height}, ${sheets.length} hojas) y ${path.relative(ROOT, OUT_JS)}`);
 
 	if (debugDir) {

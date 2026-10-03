@@ -186,7 +186,7 @@ for (let id = 0x5a; id <= 0x5e; id++) METATILE_SPRITE[id] = 'Block_Brick_Middle'
 METATILE_SPRITE[MT.HiddenCoin] = 'Block_Invisible';                                      // sólo se ve en el editor
 METATILE_SPRITE[MT.Hidden1Up] = 'Block_Invisible';
 for (const id of [0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x61, 0x67, 0x68]) METATILE_SPRITE[id] = 'Block_Stairs';
-METATILE_SPRITE[0x88] = 'Block_Cloud_Platform'; METATILE_SPRITE[0x63] = 'Block_Rope_Bridge'; METATILE_SPRITE[0x0b] = 'Block_Rope_Rail';
+METATILE_SPRITE[0x88] = 'Block_Cloud_Platform'; METATILE_SPRITE[0x22] = 'Block_Water_Brick'; METATILE_SPRITE[0x63] = 'Block_Rope_Bridge'; METATILE_SPRITE[0x0b] = 'Block_Rope_Rail';
 METATILE_SPRITE[MT.Axe] = 'Block_Axe'; METATILE_SPRITE[0x0c] = 'Block_Chain'; METATILE_SPRITE[0x89] = 'Block_Bridge';
 METATILE_SPRITE[0x64] = 'Block_Cannon_Top'; METATILE_SPRITE[0x65] = 'Block_Cannon_Mid'; METATILE_SPRITE[0x66] = 'Block_Cannon_Base';
 
@@ -320,6 +320,8 @@ class Game {
 	highscore = 0;
 
 	growTimer = 0;
+	sizeChange = null;     // 'grow' o 'shrink' mientras dura el parpadeo de tamaño
+	shrinkFrom = Player_Size.Big;
 	invincibleTimer = 0;
 	throwTimer = 0;
 	skidTimer = 0;
@@ -529,6 +531,7 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Rope_Bridge", tilesetName, 3, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Rope_Rail", tilesetName, 4, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cloud_Platform", tilesetName, 5, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Water_Brick", tilesetName, 14, 5, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
@@ -640,6 +643,7 @@ class Game {
 		js2d.defineSpriteFromTileset("Block_Rope_Bridge", tilesetName, 3, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Rope_Rail", tilesetName, 4, 3, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Cloud_Platform", tilesetName, 5, 3, 1, tileScale);
+		js2d.defineSpriteFromTileset("Block_Water_Brick", tilesetName, 14, 5, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Chain", tilesetName, 14, 2, 1, tileScale);
 		js2d.defineSpriteFromTileset("Block_Bridge", tilesetName, 15, 2, 1, tileScale);
 		for (let id = 0x45; id <= 0x4b; id++) js2d.defineSpriteFromTileset(`Block_Castle_${id.toString(16)}`, tilesetName, id - 0x45, 5, 1, tileScale);
@@ -876,6 +880,10 @@ class Game {
 					state: "walking",
 					stompTimer: 0,
 					isWinged: e.type === "Koopa_Winged",
+					mode: e.mode || 'jump',
+					// Paratroopa rojo: sube y baja alrededor de un centro 48 px más abajo de donde nace (32 más arriba si nace en la mitad de abajo)
+					centerY: e.type === 'Koopa_Winged' ? this.paraCenterY(screenPos.y) : 0, origY: screenPos.y,
+					pc: 0, sc: 0, fcount: 0,
 					kicked: false,
 					shellChain: 0,
 					active: false,
@@ -948,6 +956,74 @@ class Game {
 		this.state = Game_State.Playing;
 	}
 	
+	// Sprite de Mario recoloreado con la paleta de sprites `pal` (1 a 3) del tipo de área actual, para la estrella. Se arma la
+	// primera vez que hace falta: se copia la hoja y se cambia cada uno de los tres colores de Mario por el de la paleta
+	starSprite(spriteName, pal) {
+		const eng = this.engine, area = this.currentMap?.type ?? 0;
+		const info = eng.sprites[spriteName];
+		const colors = typeof ATLAS !== 'undefined' ? ATLAS.starPalettes : null;
+		if (!info || !info.tilesetName || !colors) return null;
+		const name = `${spriteName}__star${area}_${pal}`;
+		if (eng.sprites[name]) return name;
+		const tsName = `${info.tilesetName}__star${area}_${pal}`;
+		if (!eng.tilesets[tsName]) {
+			const src = eng.tilesets[info.tilesetName];
+			const w = src.image._w || src.image.width, h = src.image._h || src.image.height;
+			const cv = document.createElement('canvas');
+			cv.width = w; cv.height = h;
+			const cx = cv.getContext('2d', { willReadFrequently: true });
+			cx.drawImage(src.image, 0, 0);
+			const img = cx.getImageData(0, 0, w, h), d = img.data;
+			const own = /Fire/.test(info.tilesetName) ? colors.player.Fire : /Luigi/.test(info.tilesetName) ? colors.player.Luigi : colors.player.Mario;
+			const target = colors.areas[area][pal - 1];
+			for (let i = 0; i < d.length; i += 4) {
+				if (d[i + 3] === 0) continue;
+				for (let c = 0; c < 3; c++) {
+					if (d[i] === own[c][0] && d[i + 1] === own[c][1] && d[i + 2] === own[c][2]) { d[i] = target[c][0]; d[i + 1] = target[c][1]; d[i + 2] = target[c][2]; break; }
+				}
+			}
+			cx.putImageData(img, 0, 0);
+			cv._loaded = true; cv._w = w; cv._h = h;
+			eng.tilesets[tsName] = { image: cv, tileWidth: src.tileWidth, tileHeight: src.tileHeight };
+		}
+		eng.sprites[name] = { ...info, tilesetName: tsName };
+		return name;
+	}
+
+	// Pausa (Start en el original): el juego se congela, la música se detiene y suena el sonido de pausa. No hay texto
+	pauseGame() {
+		if (this.state !== Game_State.Playing) return;
+		const cv = this.engine.canvas;
+		const frame = document.createElement('canvas');
+		frame.width = cv.width; frame.height = cv.height;
+		frame.getContext('2d').drawImage(cv, 0, 0);
+		this.pauseFrame = frame;
+		// Se frena todo lo que está sonando para retomarlo igual al volver
+		this.pausedAudio = Object.values(audio).filter(a => a && a !== audio["Pause"] && !a.paused && !a.ended);
+		this.pausedAudio.forEach(a => a.pause());
+		this.engine.playAudio(audio["Pause"], false);
+		this.state = Game_State.Pause;
+	}
+
+	resumeGame() {
+		if (this.state !== Game_State.Pause) return;
+		this.engine.playAudio(audio["Pause"], false);
+		(this.pausedAudio || []).forEach(a => a.play().catch(() => {}));
+		this.pausedAudio = [];
+		this.pauseFrame = null;
+		this.state = Game_State.Playing;
+	}
+
+	// Mientras está en pausa se vuelve a mostrar el último cuadro
+	drawPausedFrame() {
+		if (!this.pauseFrame) return;
+		const ctx = this.engine.ctx;
+		ctx.save();
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.drawImage(this.pauseFrame, 0, 0);
+		ctx.restore();
+	}
+
 	exitGame() {
 		this.saveGameState();
 		this.state = Game_State.Title_Menu;
@@ -999,9 +1075,17 @@ class Game {
 		if (this.isInvincible || this.starTimer > 0) return;
 
 		if (this.playerSize > Player_Size.Small) {
-			this.playerSize = Player_Size.Small;
-			this.isInvincible = true;
-			this.invincibleTimer = INJURY_INVINCIBLE_MS;
+			// Como en el original, el juego se congela un segundo (59 cuadros) mientras Mario parpadea entre grande y chico, y
+			// después sigue chico e invencible un rato (InjuryTimer)
+			const big = this.engine.animatedSprites[PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : "_Big")];
+			const small = this.engine.animatedSprites[PlayerName[this.player]];
+			if (big && small) { small.position.x = big.position.x; small.position.y = big.position.y + this.tileSize; small.flipped = big.flipped; }
+			this.shrinkFrom = this.playerSize;
+			this.sizeChange = 'shrink';
+			this.state = Game_State.Player_Growing;
+			this.growTimer = 0;
+			const currentTheme = this.getCurrentThemeAudio();
+			if (currentTheme) this.engine.pauseAudio(currentTheme);
 			this.engine.playAudio(audio["Player_Pipe"], false);
 		} else {
 			this.killPlayer();
@@ -1577,6 +1661,12 @@ class Game {
 		if (enemy.type === 'Spiny' || enemy.type === 'HammerBro') enemy.anim = (enemy.anim || 0) + 1;
 		if (enemy.type === 'Spiny' && enemy.state === 'egg') { this.stepSpinyEgg(enemy, player); return; }
 		if (enemy.type === 'HammerBro' && enemy.state === 'walking') this.hammerBroLogic(enemy, player);
+
+		// Paratroopas que vuelan: el rojo oscila en vertical y el verde va de un lado al otro, sin gravedad ni suelo
+		if (enemy.isWinged && enemy.type === 'Koopa_Winged' && enemy.state === 'walking') {
+			if (enemy.mode === 'vert') { this.stepRedParatroopa(enemy); return; }
+			if (enemy.mode === 'fly') { this.stepFlyParatroopa(enemy); return; }
+		}
 
 		if (enemy.state === 'stomped') {
 			enemy.stompTimer++;
@@ -2178,6 +2268,36 @@ class Game {
 		return w > 5 || (w === 5 && l >= 3);
 	}
 
+	// Centro de la oscilación del paratroopa rojo (InitRedPTroopa), a partir de la altura en que nace
+	paraCenterY(screenY) {
+		const k = this.tileScale;
+		const nesY = (screenY - this.tileToScreen(0, 0).y) / k;
+		return screenY + (nesY < 0x80 ? 0x30 : -0x20) * k;
+	}
+
+	// Paratroopa rojo (ProcMoveRedPTroopa): acelera 3/256 px por cuadro hacia su centro, con velocidad máxima de 2 px
+	stepRedParatroopa(enemy) {
+		const k = this.tileScale;
+		enemy.vx = -1;
+		enemy.vy = Math.max(-2 * k, Math.min(2 * k, enemy.vy + (enemy.y < enemy.centerY ? 3 : -3) / 256 * k));
+		enemy.y += enemy.vy;
+	}
+
+	// Paratroopa verde volador (MoveFlyGreenPTroopa): va de lado a lado con los contadores de las plataformas horizontales
+	// (velocidad máxima 19/16 px) y ondea en vertical: cada 4 cuadros sube o baja 1 px, 64 cuadros para cada lado
+	stepFlyParatroopa(enemy) {
+		const k = this.tileScale;
+		enemy.fcount++;
+		if (enemy.fcount % 4 === 0) {
+			if (!(enemy.pc & 1)) { if (enemy.sc === 0x13) enemy.pc++; else enemy.sc++; }
+			else if (enemy.sc === 0) enemy.pc++; else enemy.sc--;
+			enemy.y += ((enemy.fcount & 0x40) ? 1 : -1) * k;
+		}
+		const dir = (enemy.pc & 2) ? 1 : -1;
+		enemy.x += dir * enemy.sc / 16 * k;
+		enemy.vx = dir;
+	}
+
 	// Altura (en pantalla) de la superficie del puente de Bowser: la fila del puente es dos más abajo que el hacha
 	bridgeFloorY() {
 		const ax = this.currentMap.axe;
@@ -2538,6 +2658,7 @@ class Game {
 				if (enemy.isWinged) {
 					// El paratroopa pasa a Koopa común y da 400 fijos
 					enemy.isWinged = false;
+					enemy.vy = 0;   // pierde las alas y cae como un koopa común
 					this.score += 400;
 					this.spawnScorePopup('400', enemyScreenX, enemy.y);
 				} else {
@@ -3738,13 +3859,15 @@ class Game {
 				player.position.y -= this.tileSize;
 			}
 
-			// Con la estrella Mario cambia de colores rápidamente
-			if (this.starTimer > 0) {
-				this.engine.ctx.save();
-				this.engine.ctx.filter = `hue-rotate(${Math.floor(this.clockMs / 50) % 6 * 60}deg) saturate(2)`;
-			}
 			this.engine.drawAnimatedSprite(currentSpriteName, this.frameDt, Pivot.Top_Left);
-			if (this.starTimer > 0) this.engine.ctx.restore();
+			// Con la estrella Mario recorre las cuatro paletas de sprites del área: cada 2 cuadros mientras queda mucho tiempo y
+			// cada 8 en los últimos 8 intervalos (CyclePlayerPalette). Se vuelve a dibujar encima el mismo cuadro, recoloreado
+			if (this.starTimer > 0) {
+				const intervalsLeft = this.starTimer / (21 * 1000 / NES_FPS);
+				const pal = (this.nesFrame >> (intervalsLeft >= 8 ? 1 : 3)) & 3;
+				const name = pal ? this.starSprite(player.spriteName, pal) : null;
+				if (name) this.engine.drawSprite(name, this.engine.getCurrentFrame(currentSpriteName), player.position, player.scale, player.flipped, 0, Pivot.Top_Left);
+			}
 
 			player.position.y = originalY;
 
@@ -4024,40 +4147,41 @@ class Game {
 		this.fireworkBursts = this.fireworkBursts.filter(b => b.t < FIREWORK_FRAME_MS * 3);
 	}
 
+	// Crecer o encogerse: el juego queda congelado 59 cuadros y Mario parpadea entre chico y grande cada 4 cuadros
 	updateAndDrawGrowingPlayer(dt) {
-		const GROW_DURATION = 800;
-		const NUM_FLASHES = 6;    
+		const GROW_DURATION = 59 * 1000 / NES_FPS;
+		const FLASH_MS = 4 * 1000 / NES_FPS;
+		const shrinking = this.sizeChange === 'shrink';
 		this.growTimer += dt;
 
+		const bigName = PlayerName[this.player] + (shrinking && this.shrinkFrom === Player_Size.Fire ? "_Fire" : "_Big");
 		const smallSprite = this.engine.animatedSprites[PlayerName[this.player]];
-		const bigSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Big"];
+		const bigSprite = this.engine.animatedSprites[bigName];
 		if (!smallSprite || !bigSprite) return;
 
-		const flashDuration = GROW_DURATION / NUM_FLASHES;
-		const currentFlash = Math.floor(this.growTimer / flashDuration);
-
+		const currentFlash = Math.floor(this.growTimer / FLASH_MS);
 		bigSprite.flipped = smallSprite.flipped;
 
-
-
-		if (currentFlash % 2 === 0) {
-
+		// Al crecer empieza chico y termina grande; al encogerse, al revés
+		const showBig = shrinking ? currentFlash % 2 === 0 : currentFlash % 2 === 1;
+		if (!showBig) {
 			this.engine.drawAnimatedSprite(PlayerName[this.player], this.frameDt, Pivot.Top_Left);
 		} else {
-
-			const bigSpritePos = {
-				x: smallSprite.position.x,
-				y: smallSprite.position.y - this.tileSize
-			};
-
+			const bigSpritePos = { x: smallSprite.position.x, y: smallSprite.position.y - this.tileSize };
 			this.engine.drawSprite(bigSprite.spriteName, 0, bigSpritePos, bigSprite.scale, bigSprite.flipped, 0, Pivot.Top_Left);
 		}
 
 		if (this.growTimer >= GROW_DURATION) {
-			this.playerSize = Player_Size.Big;
-			this.syncPlayerSpritesOnPowerup();
+			if (shrinking) {
+				this.playerSize = Player_Size.Small;
+				this.isInvincible = true;
+				this.invincibleTimer = INJURY_INVINCIBLE_MS;
+			} else {
+				this.playerSize = Player_Size.Big;
+				this.syncPlayerSpritesOnPowerup();
+			}
+			this.sizeChange = null;
 			this.state = Game_State.Playing;
-
 		}
 	}
 
@@ -4138,6 +4262,7 @@ class Game {
 						this.score += 1000;
 						this.spawnScorePopup('1000', screenX, p.y);
 						if (this.playerSize === Player_Size.Small) {
+							this.sizeChange = 'grow';
 							this.state = Game_State.Player_Growing;
 							this.growTimer = 0;
 							const currentTheme = this.getCurrentThemeAudio();

@@ -136,9 +136,10 @@ const ENEMY_TO_ENTITY = {
 	0x0a: { type: 'Cheep', color: 'Grey' },
 	0x0b: { type: 'Cheep', color: 'Red' },
 	0x0c: { type: 'Podoboo' },
-	0x0e: { type: 'Koopa_Winged', color: 'Green' },
-	0x0f: { type: 'Koopa_Winged', color: 'Red' },
-	0x10: { type: 'Koopa_Winged', color: 'Green' },
+	// Los tres paratroopas: el verde que salta ($0e), el rojo que sube y baja ($0f) y el verde que vuela de lado a lado ($10)
+	0x0e: { type: 'Koopa_Winged', color: 'Green', mode: 'jump' },
+	0x0f: { type: 'Koopa_Winged', color: 'Red', mode: 'vert' },
+	0x10: { type: 'Koopa_Winged', color: 'Green', mode: 'fly' },
 	0x12: { type: 'Spiny' },
 	0x2d: { type: 'Bowser' },
 	0x35: { type: 'Toad' },
@@ -795,6 +796,7 @@ function buildMap(dec, report, label) {
 			const ent = { type: m.type };
 			if (e.id === 0x35 && dec.worldNumber === 7) ent.type = 'Princess';   // en el 8-4 espera la princesa
 			if (m.color) ent.color = m.color;
+			if (m.mode) ent.mode = m.mode;
 			enemies.push({ ...ent, x: e.x, y: cellRow });
 		} else if (e.id >= 0x24 && e.id <= 0x2c) {
 			// 24 balancín, 25 sube y baja, 26/2b suben, 27/2c bajan, 28 va y viene, 29 cae al pisarla, 2a se va a la derecha.

@@ -11,7 +11,7 @@ Las flechas y `W` `A` `S` `D` hacen lo mismo.
 | Abajo | Agacharse y entrar a un caño | Bajar en el menú |
 | `Shift` | Correr | |
 | `Espacio` o `Ctrl` | Bola de fuego | Confirmar |
-| `Enter` | | Confirmar |
+| `Enter` | Pausar y retomar | Confirmar |
 | `P` | Salir al menú y guardar la partida (se retoma con CONTINUE) | |
 | `Esc` | Salir al menú sin guardar | Volver |
 | `E` | Editor de niveles | |

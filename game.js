@@ -47,6 +47,12 @@ function update(dt) {
         }
     }
 
+    // Enter pausa y retoma la partida (sólo en juego o en pausa; en los menús lo usan ellos)
+    if (js2d.keysPressed['Enter'] && (smb.state === Game_State.Playing || smb.state === Game_State.Pause)) {
+        js2d.keysPressed['Enter'] = false;
+        if (smb.state === Game_State.Playing) smb.pauseGame(); else smb.resumeGame();
+    }
+
     if (js2d.keysPressed['KeyE']) {
         js2d.keysPressed['KeyE'] = false; // Consumir la tecla
         smb.toggleEditor();
@@ -56,6 +62,7 @@ function update(dt) {
         js2d.keysPressed['Escape'] = false; // Consumir la tecla
         if (
             smb.state === Game_State.Playing ||
+            smb.state === Game_State.Pause ||
             smb.state === Game_State.Editor ||
             smb.state === Game_State.Settings_Menu
         ) {
@@ -79,6 +86,10 @@ function update(dt) {
 
         case Game_State.Settings_Menu:
             smb.drawSettingsMenu();
+            break;
+
+        case Game_State.Pause:
+            smb.drawPausedFrame();
             break;
 
         case Game_State.Black_Screen:
