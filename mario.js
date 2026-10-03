@@ -226,7 +226,7 @@ const BOWSER_W = 32, BOWSER_H = 24;                        // px del NES
 const BOWSER_FIRST_FLAME_STEPS = 0xdf;                     // cuadros hasta la primera llama
 const BOWSER_FLAME_TIMER = [0xbf, 0x40, 0xbf, 0xbf, 0xbf, 0x40, 0x40, 0xbf];   // FlameTimerData
 const BOWSER_RANGE = [0x21, 0x41, 0x11, 0x31];             // PRandomRange: alcance de la patrulla y espera entre saltos
-const BOWSER_JUMP_SPEED = 2, BOWSER_GRAVITY = 0.0625;      // px del NES por cuadro
+const BOWSER_JUMP_SPEED = 2, BOWSER_GRAVITY = 0x0f / 256;   // px del NES por cuadro (MoveEnemySlowVert)
 const BOWSER_FLAME_SPEED = 1.25;                           // la llama avanza 1 px + 0x40/256 por cuadro
 const BOWSER_FLAME_HEIGHTS = [16, 32, 48, 16];             // alturas sobre el puente a las que apunta la llama
 const FLAME_W = 24, FLAME_H = 8;
@@ -302,6 +302,10 @@ class Game {
 	playerSize = Player_Size.Small;
 	currentMap = null;
 	savedState = null;
+	// Generador de números pseudoaleatorios del original (PseudoRandomBitReg): 7 bytes que giran un bit por cuadro, con la
+	// semilla $a5 en el primero. Cada enemigo lee un byte según su lugar (slot), como en el original
+	lfsr = new Uint8Array([0xa5, 0, 0, 0, 0, 0, 0]);
+	nesFrame = 0;          // contador de cuadros (FrameCounter)
 	twoPlayers = false;    // partida de dos jugadores alternados
 	playerStates = null;   // lo que lleva cada jugador (vidas, puntos, nivel...) cuando no está jugando
 	afterDeath = 'restart'; // qué sigue tras una muerte: 'restart', 'switch' o 'title'
@@ -837,7 +841,7 @@ class Game {
 					id: this.enemies.length, type: 'Bowser', color: null,
 					x, y: this.bridgeFloorY() - BOWSER_H * k, origX: x, hp: BOWSER_HP,
 					dir: -1, vx: -1, vy: 0, state: 'walking', feet: 0, feetTimer: 32, mouth: false,
-					fireTimer: BOWSER_FIRST_FLAME_STEPS, flameIdx: 0, jumpTimer: BOWSER_RANGE[0] * 2, range: BOWSER_RANGE[0],
+					fireTimer: BOWSER_FIRST_FLAME_STEPS, flameIdx: 0, jumpTimer: BOWSER_RANGE[0], range: BOWSER_RANGE[0],
 					speed: 1, frame: 0, anim: 0, active: false,
 				});
 				continue;
@@ -877,7 +881,7 @@ class Game {
 					active: false,
 					// Peces: altura original, sentido del vaivén y ciclo de brazadas del Bloober
 					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spin: 0, timer: 21, anim: 0,
-					edgeTurn: e.type === 'HammerBro', walkTimer: 128, jumpTimer: 192 + Math.floor(Math.random() * 64), throwTimer: HAMMER_THROW_STEPS,
+					edgeTurn: e.type === 'HammerBro', walkTimer: 128, jumpTimer: 0xc0 | this.rbyte(1 + this.enemies.length % 5), throwTimer: HAMMER_THROW_STEPS,
 					origY: screenPos.y,
 					bobDown: e.x % 2 === 0,
 					swimPhase: 0,
@@ -1178,6 +1182,20 @@ class Game {
 	}
 
 	// Una vez por cuadro: cuántos pasos de 1/60 s de física hay que correr, igual para Mario, enemigos y objetos
+	// Avanza el generador un cuadro: el bit de salida es el bit 1 del primer byte xor el bit 1 del segundo, y entra por el
+	// bit 7 del primer byte al rotar los siete bytes hacia la derecha
+	rngStep() {
+		const r = this.lfsr;
+		let carry = ((r[0] ^ r[1]) & 2) ? 1 : 0;
+		for (let i = 0; i < 7; i++) { const out = r[i] & 1; r[i] = (carry << 7) | (r[i] >> 1); carry = out; }
+	}
+
+	// Byte i del generador (PseudoRandomBitReg + i)
+	rbyte(i) { return this.lfsr[i % 7]; }
+
+	// Lugar (0 a 4) que ocupa un enemigo en la tabla del original, del que depende qué bytes del generador lee
+	slotOf(e) { return (e.id ?? 0) % 5; }
+
 	stepFrame(dt) {
 		this.clockMs += dt;
 		this.fk = Math.min(dt, 100) / PHYSICS_STEP_MS;
@@ -1186,6 +1204,7 @@ class Game {
 		this.physicsAccumulator -= this.physicsSteps * PHYSICS_STEP_MS;
 		if (this.starTimer > 0) this.starTimer = Math.max(0, this.starTimer - dt);
 		this.swimTimer = Math.max(0, this.swimTimer - this.physicsSteps);
+		for (let i = 0; i < this.physicsSteps; i++) { this.rngStep(); this.nesFrame++; }
 	}
 
 	giveLife() {
@@ -1571,7 +1590,7 @@ class Game {
 		if (enemy.state === 'shell' && !enemy.kicked && enemy.reviveTimer !== undefined) {
 			if (--enemy.reviveTimer <= 0) {
 				enemy.state = 'walking';
-				enemy.dir = Math.random() < 0.5 ? -1 : 1;
+				enemy.dir = (this.nesFrame & 1) ? -1 : 1;   // FrameCounter & 1: izquierda o derecha
 				enemy.reviveTimer = undefined;
 			}
 		}
@@ -1794,16 +1813,16 @@ class Game {
 		const color = world === 2 ? 'Grey' : 'Red';
 		const base = { id: this.enemies.length, color, state: 'walking', stompTimer: 0, isWinged: false, kicked: false, shellChain: 0, active: true, anim: 0, frame: 0, swimPhase: 0, force: 0, floatTimer: 0 };
 		if (mode === 'fly') {
-			this.frenzyTimer = FLY_CHEEP_TIMERS[Math.floor(Math.random() * 4)];
-			if (this.enemies.filter(e => e.flying).length >= (this.secondaryHard ? 4 : 3)) return;
+			const slot = this.enemies.filter(e => e.flying).length;   // lugar libre que ocuparía
+			this.frenzyTimer = FLY_CHEEP_TIMERS[this.rbyte(1 + slot) & 3];
+			if (slot >= (this.secondaryHard ? 4 : 3)) return;
 			// InitFlyingCheepCheep: sale por debajo de la pantalla, cerca de Mario; la velocidad y el lado salen de tablas
 			// indexadas por unos bits al azar y por lo rápido que va Mario (si corre o va hacia la izquierda, más rápido)
-			const rnd = n => Math.floor(Math.random() * n);
-			const r0 = rnd(4);
+			const r0 = this.rbyte(slot) & 3;
 			const ps = Math.floor(this.xSpeed / 256);
 			const seed = ps === 0 ? 0 : (ps > 0 && ps < 0x19 ? 4 : 8);
 			let c = r0 + seed;
-			if (rnd(4) !== 0) c = rnd(16);
+			if ((this.rbyte(1 + slot) & 3) !== 0) c = this.rbyte(2 + slot) & 0x0f;
 			let idx = seed + r0, spd = FLY_CC_X_SPEED[idx], dir = 1;
 			if (ps === 0) { idx = c; if (c & 2) { spd = -spd; dir = -1; } }
 			const playerX = player.position.x - this.mapOffset.x;
@@ -1814,7 +1833,7 @@ class Game {
 		this.frenzyTimer = 32;
 		// Altura: se sortea entre las que todavía no salieron
 		if (this.frenzyFilter === undefined || this.frenzyFilter === 0xff) this.frenzyFilter = 0;
-		let idx = Math.floor(Math.random() * 8);
+		let idx = this.rbyte(this.enemies.length % 3) & 7;
 		while (this.frenzyFilter & (1 << idx)) idx = (idx + 1) & 7;
 		this.frenzyFilter |= 1 << idx;
 		const y = ts * 1.2 + FRENZY_Y[idx] / 128 * (H - ts * 3.2);   // dentro de la parte visible
@@ -1836,11 +1855,11 @@ class Game {
 		const playerX = player.position.x - this.mapOffset.x;
 		const visible = (this.cannons || []).filter(c => { const cx = c.tx * ts; return c.tx >= 16 && cx + ts >= screenLeft && cx <= screenRight; }).sort((a, b) => a.tx - b.tx).slice(0, 6);
 		if (!visible.length) return;
-		const mask = this.secondaryHard ? 8 : 16;
+		const mask = this.secondaryHard ? 0x07 : 0x0f;   // CannonBitmasks
 		for (let st = 0; st < this.physicsSteps; st++) {
 			const free = CANNON_MAX_BILLS - this.enemies.filter(e => e.type === 'BulletBill' && !e.frenzy).length;
 			for (let slot = 0; slot < free; slot++) {
-				const c = visible[Math.floor(Math.random() * mask)];
+				const c = visible[this.rbyte(1 + 2 + slot) & mask];   // los huecos son los enemigos 2, 3 y 4
 				if (!c) continue;
 				if (c.timer > 0) { c.timer--; continue; }
 				c.timer = CANNON_TIMER;
@@ -1939,7 +1958,7 @@ class Game {
 		if (enemy.grounded && --enemy.jumpTimer <= 0) {
 			const low = enemy.y > this.engine.getCanvasHeight() / 2;
 			enemy.vy = -(low ? 6 : 3) * k;
-			enemy.jumpTimer = 192 + Math.floor(Math.random() * 64);
+			enemy.jumpTimer = 0xc0 | this.rbyte(1 + this.slotOf(enemy));   // (bits al azar | $c0): de 192 a 255 cuadros
 		}
 		enemy.warning = enemy.throwTimer < 20;
 		if (--enemy.throwTimer <= 0) {
@@ -2188,7 +2207,7 @@ class Game {
 		// Patrulla: cada 4 cuadros avanza 1 px y da la vuelta al alejarse de su lugar de origen
 		if (enemy.frame % 4 === 0) {
 			const away = enemy.x - enemy.origX;
-			if (Math.abs(away) >= enemy.range * k) { enemy.speed = away > 0 ? -1 : 1; enemy.range = BOWSER_RANGE[Math.floor(Math.random() * 4)]; }
+			if (Math.abs(away) >= enemy.range * k) { enemy.speed = away > 0 ? -1 : 1; enemy.range = BOWSER_RANGE[this.rbyte(this.slotOf(enemy)) & 3]; }
 			if (enemy.dir === 1 && enemy.speed < 0) enemy.speed = 1;
 			enemy.x += enemy.speed * k;
 			enemy.x = Math.max(enemy.origX - 0x40 * k, Math.min(enemy.origX + 0x40 * k, enemy.x));
@@ -2200,7 +2219,7 @@ class Game {
 			enemy.y = floor; enemy.vy = 0;
 			if (--enemy.jumpTimer <= 0) {
 				enemy.vy = -BOWSER_JUMP_SPEED * k;
-				enemy.jumpTimer = BOWSER_RANGE[Math.floor(Math.random() * 4)] * 2;
+				enemy.jumpTimer = BOWSER_RANGE[this.rbyte(this.slotOf(enemy)) & 3];   // EnemyFrameTimer: en cuadros
 			}
 		} else {
 			enemy.vy += BOWSER_GRAVITY * k;
@@ -2219,7 +2238,7 @@ class Game {
 				else {
 					enemy.mouth = false;
 					enemy.fireTimer = BOWSER_FLAME_TIMER[enemy.flameIdx++ % BOWSER_FLAME_TIMER.length] - (this.secondaryHard ? 16 : 0);
-					const target = this.bridgeFloorY() - BOWSER_FLAME_HEIGHTS[Math.floor(Math.random() * 4)] * k;
+					const target = this.bridgeFloorY() - BOWSER_FLAME_HEIGHTS[this.rbyte(this.slotOf(enemy)) & 3] * k;
 					this.enemies.push({ id: this.enemies.length, type: 'BowserFlame', color: null, x: enemy.x - 14 * k, y: enemy.y + 8 * k, targetY: target, dir: -1, vx: -1, vy: 0, state: 'walking', anim: 0, active: true });
 					this.engine.playAudioOverlap(audio["Bowser_Fire"]);
 				}
@@ -2268,14 +2287,15 @@ class Game {
 		return balls;
 	}
 
-	// El Podoboo sale de la lava, sube 7 px por cuadro frenándose y vuelve a caer; salta de nuevo cuando
-	// vence su temporizador, de 6 a 21 intervalos (entre salto y salto puede quedar un rato escondido)
+	// El Podoboo (MovePodoboo) arranca 18 px por debajo del borde de abajo de la pantalla, sube 7 px por cuadro
+	// frenándose y vuelve a caer; salta de nuevo cuando vence su temporizador, que es (bits al azar | 6) intervalos:
+	// 6, 7, 14 o 15 intervalos de 21 cuadros (entre salto y salto queda un rato escondido)
 	stepPodoboo(enemy) {
 		const k = this.tileScale;
 		if (enemy.timer <= 0) {
-			enemy.y = this.engine.getCanvasHeight();
+			enemy.y = this.engine.getCanvasHeight() + 18 * k;
 			enemy.vy = -PODOBOO_SPEED * k;
-			enemy.timer = (6 + Math.floor(Math.random() * 16)) * PODOBOO_INTERVAL_STEPS;
+			enemy.timer = ((this.rbyte(1 + this.slotOf(enemy)) & 0x0f) | 6) * PODOBOO_INTERVAL_STEPS;
 		}
 		enemy.timer--;
 		enemy.y += enemy.vy;
@@ -2311,8 +2331,11 @@ class Game {
 		}
 
 		const player_ = player.position;
-		// De vez en cuando se vuelve hacia Mario
-		if (Math.random() < 1 / 64) enemy.dir = (player_.x - this.mapOffset.x) < enemy.x ? -1 : 1;
+		// Cuando unos bits al azar valen cero (1 de cada 64 cuadros, 1 de cada 4 en el modo difícil) se vuelve a orientar: los de
+		// lugar impar toman el sentido en que se mueve Mario, y los de lugar par van hacia él
+		if ((this.rbyte(1 + this.slotOf(enemy)) & (this.secondaryHard ? 0x03 : 0x3f)) === 0) {   // BlooberBitmasks
+			enemy.dir = (enemy.id & 1) ? (this.movingDir || this.facingDir || 1) : ((player_.x - this.mapOffset.x) < enemy.x ? -1 : 1);
+		}
 		const every8 = enemy.frame % 8 === 0;
 		if (enemy.swimPhase === 0) {
 			if (every8 && ++enemy.force === 2) enemy.swimPhase = 1;
