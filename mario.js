@@ -298,6 +298,9 @@ class Game {
 	playerSize = Player_Size.Small;
 	currentMap = null;
 	savedState = null;
+	twoPlayers = false;    // partida de dos jugadores alternados
+	playerStates = null;   // lo que lleva cada jugador (vidas, puntos, nivel...) cuando no está jugando
+	afterDeath = 'restart'; // qué sigue tras una muerte: 'restart', 'switch' o 'title'
 	
 	volume = DEFAULT_VOLUME;
 	savedVolume = DEFAULT_VOLUME;
@@ -895,13 +898,16 @@ class Game {
 	}
 
 	saveGameState() {
+		this.storeCurrentPlayer(false);
 		const player = this.engine.animatedSprites[PlayerName[this.player]];
 		this.savedState = {
 			playerPos: {x: player.position.x, y: player.position.y}, mapOffset: {x: this.mapOffset.x, y: this.mapOffset.y},
 			player: this.player, velocityX: this.velocityX, velocityY: this.velocityY, time: this.time, score: this.score, lives: this.lives,
 			coins: this.coins, isOnGround: this.isOnGround, currentAnimation: player.currentAnimation,
 			mapState: JSON.parse(JSON.stringify(this.currentMap)), enemiesState: JSON.parse(JSON.stringify(this.enemies)),
-			specialBlocksState: JSON.parse(JSON.stringify(this.specialBlocks)), nextWorldOverride: this.nextWorldOverride
+			specialBlocksState: JSON.parse(JSON.stringify(this.specialBlocks)), nextWorldOverride: this.nextWorldOverride,
+			currentWorldIndex: this.currentWorldIndex, playerSize: this.playerSize, halfwayPage: this.halfwayPage, hidden1UpFlag: this.hidden1UpFlag,
+			twoPlayers: this.twoPlayers, playerStates: this.playerStates ? JSON.parse(JSON.stringify(this.playerStates)) : null
 		};
 	}
 
@@ -913,6 +919,12 @@ class Game {
 			this.nextWorldOverride = this.savedState.nextWorldOverride ?? null;
 			this.player = this.savedState.player; this.time = this.savedState.time; this.score = this.savedState.score; this.lives = this.savedState.lives;
 			this.coins = this.savedState.coins;
+			if (this.savedState.currentWorldIndex !== undefined) this.currentWorldIndex = this.savedState.currentWorldIndex;
+			this.playerSize = this.savedState.playerSize ?? Player_Size.Small;
+			this.halfwayPage = this.savedState.halfwayPage ?? 0;
+			this.hidden1UpFlag = this.savedState.hidden1UpFlag ?? false;
+			this.twoPlayers = !!this.savedState.twoPlayers;
+			this.playerStates = this.savedState.playerStates ? JSON.parse(JSON.stringify(this.savedState.playerStates)) : null;
 			const player = this.engine.animatedSprites[PlayerName[this.player]];
 			player.position.x = this.savedState.playerPos.x; player.position.y = this.savedState.playerPos.y;
 			this.mapOffset.x = this.savedState.mapOffset.x; this.mapOffset.y = this.savedState.mapOffset.y;
@@ -932,17 +944,46 @@ class Game {
 		this.state = Game_State.Title_Menu;
 	}
 
-	selectPlayer(player) {
-		this.player = player;
-		this.lives = DEFAULT_LIVES;
-		this.score = 0;
-		this.coins = 0;
+	// Partida de uno o de dos jugadores. Con dos, Mario empieza y los turnos se alternan cuando el que juega pierde una
+	// vida; cada uno lleva sus propias vidas, puntos, monedas, nivel y punto de reinicio, como en el original.
+	selectPlayer(player, twoPlayers = false) {
+		// Sin un nivel elegido en el título, se empieza en el 1-1
+		if (this.currentWorldIndex <= 0) this.currentWorldIndex = Math.max(0, this.availableWorlds.indexOf('1-1'));
+		this.twoPlayers = twoPlayers;
+		const fresh = () => ({ lives: DEFAULT_LIVES, score: 0, coins: 0, worldIndex: this.currentWorldIndex, halfwayPage: 0, hidden1UpFlag: true, over: false });
+		this.playerStates = twoPlayers ? [fresh(), fresh()] : null;   // en un juego nuevo aparece el primer 1UP oculto (el del 1-1)
 		this.savedState = null;
-		this.playerSize = Player_Size.Small;
-		this.halfwayPage = 0;
-		this.hidden1UpFlag = true;   // en un juego nuevo aparece el primer 1UP oculto (el del 1-1)
-		this.resetLevelState();
+		this.loadPlayerState(player, twoPlayers ? this.playerStates[player] : fresh());
 		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
+	}
+
+	// Pone en juego a un jugador con su estado guardado y arranca su nivel
+	loadPlayerState(player, st) {
+		this.player = player;
+		this.lives = st.lives;
+		this.score = st.score;
+		this.coins = st.coins;
+		this.currentWorldIndex = st.worldIndex;
+		this.halfwayPage = st.halfwayPage;
+		this.hidden1UpFlag = st.hidden1UpFlag;
+		this.playerSize = Player_Size.Small;
+		this.playerIsVisible = true;
+		this.resetLevelState();
+	}
+
+	// Guarda lo que lleva el jugador actual para cuando le vuelva a tocar
+	storeCurrentPlayer(over = false) {
+		if (!this.twoPlayers || !this.playerStates) return;
+		this.playerStates[this.player] = {
+			lives: this.lives, score: this.score, coins: this.coins, worldIndex: this.currentWorldIndex,
+			halfwayPage: this.halfwayPage, hidden1UpFlag: this.hidden1UpFlag, over,
+		};
+	}
+
+	// Pasa el turno al otro jugador, que retoma su nivel desde su punto de reinicio
+	switchPlayer() {
+		const other = 1 - this.player;
+		this.loadPlayerState(other, this.playerStates[other]);
 	}
 
 	damagePlayer() {
@@ -995,20 +1036,31 @@ class Game {
 		this.timeExpired = false;
 		this.rememberHalfway();
 		this.playerSize = Player_Size.Small;
-		if (this.lives > 0) {
-			this.resetLevelState();
+		const over = this.lives <= 0;
+		this.storeCurrentPlayer(over);
+		// Qué sigue tras la muerte: el mismo jugador de nuevo, el turno del otro, o el final de la partida
+		const otherAlive = this.twoPlayers && !this.playerStates[1 - this.player].over;
+		this.afterDeath = otherAlive ? 'switch' : (over ? 'title' : 'restart');
+		if (!over) {
+			if (this.afterDeath === 'restart') this.resetLevelState();
 			if (timeUp) {
 				this.afterTimeUp = 'start';
 				this.transitionToBlackScreen(Black_Screen_Type.Time_Up, 2500);
 			} else {
-				this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
+				this.proceedAfterDeath();
 			}
 		} else if (timeUp) {
 			this.afterTimeUp = 'gameover';
 			this.transitionToBlackScreen(Black_Screen_Type.Time_Up, 2500);
 		} else {
-			this.transitionToBlackScreen(Black_Screen_Type.Game_Over, 6500);
+			this.transitionToBlackScreen(Black_Screen_Type.Game_Over, otherAlive ? 3500 : 6500);
 		}
+	}
+
+	// Tras la muerte y sus pantallas: la del próximo nivel (del mismo jugador o del otro) o el título
+	proceedAfterDeath() {
+		if (this.afterDeath === 'switch') this.switchPlayer();
+		this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
 	}
 
 	// Al morir, si la pantalla ya pasó la página del punto de reinicio del nivel, se vuelve a empezar
@@ -1169,13 +1221,14 @@ class Game {
 		if (this.screenType === Black_Screen_Type.Time_Up) {
 			const next = this.afterTimeUp;
 			this.afterTimeUp = null;
-			if (next === 'gameover') this.transitionToBlackScreen(Black_Screen_Type.Game_Over, 6500);
-			else this.transitionToBlackScreen(Black_Screen_Type.Start_Level, BLACK_SCREEN_DURATION);
+			if (next === 'gameover') this.transitionToBlackScreen(Black_Screen_Type.Game_Over, this.afterDeath === 'switch' ? 3500 : 6500);
+			else this.proceedAfterDeath();
 			return;
 		}
 		if (this.screenType === Black_Screen_Type.Game_Over) {
-
-			this.state = Game_State.Title_Menu;
+			// A un jugador sin vidas le sigue el otro, si todavía le quedan
+			if (this.afterDeath === 'switch') this.proceedAfterDeath();
+			else this.state = Game_State.Title_Menu;
 		} else {
 			this.state = Game_State.Playing;
 		}
@@ -2627,8 +2680,8 @@ class Game {
 		this.engine.drawSprite(titleImg, 0, imgPos, titleScale, false, 0, Pivot.Top_Left);
 
 		const menuButtons = [
-			{ name: "MARIO GAME", action: () => { this.selectPlayer(Player.Mario); }},
-			{ name: "LUIGI GAME", action: () => { this.selectPlayer(Player.Luigi); }},
+			{ name: "1 PLAYER", action: () => { this.selectPlayer(Player.Mario); }},
+			{ name: "2 PLAYERS", action: () => { this.selectPlayer(Player.Mario, true); }},
 		];
 		if(this.savedState){
 			menuButtons.push({ name: "CONTINUE", action: () => { this.continueGame(); } });
