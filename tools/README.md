@@ -124,5 +124,13 @@ suelta llamas), el puente y el hacha (al tocarla se cae el puente y Mario camina
 (corta y larga, en los dos sentidos y velocidades), Bullet Bills disparados por los cañones, plantas
 piraña y paratroopas.
 
+La colisión de Mario con el escenario sigue la del original: la cabeza es un punto a 4 px del borde de arriba
+(2 si es chico o agachado), los pies son dos puntos, y a los costados hay uno arriba y otro abajo. Valen también sus
+reglas finas: el golpe de cabeza sólo cuenta si el borde de arriba no pasó de largo (nibble bajo de la Y menor a 4), con
+los pies 5 px o más dentro de un bloque no aterriza sino que se lo empuja hacia atrás, un bloque golpeado no deja que otro
+rebote hasta pasados 16 cuadros (`BlockBounceTimer`) y los bloques macizos sólo suenan, sin rebotar. Al volver el bucle de un laberinto
+se conserva lo que había en pantalla, como en el original. Lakitu flota en la fila de los datos del nivel (la 2 si reaparece),
+bajada hasta 1,4 tiles del borde visible cuando esa fila queda fuera de la vista.
+
 La escenografía de fondo (nubes, colinas, arbustos, árboles, vallas, castillo y agua) sale de los datos
 del nivel (`scenery`) y se dibuja fija en el mapa; sólo el menú usa un fondo con parallax propio.

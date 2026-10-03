@@ -249,6 +249,7 @@ const HAMMER_THROW_STEPS_HARD = 0x1c;
 const BUBBLE_STEPS = 48, BUBBLE_SPEED = 0.6;   // una burbuja de Mario cada tanto, que sube 0,6 px por cuadro
 const HAMMER_BRO_JUMP_SPEED = 5;      // px del NES por cuadro
 const HAMMER_GRAVITY = 0x10 / 256, HAMMER_UP_SPEED = 2;
+const LAKITU_FIRST_ROW = 3, LAKITU_RESPAWN_ROW = 2;   // filas del mapa (con las dos de la barra de arriba) donde flota Lakitu: la de los datos del nivel y la de cuando reaparece (Y = $20)
 const LAKITU_DIFF_ADJ = [0x15, 0x30, 0x40];   // velocidad base de Lakitu, en 1/16 px por cuadro (LakituDiffAdj)
 const LAKITU_EGG_STEPS = 0x80;        // cuadros entre huevos de espinosos
 const LAKITU_RESPAWN_STEPS = 7 * 0x80;
@@ -1708,7 +1709,7 @@ class Game {
 		if (this.hasLakitu && !this.lakituStopped && !this.enemies.some(e => e.type === 'Lakitu') && (this.lakituTimer += this.physicsSteps) >= LAKITU_RESPAWN_STEPS) {
 			// Si lo derrotan, otro Lakitu vuelve a aparecer por la derecha pasado un rato
 			this.lakituTimer = 0;
-			this.enemies.push({ id: this.enemies.length, type: 'Lakitu', color: null, x: screenRight + 2 * ts, y: ts * 1.4 - (this.cameraY || 0), dir: -1, vx: -1, vy: 0, vx0: 0, state: 'walking', throwTimer: LAKITU_EGG_STEPS, active: true, anim: 0 });
+			this.enemies.push({ id: this.enemies.length, type: 'Lakitu', color: null, x: screenRight + 2 * ts, y: this.lakituY(LAKITU_RESPAWN_ROW), row: LAKITU_RESPAWN_ROW, dir: -1, vx: -1, vy: 0, vx0: 0, state: 'walking', throwTimer: LAKITU_EGG_STEPS, active: true, anim: 0 });
 		}
 		this.updatePlatforms(player, screenLeft, screenRight);
 		this.updateSprings(player);
@@ -2084,6 +2085,13 @@ class Game {
 	// (la velocidad es un valor base menos la distancia en cuartos, con la distancia limitada a 60 px) y más aún si
 	// Mario corre con la pantalla avanzando. Si se aleja de más en el sentido contrario, frena y da la vuelta.
 	// Cada 128 cuadros suelta un huevo de Spiny.
+	// Lakitu no cambia de altura: flota en la fila de los datos del nivel (3) y, si reaparece, en la 2 (Y = $20). Esas filas quedan
+	// por encima de lo que muestra la vista (que arranca desde el piso y sólo ve unas 10 filas), así que se lo baja hasta 1,4 tiles
+	// del borde visible, que sigue a la cámara; en una ventana alta que muestra todo el nivel queda en su fila original
+	lakituY(row) {
+		return Math.max(this.tileToScreen(0, row).y, this.tileSize * 1.4 - (this.cameraY || 0));
+	}
+
 	stepLakitu(enemy, player) {
 		const k = this.tileScale;
 		if (enemy.state === 'falling') {
@@ -2116,8 +2124,7 @@ class Game {
 		}
 		enemy.x += enemy.moveDir * speed / 16 * k;
 		enemy.vx = enemy.moveDir;
-		// En el original flota en la fila de arriba de todo del nivel; acá se lo deja a 1,4 tiles del borde visible, que sigue a la cámara
-		enemy.y = this.tileSize * 1.4 - (this.cameraY || 0);
+		enemy.y = this.lakituY(enemy.row ?? LAKITU_FIRST_ROW);
 		if (--enemy.throwTimer <= 0) {
 			enemy.throwTimer = LAKITU_EGG_STEPS;
 			const spinies = this.enemies.filter(e => e.type === 'Spiny').length;
