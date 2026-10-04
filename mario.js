@@ -3812,9 +3812,13 @@ class Game {
 						if (isSolid(this.currentMap.map[idx])) {
 							const tileTop = this.tileToScreen(tx, bottomLeft.y).y;
 							// Regla del original: con los pies a 5 px o más dentro del bloque (nibble bajo de Y >= 5) no aterriza, lo trata como
-							// un choque de costado (ImpedePlayerMove): frena y lo empuja 1 px hacia atrás
+							// un choque de costado (ImpedePlayerMove): frena y lo empuja 1 px para atrás. "Atrás" es alejándolo del bloque (el
+							// original lo saca de hacia dónde iba); si se lo sacaba según hacia dónde mira, con el bloque del otro lado lo
+							// metía 1 px por cuadro contra la pared, y la x del mundo seguía subiendo sin que Mario pasara
 							if ((newY + playerHeight - tileTop) / kc >= 5) {
-								const back = this.facingDir >= 0 ? -1 : 1;
+								const blockCenter = this.tileToScreen(tx, bottomLeft.y).x + this.tileSize / 2, marioCenter = playerPos.x + 8 * kc;
+								const back = blockCenter > marioCenter ? -1 : blockCenter < marioCenter ? 1 : (this.facingDir >= 0 ? -1 : 1);
+								// sólo si iba hacia el bloque (o estaba quieto): si ya se aleja, no hace falta
 								if (back < 0 ? this.xSpeed >= 0 : this.xSpeed <= 0) { playerPos.x += back * kc; this.xSpeed = 0; }
 								break;
 							}
