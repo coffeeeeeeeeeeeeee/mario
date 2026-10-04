@@ -24,7 +24,7 @@ En celulares y tablets aparecen una palanca (mover), un botón A (saltar) y un b
 
 ## Herramientas
 
-Los niveles y los gráficos se generan desde el desensamblado y la ROM del juego original, que no se incluyen en el repo. Ver [`tools/README.md`](tools/README.md).
+Los niveles y los gráficos se generan con las herramientas de `tools/` y se versionan ya generados (`levels_smb.js`, `atlas.js`). Ver [`tools/README.md`](tools/README.md).
 
 ## API para agentes (IA)
 
@@ -48,7 +48,7 @@ obs = vec.reset()
 obs, rewards, dones, infos = vec.step([2] * 8)       # la que termina arranca de nuevo sola (info["terminal_obs"] guarda la última)
 ```
 
-- **Observación:** posición, velocidad y estado de Mario (en px del NES, 16 px = una celda), una grilla de 13 filas por 16 columnas alrededor de Mario (0 vacío, 1 sólido, 2 bloque golpeable, 3 moneda, 4 meta: el mástil, el hacha o la boca de un caño que lleva a otro nivel), enemigos, plataformas y hongos o flores cercanos. Con `--browser`, `env.pixels()` da el cuadro achicado en grises.
+- **Observación:** posición, velocidad y estado de Mario (en px lógicos, 16 px = una celda), una grilla de 13 filas por 16 columnas alrededor de Mario (0 vacío, 1 sólido, 2 bloque golpeable, 3 moneda, 4 meta: el mástil, el hacha o la boca de un caño que lleva a otro nivel), enemigos, plataformas y hongos o flores cercanos. Con `--browser`, `env.pixels()` da el cuadro achicado en grises.
 - **Formatos de observación** (`obs=` en `reset` y `step`): `"full"` (la de arriba, lo normal), `"compact"` (lo mismo en arreglos, que pesa menos de la mitad) y `"none"` (sólo recompensa y fin). En `compact`: `m` es `[x, y, ancho, alto, vx, vy, suelo, tamaño (0 chico, 1 grande, 2 fuego), mira a, banderas]`, `g` la grilla como texto de 13 x 16 dígitos fila por fila, `e` los enemigos `[tipo, color, x, y, ancho, alto, dir, estado]`, `p` las plataformas, `u` los hongos y flores, y además `w` nivel, `f` cuadro, `t` tiempo, `s` puntos, `c` monedas, `l` vidas. `compact_grid` y `compact_mario` de `smb_env.py` los decodifican.
 - **Acciones:** 14 combinaciones predefinidas (`env.actions`), o una lista de botones (`left`, `right`, `down`, `jump`, `run`, `fire`).
 - **Recompensa:** lo que avanza Mario en x, menos una pequeña penalidad por el reloj del juego, -15 al morir y +50 al completar el nivel. Opcionalmente (`shaping=` en `reset`, `--shaping` en `entrenar.sh`, 0,5 por defecto al entrenar) se suma el peso por lo que se acerca Mario, en x e y, a la meta más cercana (mástil, hacha o boca de caño de salida), lo que debería ayudar donde hay que alinearse con la meta, como en los caños de los niveles de agua. En `info` vienen los datos crudos (`x`, `shaping`, `goal_distance`...) para armar otra.
@@ -79,4 +79,8 @@ La vista (`/watch`) deja elegir arriba cuántas pantallas ver a la vez (1, 2, 4,
 
 Si el título pasa unos 8 segundos sin que nadie toque nada, arranca solo un demo en el que juega la IA entrenada, en uno de los 32 niveles (cartel "IA JUGANDO 4-4  7/32"); al terminar uno, vuelve al título y empieza otro. Los niveles salen de un mazo mezclado: no se repite ninguno hasta haber pasado los 32, y el mazo se recuerda en el navegador aunque se recargue la página. El demo se corta si Mario muere, llega a la meta, pasa 12 segundos sin avanzar o dura más de 2 minutos y medio, y cualquier tecla, clic o toque lo interrumpe.
 
-La red corre dentro del navegador (`ia.js`) con los pesos de `assets/ia/modelo.js` (1,6 MB), un script y no un archivo aparte para que funcione también abriendo el `index.html` directo desde la carpeta (`file://`), donde el navegador no deja leer archivos con `fetch`; si faltan o fallan, el título avisa en la consola y usa el demo grabado del original (el 1-1). Para usar un modelo nuevo: `./entrenar.sh exportar` (toma el modelo que se está entrenando; recargá la página después). `python3 tools/ai/check_ia.py` comprueba que lo que calcula el navegador coincide con el entrenamiento (las entradas de la red salen idénticas y las salidas difieren en el orden de 1e-7); conviene correrlo si se toca la observación.
+La red corre dentro del navegador (`ia.js`) con los pesos de `assets/ia/modelo.js` (1,6 MB), un script y no un archivo aparte para que funcione también abriendo el `index.html` directo desde la carpeta (`file://`), donde el navegador no deja leer archivos con `fetch`; si faltan o fallan, el título avisa en la consola y usa un demo grabado en el 1-1. Para usar un modelo nuevo: `./entrenar.sh exportar` (toma el modelo que se está entrenando; recargá la página después). `python3 tools/ai/check_ia.py` comprueba que lo que calcula el navegador coincide con el entrenamiento (las entradas de la red salen idénticas y las salidas difieren en el orden de 1e-7); conviene correrlo si se toca la observación.
+
+### Publicar en itch.io
+
+`tools/empaquetar-itch.sh` arma el zip HTML5 con lo que el juego necesita para correr, incluida la IA del título (`assets/ia/modelo.js`), y lo guarda fuera del proyecto, en `../mario-itch.zip`. Se corta si la lista llegara a incluir algo que no deba publicarse (`tools/`, `.git`, `.entrenamiento` y archivos que no son del juego). Los pesos de la IA quedan fijos al exportarlos: si se reentrenó, correr antes `./entrenar.sh exportar`.

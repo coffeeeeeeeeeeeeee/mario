@@ -2,7 +2,7 @@
 //
 // En este modo el juego no corre solo: cada llamada a step() avanza cuadros de 1/60 s exactos, así que la partida es
 // determinista (mismo nivel, misma semilla y mismas acciones dan siempre lo mismo) y puede ir más rápido que el tiempo real.
-// El sonido se apaga. Todas las posiciones están en píxeles del NES (16 px = una celda), con y = 0 en el borde de arriba del
+// El sonido se apaga. Todas las posiciones están en píxeles lógicos (16 px = una celda), con y = 0 en el borde de arriba del
 // mapa (las dos primeras filas son la barra de estado; el juego se ve de la fila 2 a la 14).
 //
 //   smbApi.reset({ world: '1-1', seed: 7, size: 'small' })  -> observación inicial
@@ -46,7 +46,7 @@
 
 	// Mismo generador que usa el juego para el azar, sembrado a partir de un número
 	function seedRandom(seed) {
-		if (seed === undefined) { smb.lfsr.set([0xa5, 0, 0, 0, 0, 0, 0]); return; }   // el estado de arranque del original
+		if (seed === undefined) { smb.lfsr.set([0xa5, 0, 0, 0, 0, 0, 0]); return; }   // el estado de arranque del juego
 		let a = seed >>> 0;
 		const next = () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) & 0xff; };
 		for (let i = 0; i < 7; i++) smb.lfsr[i] = next();
@@ -92,7 +92,7 @@
 	const leadsToNextLevel = wp => !!wp && mainLevels.has(wp.to) && wp.to !== mainWorld;
 
 	// Celdas de la boca de esos caños (arriba, de 2 de ancho, si se entra por arriba; a la izquierda, de 2 de alto, si se entra de lado)
-	// y, para la recompensa por acercarse, los puntos (centro de cada celda, en px del NES) de todas las metas del nivel: esos
+	// y, para la recompensa por acercarse, los puntos (centro de cada celda, en px lógicos) de todas las metas del nivel: esos
 	// caños, el mástil y el hacha
 	let goalCache = { map: null, mainWorld: null, cells: null, points: null };
 	function goalData() {
@@ -135,7 +135,7 @@
 			.filter(pl => pl.x + pl.w >= x - 16 * (left + 2) && pl.x <= x + 16 * (right + 2));
 		const powerups = (smb.activePowerups || []).map(u => ({ type: u.type, x: round(u.x / k), y: round((u.y - top) / k) }));
 		return {
-			world: m.world, frame: smb.nesFrame, time: smb.time, state: smb.state, coins: smb.coins, score: smb.score, lives: smb.lives,
+			world: m.world, frame: smb.frameCount, time: smb.time, state: smb.state, coins: smb.coins, score: smb.score, lives: smb.lives,
 			mario: {
 				x: round(x), y: round((p.position.y - top) / k), w: 16, h: smb.playerHeightPx() / k,
 				vx: round(smb.xSpeed / 4096), vy: round(smb.velocityY / k),
@@ -171,7 +171,7 @@
 		for (const q of smb.platforms || []) if (q.x + q.w >= x - 16 * (left + 2) && q.x <= x + 16 * (right + 2)) pl.push([round(q.x), round(q.y + 32), round(q.w), q.kind]);
 		const u = (smb.activePowerups || []).map(o => [o.type, round(o.x / k), round((o.y - top) / k)]);
 		return {
-			w: m.world, f: smb.nesFrame, t: smb.time, s: smb.score, c: smb.coins, l: smb.lives, st: smb.state, cam: round(-smb.mapOffset.x / k),
+			w: m.world, f: smb.frameCount, t: smb.time, s: smb.score, c: smb.coins, l: smb.lives, st: smb.state, cam: round(-smb.mapOffset.x / k),
 			m: [round(x), round((p.position.y - top) / k), 16, smb.playerHeightPx() / k, round(smb.xSpeed / 4096), round(smb.velocityY / k),
 				smb.isOnGround ? 1 : 0, smb.playerSize, smb.facingDir, (smb.climbVine ? 1 : 0) | (smb.isWater ? 2 : 0) | (smb.starTimer > 0 ? 4 : 0)],
 			g, gc: col0, e, p: pl, u,
@@ -193,7 +193,7 @@
 	let mainWorld = null;   // el último de los 32 niveles en que estuvo (las salas secretas no cuentan)
 	let mainLevels = new Set();
 
-	// Distancia (px del NES) del centro de Mario a la meta más cercana; Infinity si el nivel no tiene ninguna a la vista
+	// Distancia (px lógicos) del centro de Mario a la meta más cercana; Infinity si el nivel no tiene ninguna a la vista
 	function goalDistance(x, y) {
 		const pts = goalData().points;
 		if (!pts.length) return Infinity;
@@ -229,8 +229,8 @@
 		}
 		if (smb.state !== Game_State.Playing) throw new Error(`No se pudo empezar el nivel (estado ${smb.state})`);
 		// Los contadores de cuadros y de tiempo siguen de un episodio al siguiente; en cero, el episodio sólo depende de cómo se
-		// reinició (el original usa la paridad del contador para, por ejemplo, la dirección con que aparecen algunos enemigos)
-		smb.growTimer = 0; smb.invincibleTimer = 0; smb.deathTimer = 0; smb.jumpOriginY = 0; smb.nesFrame = 0; smb.clockMs = 0; smb.physicsAccumulator = 0; smb.coinAnimAcc = 0; smb.pakkunAnimAcc = 0; smb.musicResumeAt = 0;
+		// reinició (el juego usa la paridad del contador para, por ejemplo, la dirección con que aparecen algunos enemigos)
+		smb.growTimer = 0; smb.invincibleTimer = 0; smb.deathTimer = 0; smb.jumpOriginY = 0; smb.frameCount = 0; smb.clockMs = 0; smb.physicsAccumulator = 0; smb.coinAnimAcc = 0; smb.pakkunAnimAcc = 0; smb.musicResumeAt = 0;
 		if (opts.size && opts.size !== 'small') {
 			smb.playerSize = SIZES[opts.size] ?? Player_Size.Small;
 			if (smb.playerSize > Player_Size.Small) {

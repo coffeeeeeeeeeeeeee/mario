@@ -1,7 +1,7 @@
-// Generado por tools/smb-levels.js a partir del desensamblado de Super Mario Bros.
+// Generado por tools/smb-levels.js.
 // No editar a mano: volver a correr `node tools/smb-levels.js --out levels_smb.js`.
 //
-// map: grilla de números de metatile originales (0 = vacío), fila por fila, con 2 filas vacías
+// map: grilla de números de metatile (0 = vacío), fila por fila, con 2 filas vacías
 // arriba. scenery: lista plana x, y, id de la escenografía de fondo (nubes, colinas, arbustos,
 // árboles, vallas), que no es sólida y va detrás de los bloques. enemies: { type, color, x, y }, con x, y la celda que ocupa el enemigo; las plantas
 // piraña van sobre la boca del caño.

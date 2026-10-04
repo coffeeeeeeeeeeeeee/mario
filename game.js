@@ -208,7 +208,7 @@ function animate(timestamp) {
     requestAnimationFrame(animate);
 }
 
-// El atlas (atlas.js, generado desde la ROM por tools/build-atlas.js) trae todas las hojas en una sola
+// El atlas (atlas.js, generado por tools/build-atlas.js) trae todas las hojas en una sola
 // imagen. Cada hoja se recorta y se registra como tileset con su nombre y el tamaño de celda del manifiesto.
 let atlasImage = null;
 
@@ -254,7 +254,7 @@ async function init() {
         y: basePlayerPos.y * resolutionScale
     };
 
-    font = await js2d.loadFont("SMB2_Font", "assets/fonts/Super-Mario-Bros-NES.ttf");
+    font = await js2d.loadFont("SMB2_Font", "assets/fonts/pixel-font.ttf");
 
     await loadAtlas();
 

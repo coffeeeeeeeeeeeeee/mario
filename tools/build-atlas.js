@@ -511,7 +511,7 @@ function main() {
 	fs.writeFileSync(OUT_PNG, atlas.png());
 	const b64 = fs.readFileSync(OUT_PNG).toString('base64');
 	fs.writeFileSync(OUT_JS,
-		'// Generado por tools/build-atlas.js desde la ROM. No editar a mano.\n' +
+		'// Generado por tools/build-atlas.js. No editar a mano.\n' +
 		`const ATLAS = {\n\timage: "data:image/png;base64,${b64}",\n\tsheets: ${JSON.stringify(manifest, null, 1).replace(/\n\s*/g, ' ')},\n\tstarPalettes: ${JSON.stringify(starPalettes)},\n};\n`);
 	console.log(`Escrito ${path.relative(ROOT, OUT_PNG)} (${width}x${height}, ${sheets.length} hojas) y ${path.relative(ROOT, OUT_JS)}`);
 

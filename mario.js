@@ -2,19 +2,19 @@ const SPRITE_SIZE = 16;
 const TILE_PIXEL_SIZE = 16;
 
 const SPRITE_SCALE = 3;
+// Los "píxeles lógicos" son los del arte del juego a escala 1 (un tile mide 16); se multiplican por tileScale para pasar a píxeles de la pantalla.
 const BASE_GRAVITY = 0.8;
-// Velocidades máximas del Super Mario Bros original, en píxeles del NES por cuadro (a ~60 cuadros
-// por segundo). Salen de MaxRightXSpdData en SMBDIS.ASM: $18 caminando y $28 corriendo (con B),
-// en unidades de 1/16 de píxel, o sea 24/16 y 40/16. Se escalan por SPRITE_SCALE para quedar en
+// Velocidades máximas, en píxeles lógicos por cuadro (a ~60 cuadros por segundo): 24/16 caminando y
+// 40/16 corriendo (con B), es decir en unidades de 1/16 de píxel. Se escalan por SPRITE_SCALE para quedar en
 // píxeles de esta pantalla por segundo.
 const SMB_WALK_SPEED = 24 / 16;
 const SMB_RUN_SPEED = 40 / 16;
 const BASE_VELOCITY_GROUND = SMB_WALK_SPEED * SPRITE_SCALE * 60;
 const BASE_VELOCITY_TURBO = SMB_RUN_SPEED * SPRITE_SCALE * 60;
-// Salto del Super Mario Bros original (SMBDIS.ASM: JumpMForceData, FallMForceData, PlayerYSpdData).
-// Todo en píxeles del NES: la velocidad es en píxeles por cuadro y las fuerzas en píxeles por
-// cuadro al cuadrado (el original las guarda en 1/256). Se multiplica por tileScale para pasar
-// a píxeles de esta pantalla. La física vertical corre en pasos fijos de 1/60 s, como el original.
+// Salto.
+// Todo en píxeles lógicos: la velocidad es en píxeles por cuadro y las fuerzas en píxeles por
+// cuadro al cuadrado (en 1/256). Se multiplica por tileScale para pasar
+// a píxeles de esta pantalla. La física vertical corre en pasos fijos de 1/60 s.
 // El tipo de salto depende de la velocidad horizontal al despegar: parado, caminando o corriendo.
 const SMB_JUMP = {
 	standing: { speed: 4, up: 0x20 / 256, down: 0x70 / 256 },
@@ -22,60 +22,60 @@ const SMB_JUMP = {
 	running:  { speed: 5, up: 0x28 / 256, down: 0x90 / 256 },
 };
 const SMB_MAX_FALL_SPEED = 4;
-const SMB_STOMP_SPEED = -4;        // rebote al pisar un Goomba o un Koopa ($FC)
-const SMB_BRICK_BREAK_SPEED = -2;  // al romper un ladrillo Mario sigue subiendo ($FE)
+const SMB_STOMP_SPEED = -4;        // rebote al pisar un Goomba o un Koopa
+const SMB_BRICK_BREAK_SPEED = -2;  // al romper un ladrillo Mario sigue subiendo
 const SMB_BUMP_SPEED = 0;          // al golpear un bloque que rebota
 const SMB_CEILING_SPEED = 1;       // al chocar con un techo sólido empieza a caer
 const PHYSICS_STEP_MS = 1000 / 60;
 const PHYSICS_STEP_TOLERANCE_MS = 2; // absorbe el jitter de requestAnimationFrame a 60 Hz
 const PIPE_TRANSITION_MS = 700;      // lo que tarda Mario en entrar o salir de un caño
 
-// Tiempos y puntajes del original (la NES corre a 60,0988 cuadros por segundo)
-const NES_FPS = 60.0988;
-const GAME_TIMER_TICK_MS = 24 * 1000 / NES_FPS;           // el contador baja 1 cada 24 cuadros
-const INJURY_INVINCIBLE_MS = 8 * 21 * 1000 / NES_FPS;     // InjuryTimer: 8 intervalos de 21 cuadros
-const STAR_INVINCIBLE_MS = 0x23 * 21 * 1000 / NES_FPS;    // StarInvincibleTimer
-// Puntos de la cadena de pisotones sin tocar el suelo (ScoreUpdateData); el último es una vida
+// Tiempos y puntajes (el juego corre a 60,0988 cuadros por segundo)
+const GAME_FPS = 60.0988;
+const GAME_TIMER_TICK_MS = 24 * 1000 / GAME_FPS;           // el contador baja 1 cada 24 cuadros
+const INJURY_INVINCIBLE_MS = 8 * 21 * 1000 / GAME_FPS;     // 8 intervalos de 21 cuadros
+const STAR_INVINCIBLE_MS = 0x23 * 21 * 1000 / GAME_FPS;
+// Puntos de la cadena de pisotones sin tocar el suelo; el último es una vida
 const SCORE_CHAIN = [0, 100, 200, 400, 500, 800, 1000, 2000, 4000, 5000, 8000, 'life'];
-// Movimiento de enemigos y objetos, en píxeles del NES por cuadro (las fuerzas, por cuadro al cuadrado)
-const ENEMY_WALK_SPEED = 0.5;          // NormalXSpdData: $f8
-const ENEMY_SHELL_SPEED = 3;           // KickedShellXSpdData: $30
-const ENEMY_GRAVITY = 0x3d / 256;      // MoveD_EnemyVertically
-const JUMPER_GRAVITY = 0x1c / 256;     // MoveJ_EnemyVertically: paratroopa y estrella
+// Movimiento de enemigos y objetos, en píxeles lógicos por cuadro (las fuerzas, por cuadro al cuadrado)
+const ENEMY_WALK_SPEED = 0.5;
+const ENEMY_SHELL_SPEED = 3;
+const ENEMY_GRAVITY = 0x3d / 256;
+const JUMPER_GRAVITY = 0x1c / 256;     // paratroopa y estrella
 const ENEMY_MAX_FALL = 3;
-const ENEMY_JUMP_SPEED = -3;           // EnemyJump: $fd
-const MUSHROOM_SPEED = 1;              // $10
-const FIREBALL_SPEED = 4;              // FireballXSpdData: $40
+const ENEMY_JUMP_SPEED = -3;
+const MUSHROOM_SPEED = 1;
+const FIREBALL_SPEED = 4;
 const FIREBALL_GRAVITY = 0x50 / 256;
 const FIREBALL_MAX_FALL = 3;
 const FIREBALL_BOUNCE = -3;
 const MAX_FIREBALLS = 2;
 const PIRANHA_SPEED = 0.5;             // 1 px cada 2 cuadros
-const PIRANHA_RISE = 24;               // PiranhaPlantUpYPos: 24 px sobre la boca
-const PIRANHA_DELAY_STEPS = 0x40;      // EnemyFrameTimer al llegar arriba o abajo
+const PIRANHA_RISE = 24;               // 24 px sobre la boca
+const PIRANHA_DELAY_STEPS = 0x40;      // espera al llegar arriba o abajo
 const PIRANHA_NEAR = 33;               // no sale si Mario está a menos de 33 px
 const ENEMY_ACTIVATE_AHEAD = 3;        // los enemigos aparecen a 3 tiles del borde derecho de la pantalla
 const ENEMY_DESPAWN_BEHIND = 72;       // y desaparecen 72 px más allá del borde izquierdo
 const STOMPED_GOOMBA_STEPS = 30;
-const DEATH_PAUSE_MS = 15 * 1000 / NES_FPS;
-const DEATH_GRAVITY = 0x28 / 256;       // VerticalForce de PlayerKilled
+const DEATH_PAUSE_MS = 15 * 1000 / GAME_FPS;
+const DEATH_GRAVITY = 0x28 / 256;       // gravedad al morir
 // Monedas que hay que juntar en el nivel -3 para que aparezca el 1UP oculto del mundo siguiente
 const HIDDEN_1UP_COINS = [0x15, 0x23, 0x16, 0x1b, 0x17, 0x18, 0x23, 0x63];
-const BRICK_COIN_TIMER_MS = 0x0b * 21 * 1000 / NES_FPS;   // BrickCoinTimer: el ladrillo da monedas durante ~3,8 s
-// Física horizontal de Mario (X_Physics, ImposeFriction): la velocidad va en 1/16 de píxel del NES por cuadro
-const X_MAX_RIGHT = [0x28, 0x18, 0x10];   // MaxRightXSpdData: corriendo, caminando y en el agua
-const X_MAX_LEFT = [-0x28, -0x18, -0x10]; // MaxLeftXSpdData ($d8, $e8, $f0)
-const X_FRICTION = [0xe4, 0x98, 0xd0];    // FrictionData, en 1/256 de unidad de velocidad por cuadro
-const RUNNING_TIMER_STEPS = 10 * 21;      // RunningTimer: se sigue corriendo ~3,5 s tras soltar B
-// Salto según la velocidad horizontal al despegar (umbrales de ProcJumping: 9, 16, 25 y 28)
+const BRICK_COIN_TIMER_MS = 0x0b * 21 * 1000 / GAME_FPS;   // el ladrillo da monedas durante ~3,8 s
+// Física horizontal de Mario: la velocidad va en 1/16 de píxel lógico por cuadro
+const X_MAX_RIGHT = [0x28, 0x18, 0x10];   // corriendo, caminando y en el agua
+const X_MAX_LEFT = [-0x28, -0x18, -0x10];
+const X_FRICTION = [0xe4, 0x98, 0xd0];    // en 1/256 de unidad de velocidad por cuadro
+const RUNNING_TIMER_STEPS = 10 * 21;      // se sigue corriendo ~3,5 s tras soltar B
+// Salto según la velocidad horizontal al despegar (umbrales: 9, 16, 25 y 28)
 const JUMP_BY_SPEED = [SMB_JUMP.standing, SMB_JUMP.standing, SMB_JUMP.walking, SMB_JUMP.running, SMB_JUMP.running];
-// Natación (entradas de agua de JumpMForceData, FallMForceData, PlayerYSpdData e InitMForceData)
-const SWIM_STROKE_SPEED = -1.5;           // $fe más la fracción $80
+// Natación (valores propios del agua: velocidad de brazada, fuerza de subida y de caída)
+const SWIM_STROKE_SPEED = -1.5;
 const SWIM_FORCE_UP = 0x0d / 256;
 const SWIM_FORCE_DOWN = 0x0a / 256;
-const SWIM_CEILING_Y = 0x14, SWIM_CEILING_FORCE = 0x18 / 256;   // ProcSwim: por encima de esa altura la fuerza de subida del agua pasa a $18 (un techo blando)
-const SWIM_TIMER_STEPS = 0x20;            // JumpSwimTimer: se puede dar otra brazada en seguida
-// Altura de Mario al tocar el mástil (en píxeles del NES) -> premio (FlagpoleYPosData, FlagpoleScoreMods)
+const SWIM_CEILING_Y = 0x14, SWIM_CEILING_FORCE = 0x18 / 256;   // por encima de esa altura la fuerza de subida del agua pasa a 24/256 (un techo blando)
+const SWIM_TIMER_STEPS = 0x20;            // se puede dar otra brazada en seguida
+// Altura de Mario al tocar el mástil (en píxeles lógicos) -> premio
 const FLAGPOLE_Y_DATA = [0x18, 0x22, 0x50, 0x68, 0x90];
 const FLAGPOLE_SCORES = [5000, 2000, 800, 400, 100];
 const BASE_VELOCITY_SWIM = (TILE_PIXEL_SIZE * 17.6 / 16) * 60;
@@ -101,7 +101,7 @@ const TOUCH_CONTROLS = {
 const COIN_SPIN_VELOCITY = 15;
 const BLACK_SCREEN_DURATION = 2000;
 
-// Tipo de área de un nivel (AreaType del original, con el exterior primero)
+// Tipo de área de un nivel (con el exterior primero)
 const World_Type = {
 	Overworld:		0,
 	Underground:	1,
@@ -157,7 +157,7 @@ const Black_Screen_Type = {
 	Time_Up: 2,
 };
 
-// Metatiles del Super Mario Bros original: los mapas usan los mismos números que el juego de NES
+// Metatiles del juego: los mapas usan estos números
 // (ver tools/smb-levels.js). Sólo se nombran los que el motor trata de forma especial.
 const MT = {
 	Empty: 0x00,
@@ -224,65 +224,65 @@ const isCoinMetatile = id => id === MT.Coin || id === MT.CoinWater;
 // Marcadores de enemigo del editor: ids fuera del rango de metatiles, para colocarlos en la grilla.
 const SWIMMERS = new Set(['Bloober', 'Cheep']);
 const BOWSER_HP = 5, BOWSER_SCORE = 5000;
-const BOWSER_W = 32, BOWSER_H = 24;                        // px del NES
+const BOWSER_W = 32, BOWSER_H = 24;                        // px lógicos
 const BOWSER_FIRST_FLAME_STEPS = 0xdf;                     // cuadros hasta la primera llama
-const BOWSER_FLAME_TIMER = [0xbf, 0x40, 0xbf, 0xbf, 0xbf, 0x40, 0x40, 0xbf];   // FlameTimerData
-const BOWSER_RANGE = [0x21, 0x41, 0x11, 0x31];             // PRandomRange: alcance de la patrulla y espera entre saltos
-const BOWSER_JUMP_SPEED = 2, BOWSER_GRAVITY = 0x0f / 256;   // px del NES por cuadro (MoveEnemySlowVert)
+const BOWSER_FLAME_TIMER = [0xbf, 0x40, 0xbf, 0xbf, 0xbf, 0x40, 0x40, 0xbf];
+const BOWSER_RANGE = [0x21, 0x41, 0x11, 0x31];             // alcance de la patrulla y espera entre saltos
+const BOWSER_JUMP_SPEED = 2, BOWSER_GRAVITY = 0x0f / 256;   // px lógicos por cuadro
 const BOWSER_FLAME_SPEED = 1.25;                           // la llama avanza 1 px + 0x40/256 por cuadro
 const BOWSER_FLAME_HEIGHTS = [16, 32, 48, 16];             // alturas sobre el puente a las que apunta la llama
 const FLAME_W = 24, FLAME_H = 8;
-const BRIDGE_COLLAPSE_MS = 4 * 1000 / 60;                  // un tile del puente cada 4 cuadros (BridgeCollapse)
-const BASE_GRAVITY_NES = 0.4;   // px del NES por cuadro al cuadrado, para la caída automática de Mario al final
-const BULLET_BILL_SPEED = 1.5;       // px del NES por cuadro (el original lo mueve a $e8/16)
+const BRIDGE_COLLAPSE_MS = 4 * 1000 / 60;                  // un tile del puente cada 4 cuadros
+const BASE_GRAVITY_PX = 0.4;   // px lógicos por cuadro al cuadrado, para la caída automática de Mario al final
+const BULLET_BILL_SPEED = 1.5;       // px lógicos por cuadro
 const CANNON_TIMER = 14;             // el temporizador de un cañón tras disparar (baja de a uno cada vez que sale sorteado)
-const CANNON_NEAR = 40;              // px del NES: más cerca que esto el Bullet Bill muere al salir
+const CANNON_NEAR = 40;              // px lógicos: más cerca que esto el Bullet Bill muere al salir
 const CANNON_MAX_BILLS = 3;
-const PLATFORM_LIFT_SPEED = 0.94;      // px del NES por cuadro de las plataformas que suben o bajan
+const PLATFORM_LIFT_SPEED = 0.94;      // px lógicos por cuadro de las plataformas que suben o bajan
 const PLATFORM_ACCEL = 5 / 256, PLATFORM_MAX_SPEED = 3;           // la que sube y baja y el balancín: aceleran de a 5/256 hasta 3 px por cuadro
 const PLATFORM_VERT_HALF = 64;                                    // la que sube y baja oscila 64 px a cada lado de su centro
-const PLATFORM_HORI_MAX = 14;                                     // la que va y viene: velocidad máxima en 1/16 px (XMoveCntr_Platform)
+const PLATFORM_HORI_MAX = 14;                                     // la que va y viene: velocidad máxima en 1/16 px
 const PLATFORM_DROP_GRAVITY = 0x7f / 256, PLATFORM_DROP_MAX = 2;  // la que cae al pisarla
 const PLATFORM_FALL_GRAVITY = 0.2;                               // balancín que se suelta
 const PLATFORM_BALANCE_LIMIT = 13;                               // el balancín se suelta si una sube hasta acá
-const HAMMER_THROW_STEPS = 0x30;       // cuadros entre martillos (HammerThrowTmrData); en el modo difícil, 0x1c
+const HAMMER_THROW_STEPS = 0x30;       // cuadros entre martillos; en el modo difícil, 0x1c
 const HAMMER_THROW_STEPS_HARD = 0x1c;
 const BUBBLE_STEPS = 48, BUBBLE_SPEED = 0.6;   // una burbuja de Mario cada tanto, que sube 0,6 px por cuadro
-const HAMMER_BRO_JUMP_SPEED = 5;      // px del NES por cuadro
+const HAMMER_BRO_JUMP_SPEED = 5;      // px lógicos por cuadro
 const HAMMER_GRAVITY = 0x10 / 256, HAMMER_UP_SPEED = 2;
-const LAKITU_FIRST_ROW = 3, LAKITU_RESPAWN_ROW = 2;   // filas del mapa (con las dos de la barra de arriba) donde flota Lakitu: la de los datos del nivel y la de cuando reaparece (Y = $20)
-const LAKITU_DIFF_ADJ = [0x15, 0x30, 0x40];   // velocidad base de Lakitu, en 1/16 px por cuadro (LakituDiffAdj)
+const LAKITU_FIRST_ROW = 3, LAKITU_RESPAWN_ROW = 2;   // filas del mapa (con las dos de la barra de arriba) donde flota Lakitu: la de los datos del nivel y la de cuando reaparece
+const LAKITU_DIFF_ADJ = [0x15, 0x30, 0x40];   // velocidad base de Lakitu, en 1/16 px por cuadro
 const LAKITU_EGG_STEPS = 0x80;        // cuadros entre huevos de espinosos
 const LAKITU_RESPAWN_STEPS = 7 * 0x80;
-const SPRING_OFFSETS = [8, 16, 8, 0];              // cuánto baja la parte de arriba en cada paso (Jumpspring_Y_PosData); en el último rebota
+const SPRING_OFFSETS = [8, 16, 8, 0];              // cuánto baja la parte de arriba en cada paso; en el último rebota
 const SPRING_STEPS_PER_FRAME = 4;                  // cuadros que dura cada paso de la compresión
-const SPRING_BOUNCE = 7, SPRING_BOUNCE_HIGH = 12;  // px del NES por cuadro: rebote normal y apretando el salto
-const SPRING_FORCE = 0x70 / 256;                   // gravedad de Mario tras el rebote (VerticalForce)
-const FLY_CHEEP_GRAVITY = 0x0d / 256, FLY_CHEEP_MAX_SPEED = 5;   // los cheep-cheeps que saltan: gravedad y velocidad máxima (px del NES por cuadro)
-const FLY_CC_X_SPEED = [0x0e, 0x05, 0x06, 0x0e, 0x1c, 0x20, 0x10, 0x0c, 0x1e, 0x22, 0x18, 0x14];   // FlyCCXSpeedData, en 1/16 px por cuadro
-const FLY_CC_X_POS = [0x80, 0x30, 0x40, 0x80, 0x30, 0x50, 0x50, 0x70, 0x20, 0x40, 0x80, 0xa0, 0x70, 0x40, 0x90, 0x68];   // FlyCCXPositionData
-const FLY_CHEEP_TIMERS = [0x10, 0x60, 0x20, 0x48];   // FlyCCTimerData: cuadros hasta el próximo cheep-cheep que salta
-const FRENZY_Y = [32, 16, 112, 48, 0, 64, 128, 80];   // alturas (desde la fila 0 del nivel) de Enemy17YPosData
-const FIREWORK_X = [0x00, 0x30, 0x60, 0x60, 0x00, 0x20];   // FireworksXPosData
-const FIREWORK_Y = [0x60, 0x40, 0x70, 0x40, 0x60, 0x30];   // FireworksYPosData
+const SPRING_BOUNCE = 7, SPRING_BOUNCE_HIGH = 12;  // px lógicos por cuadro: rebote normal y apretando el salto
+const SPRING_FORCE = 0x70 / 256;                   // gravedad de Mario tras el rebote
+const FLY_CHEEP_GRAVITY = 0x0d / 256, FLY_CHEEP_MAX_SPEED = 5;   // los cheep-cheeps que saltan: gravedad y velocidad máxima (px lógicos por cuadro)
+const FLY_CC_X_SPEED = [0x0e, 0x05, 0x06, 0x0e, 0x1c, 0x20, 0x10, 0x0c, 0x1e, 0x22, 0x18, 0x14];   // en 1/16 px por cuadro
+const FLY_CC_X_POS = [0x80, 0x30, 0x40, 0x80, 0x30, 0x50, 0x50, 0x70, 0x20, 0x40, 0x80, 0xa0, 0x70, 0x40, 0x90, 0x68];
+const FLY_CHEEP_TIMERS = [0x10, 0x60, 0x20, 0x48];   // cuadros hasta el próximo cheep-cheep que salta
+const FRENZY_Y = [32, 16, 112, 48, 0, 64, 128, 80];   // alturas (desde la fila 0 del nivel)
+const FIREWORK_X = [0x00, 0x30, 0x60, 0x60, 0x00, 0x20];
+const FIREWORK_Y = [0x60, 0x40, 0x70, 0x40, 0x60, 0x30];
 const FIREWORK_FRAME_MS = 100;
-const VINE_GROW_SPEED = 0.5, VINE_MAX = 96;   // la enredadera crece 1 px cada dos cuadros hasta 96 px (VineHeightData)
-const CLIMB_SPEED = 0.8;                     // px del NES por cuadro al trepar
+const VINE_GROW_SPEED = 0.5, VINE_MAX = 96;   // la enredadera crece 1 px cada dos cuadros hasta 96 px
+const CLIMB_SPEED = 0.8;                     // px lógicos por cuadro al trepar
 const LOOP_BACK_PAGES = 4;                         // el laberinto devuelve a Mario cuatro páginas atrás
-const LOOP_TOLERANCE = 3;                          // px del NES de margen en la altura de los pies
+const LOOP_TOLERANCE = 3;                          // px lógicos de margen en la altura de los pies
 const HURRY_TIME = 100;               // con este tiempo o menos suena la música apurada
 const TIME_WARNING_MS = 3000;           // lo que dura el aviso de poco tiempo antes de la música apurada
-const SHELL_REVIVE = 0x10 * 21, SHELL_REVIVE_HARD = 0x0b * 21;   // cuadros hasta que un caparazón pisado se levanta (RevivalRateData)
+const SHELL_REVIVE = 0x10 * 21, SHELL_REVIVE_HARD = 0x0b * 21;   // cuadros hasta que un caparazón pisado se levanta
 const SHELL_WIGGLE = 63;                                       // los últimos cuadros se sacude antes de volver
-// Cuánto se acelera la melodía en los niveles sin pista apurada propia. El original pasa a la fila siguiente de
-// MusicLengthLookupTbl (las notas duran menos): subterráneo 24/36, agua 3/4 y castillo 4/5 de lo que duraban
+// Cuánto se acelera la melodía en los niveles sin pista apurada propia: se toca más rápido, con notas más cortas
+// (subterráneo 24/36, agua 3/4 y castillo 4/5 de lo que duraban)
 const HURRY_PLAYBACK_RATE = { [World_Type.Underground]: 1.5, [World_Type.Underwater]: 4 / 3, [World_Type.Castle]: 1.25 };
 const SCORE_POPUP_INDEX = { '100': 0, '200': 1, '400': 2, '500': 3, '800': 4, '1000': 5, '2000': 6, '4000': 7, '5000': 8, '8000': 9, '1UP': 10 };   // celda de Score_Tiles
-// Demo del título (DemoActionData / DemoTimingData): sin tocar nada durante 24 intervalos de 21 cuadros, Mario juega solo el
-// 1-1 con estos movimientos grabados. Bits de cada acción: 1 derecha, 2 izquierda, $40 B (correr), $80 A (saltar)
+// Demo del título: sin tocar nada durante 24 intervalos de 21 cuadros, Mario juega solo el
+// 1-1 con estos movimientos grabados. Bits de cada acción: 1 derecha, 2 izquierda, 0x40 B (correr), 0x80 A (saltar)
 const DEMO_IDLE_STEPS = 24 * 21;
 // Al cumplirse la espera del título (DEMO_IDLE_STEPS, unos 8 segundos sin que nadie toque nada), el demo lo juega la IA entrenada
-// (ia.js) en un nivel al azar; la grabación del original queda sólo para cuando no se pudieron cargar sus pesos
+// (ia.js) en un nivel al azar; la grabación queda sólo para cuando no se pudieron cargar sus pesos
 const AI_ACT_EVERY = 4;                 // cuadros entre una decisión de la IA y la siguiente (así se la entrenó)
 const AI_DEMO_MAX_FRAMES = 60 * 150;    // un demo de la IA dura como mucho 2,5 minutos
 const AI_STUCK_FRAMES = 60 * 12;        // y se corta si pasan 12 segundos sin que avance
@@ -291,11 +291,11 @@ const DEMO_TIMES = [0x9b, 0x10, 0x18, 0x05, 0x2c, 0x20, 0x24, 0x15, 0x5a, 0x10, 
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
 const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
-const FIREBAR_SLOW = 0x28 / 256, FIREBAR_FAST = 0x38 / 256;   // giro en 1/32 de vuelta por cuadro (FirebarSpinSpdData)
-const FIREBAR_BALL_STEP = 8;       // separación entre bolas, en px del NES
-const FIREBAR_HIT = 3;             // medio lado de la caja de cada bola, en px del NES
-const PODOBOO_SPEED = 7, PODOBOO_GRAVITY = 0x1c / 256;     // salto del Podoboo en px del NES por cuadro
-const PODOBOO_INTERVAL_STEPS = 21;   // cuadros por "intervalo" del temporizador original
+const FIREBAR_SLOW = 0x28 / 256, FIREBAR_FAST = 0x38 / 256;   // giro en 1/32 de vuelta por cuadro
+const FIREBAR_BALL_STEP = 8;       // separación entre bolas, en px lógicos
+const FIREBAR_HIT = 3;             // medio lado de la caja de cada bola, en px lógicos
+const PODOBOO_SPEED = 7, PODOBOO_GRAVITY = 0x1c / 256;     // salto del Podoboo en px lógicos por cuadro
+const PODOBOO_INTERVAL_STEPS = 21;   // cuadros por "intervalo" del temporizador
 const BLOOBER_FLOAT_STEPS = 32;   // cuadros que flota hacia abajo antes de volver a mirar a Mario
 
 const ENEMY_MARKERS = [
@@ -317,14 +317,14 @@ class Game {
 	blockBounceTimer = 0;   // cuadros que quedan del rebote del último bloque golpeado
 	currentMap = null;
 	savedState = null;
-	// Generador de números pseudoaleatorios del original (PseudoRandomBitReg): 7 bytes que giran un bit por cuadro, con la
-	// semilla $a5 en el primero. Cada enemigo lee un byte según su lugar (slot), como en el original
+	// Generador de números pseudoaleatorios: 7 bytes que giran un bit por cuadro, con la
+	// semilla 0xa5 en el primero. Cada enemigo lee un byte según su lugar (slot)
 	lfsr = new Uint8Array([0xa5, 0, 0, 0, 0, 0, 0]);
-	nesFrame = 0;          // contador de cuadros (FrameCounter)
+	frameCount = 0;          // contador de cuadros
 	twoPlayers = false;    // partida de dos jugadores alternados
 	demoMode = false;      // Mario juega solo en el título
 	demoEndPending = false;   // el demo terminó (murió Mario) y se lo cierra al empezar el próximo cuadro
-	demoKind = null;       // 'grabado' (el del original) o 'ia' (juega la red entrenada)
+	demoKind = null;       // 'grabado' o 'ia' (juega la red entrenada)
 	demoIdle = 0;          // cuadros que lleva el título sin que se toque nada
 	demoIndex = -1; demoTimer = 0; demoBackup = null;
 	playerStates = null;   // lo que lleva cada jugador (vidas, puntos, nivel...) cuando no está jugando
@@ -466,8 +466,8 @@ class Game {
 		// Settings Menu
 		this.currentSettingsSelection = 0;
 		const savedDifficulty = this.engine.getCookie("smb_difficulty");
-		this.difficulty = (savedDifficulty || "NORMAL").toUpperCase() === "HARD" ? "HARD" : "NORMAL"; // NORMAL o HARD; HARD es el modo difícil primario del original (un EASY guardado antes pasa a NORMAL)
-		// Al terminar el juego se desbloquean la selección de mundo y el modo difícil, como en el original
+		this.difficulty = (savedDifficulty || "NORMAL").toUpperCase() === "HARD" ? "HARD" : "NORMAL"; // NORMAL o HARD; HARD es el modo difícil primario (un EASY guardado antes pasa a NORMAL)
+		// Al terminar el juego se desbloquean la selección de mundo y el modo difícil
 		this.beaten = this.engine.getCookie("smb_beaten") === "true";
 		const savedSFX = this.engine.getCookie("smb_sfx");
 		this.sfxEnabled = savedSFX !== "false";
@@ -836,7 +836,7 @@ class Game {
 	// del mapa; las plantas piraña van sobre la boca del caño.
 	createEnemies() {
 		this.enemies = [];
-		// Resortes: el original los pone como un objeto sobre dos metatiles (0x67 arriba y 0x68 abajo)
+		// Resortes: se ponen como un objeto sobre dos metatiles (0x67 arriba y 0x68 abajo)
 		// (se sacan del mapa la primera vez y quedan anotados para cuando se reinicia el nivel)
 		if (!this.currentMap.springDefs) {
 			this.currentMap.springDefs = [];
@@ -861,7 +861,7 @@ class Game {
 			let d = d0;
 			if (this.secondaryHard && d.w === 48) d = { ...d, w: 32 };   // en el modo difícil las plataformas grandes miden 32 px
 			const p = { ...d, ox: d.x, oy: d.y, vx: 0, vy: 0, rider: false, t: d.kind === 'vert' ? -Math.PI / 2 : 0, active: false, falling: false };
-			// La que sube y baja (InitVertPlatform): si empieza en la mitad de arriba de la pantalla (y < 0x80 del NES) su centro
+			// La que sube y baja: si empieza en la mitad de arriba de la pantalla (y < 0x80) su centro
 			// está 64 px más abajo y arranca desde arriba; si no, su centro está 64 px más arriba y arranca desde abajo
 			if (d.kind === 'vert') p.cy = d.y + 32 < 0x80 ? d.y + PLATFORM_VERT_HALF : d.y - PLATFORM_VERT_HALF;
 			p.pc = 0; p.sc = 0; p.f = 0;
@@ -932,7 +932,7 @@ class Game {
 					kicked: false,
 					shellChain: 0,
 					active: false,
-					// Peces: altura original, sentido del vaivén y ciclo de brazadas del Bloober
+					// Peces: altura inicial, sentido del vaivén y ciclo de brazadas del Bloober
 					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spin: 0, timer: 21, anim: 0,
 					edgeTurn: e.type === 'HammerBro', walkTimer: 128, jumpTimer: 0xc0 | this.rbyte(1 + this.enemies.length % 5), throwTimer: HAMMER_THROW_STEPS,
 					origY: screenPos.y,
@@ -1040,7 +1040,7 @@ class Game {
 	// Se llama en cada cuadro del título: si pasó la espera, arranca el demo
 	updateDemoIdle(dt) {
 		if (this.state !== Game_State.Title_Menu || this.demoMode) { this.demoIdle = 0; return; }
-		this.demoIdle += dt * NES_FPS / 1000;
+		this.demoIdle += dt * GAME_FPS / 1000;
 		if (this.demoIdle >= DEMO_IDLE_STEPS) this.startDemo(this.aiDemoDue() ? 'ia' : 'grabado');
 	}
 
@@ -1151,7 +1151,7 @@ class Game {
 		this.state = Game_State.Title_Menu;
 	}
 
-	// Pausa (Start en el original): el juego se congela, la música se detiene y suena el sonido de pausa. No hay texto
+	// Pausa (Start): el juego se congela, la música se detiene y suena el sonido de pausa. No hay texto
 	pauseGame() {
 		if (this.state !== Game_State.Playing) return;
 		const cv = this.engine.canvas;
@@ -1191,7 +1191,7 @@ class Game {
 	}
 
 	// Partida de uno o de dos jugadores. Con dos, Mario empieza y los turnos se alternan cuando el que juega pierde una
-	// vida; cada uno lleva sus propias vidas, puntos, monedas, nivel y punto de reinicio, como en el original.
+	// vida; cada uno lleva sus propias vidas, puntos, monedas, nivel y punto de reinicio.
 	selectPlayer(player, twoPlayers = false) {
 		// Sin un nivel elegido en el título, se empieza en el 1-1
 		if (this.currentWorldIndex <= 0) this.currentWorldIndex = Math.max(0, this.availableWorlds.indexOf('1-1'));
@@ -1236,8 +1236,8 @@ class Game {
 		if (this.isInvincible || this.starTimer > 0) return;
 
 		if (this.playerSize > Player_Size.Small) {
-			// Como en el original, el juego se congela un segundo (59 cuadros) mientras Mario parpadea entre grande y chico, y
-			// después sigue chico e invencible un rato (InjuryTimer)
+			// El juego se congela un segundo (59 cuadros) mientras Mario parpadea entre grande y chico, y
+			// después sigue chico e invencible un rato
 			const big = this.engine.animatedSprites[PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : "_Big")];
 			const small = this.engine.animatedSprites[PlayerName[this.player]];
 			if (big && small) { small.position.x = big.position.x; small.position.y = big.position.y + this.tileSize; small.flipped = big.flipped; }
@@ -1321,7 +1321,7 @@ class Game {
 	}
 
 	// Al morir, si la pantalla ya pasó la página del punto de reinicio del nivel, se vuelve a empezar
-	// desde ahí (HalfwayPageNybbles); si no, desde el principio.
+	// desde ahí; si no, desde el principio.
 	rememberHalfway() {
 		const main = map.find(m => m.world === this.availableWorlds[this.currentWorldIndex]);
 		if (!main || this.currentMap?.world !== main.world || !main.halfway) return;
@@ -1329,7 +1329,7 @@ class Game {
 		this.halfwayPage = main.halfway <= page ? main.halfway : 0;
 	}
 
-	// El contador baja 1 unidad cada 24 cuadros del NES; al llegar a 0 Mario muere
+	// El contador baja 1 unidad cada 24 cuadros; al llegar a 0 Mario muere
 	updateGameTimer(dt) {
 		this.timeAcc += dt;
 		while (this.timeAcc >= GAME_TIMER_TICK_MS) {
@@ -1341,7 +1341,7 @@ class Game {
 		}
 	}
 
-	// Como en el original, el 1UP oculto sólo se dibuja si la bandera está activa, y sólo el primero del nivel
+	// El 1UP oculto sólo se dibuja si la bandera está activa, y sólo el primero del nivel
 	applyHidden1Up() {
 		const w = this.currentMap.dimensions.width, h = this.currentMap.dimensions.height, tiles = this.currentMap.map;
 		let kept = false;
@@ -1373,7 +1373,7 @@ class Game {
 		this.blockedDir = 0;
 	}
 
-	// Un paso de 1/60 s de la velocidad horizontal de Mario, como en PlayerPhysicsSub del original
+	// Un paso de 1/60 s de la velocidad horizontal de Mario
 	stepPlayerX(left, right, runButton) {
 		const onGround = this.isOnGround;
 		let dir = right ? 1 : (left ? -1 : 0);               // si se aprietan las dos, gana la derecha
@@ -1397,7 +1397,7 @@ class Game {
 
 		if (this.runningTimer > 0) this.runningTimer--;
 
-		// Límite de velocidad y fricción según el estado (X_Physics)
+		// Límite de velocidad y fricción según el estado
 		let maxIdx = 0, fricIdx = 0;
 		const sameDir = dir !== 0 && dir === this.movingDir;
 		if (!onGround) {
@@ -1438,10 +1438,10 @@ class Game {
 		for (let i = 0; i < 7; i++) { const out = r[i] & 1; r[i] = (carry << 7) | (r[i] >> 1); carry = out; }
 	}
 
-	// Byte i del generador (PseudoRandomBitReg + i)
+	// Byte i del generador
 	rbyte(i) { return this.lfsr[i % 7]; }
 
-	// Lugar (0 a 4) que ocupa un enemigo en la tabla del original, del que depende qué bytes del generador lee
+	// Lugar (0 a 4) que ocupa un enemigo en la tabla de lugares, del que depende qué bytes del generador lee
 	slotOf(e) { return (e.id ?? 0) % 5; }
 
 	stepFrame(dt) {
@@ -1452,7 +1452,7 @@ class Game {
 		this.physicsAccumulator -= this.physicsSteps * PHYSICS_STEP_MS;
 		if (this.starTimer > 0) this.starTimer = Math.max(0, this.starTimer - dt);
 		this.swimTimer = Math.max(0, this.swimTimer - this.physicsSteps);
-		for (let i = 0; i < this.physicsSteps; i++) { this.rngStep(); this.nesFrame++; if (this.demoMode) this.demoStep(); }
+		for (let i = 0; i < this.physicsSteps; i++) { this.rngStep(); this.frameCount++; if (this.demoMode) this.demoStep(); }
 	}
 
 	giveLife() {
@@ -1789,7 +1789,7 @@ class Game {
 		for (let i = this.enemies.length - 1; i >= 0; i--) {
 			const enemy = this.enemies[i];
 
-			// Como en el original, los enemigos aparecen al acercarse la pantalla y se van al quedar atrás
+			// Los enemigos aparecen al acercarse la pantalla y se van al quedar atrás
 			if (enemy.x + ts < screenLeft - ENEMY_DESPAWN_BEHIND * k) { this.enemies.splice(i, 1); continue; }
 			if (!enemy.active) {
 				if (enemy.x <= screenRight + ENEMY_ACTIVATE_AHEAD * ts) enemy.active = true;
@@ -1844,7 +1844,7 @@ class Game {
 		if (enemy.state === 'shell' && !enemy.kicked && enemy.reviveTimer !== undefined) {
 			if (--enemy.reviveTimer <= 0) {
 				enemy.state = 'walking';
-				enemy.dir = (this.nesFrame & 1) ? -1 : 1;   // FrameCounter & 1: izquierda o derecha
+				enemy.dir = (this.frameCount & 1) ? -1 : 1;   // izquierda o derecha según la paridad del contador de cuadros
 				enemy.reviveTimer = undefined;
 			}
 		}
@@ -1853,7 +1853,7 @@ class Game {
 		const speed = enemy.state === 'shell' ? (enemy.kicked ? ENEMY_SHELL_SPEED : 0) : (enemy.walkSpeed ?? this.enemyWalkSpeed());
 		enemy.vx = enemy.dir * speed * k;
 
-		// Vertical: primero se mueve y después se suma la gravedad, como ImposeGravity
+		// Vertical: primero se mueve y después se suma la gravedad
 		enemy.y += enemy.vy;
 		let onGroundLeft = false, onGroundRight = false, grounded = false;
 		if (enemy.state !== 'falling') {
@@ -2011,7 +2011,7 @@ class Game {
 	}
 
 	// Laberintos de los castillos: cuando la pantalla llega al borde de una página marcada, Mario tiene que estar en el
-	// suelo a la altura que pide el original (los pies, en px del NES: 16 de la barra de arriba más la altura en el nivel);
+	// suelo a la altura que pide cada marca (los pies, en px lógicos: 16 de la barra de arriba más la altura en el nivel);
 	// si no, vuelve cuatro páginas atrás y los enemigos se vuelven a armar
 	updateLoops(player, screenRight) {
 		const loops = this.currentMap.loops;
@@ -2039,7 +2039,7 @@ class Game {
 	}
 
 	loopBack(edgeCol) {
-		// Como en el original, lo que ya está en pantalla no se vuelve a armar: Mario sigue parado sobre el mismo terreno y lo
+		// Lo que ya está en pantalla no se vuelve a armar: Mario sigue parado sobre el mismo terreno y lo
 		// que sale por la derecha es lo que había cuatro páginas atrás. Acá el mapa es fijo, así que las columnas visibles se
 		// copian a su nuevo lugar antes de mover la vista
 		const ts = this.tileSize, { width: mw, height: mh } = this.currentMap.dimensions, back = LOOP_BACK_PAGES * 16;
@@ -2055,10 +2055,10 @@ class Game {
 		this.createEnemies();
 	}
 
-	// Ataque continuo de los niveles (AreaFrenzy): cheep-cheeps que saltan, Bullet Bills desde la derecha o, en el agua,
+	// Ataque continuo de los niveles: cheep-cheeps que saltan, Bullet Bills desde la derecha o, en el agua,
 	// cheep-cheeps que nadan desde la derecha. Rige desde que la pantalla llega a su marca hasta la marca de fin, y las
-	// marcas de fin también retiran a Lakitu. Los que nadan o vuelan salen cada 32 cuadros o según FlyCCTimerData; el Bullet
-	// Bill sale de a uno. La altura sale de Enemy17YPosData sin repetir hasta usar las ocho.
+	// marcas de fin también retiran a Lakitu. Los que nadan o vuelan salen cada 32 cuadros o según una tabla de esperas; el Bullet
+	// Bill sale de a uno. La altura sale de una tabla de ocho alturas, sin repetir hasta usar las ocho.
 	updateFrenzy(player, screenLeft, screenRight) {
 		const list = this.currentMap.frenzy;
 		if (!list || !list.length) return;
@@ -2079,7 +2079,7 @@ class Game {
 			const slot = this.enemies.filter(e => e.flying).length;   // lugar libre que ocuparía
 			this.frenzyTimer = FLY_CHEEP_TIMERS[this.rbyte(1 + slot) & 3];
 			if (slot >= (this.secondaryHard ? 4 : 3)) return;
-			// InitFlyingCheepCheep: sale por debajo de la pantalla, cerca de Mario; la velocidad y el lado salen de tablas
+			// sale por debajo de la pantalla, cerca de Mario; la velocidad y el lado salen de tablas
 			// indexadas por unos bits al azar y por lo rápido que va Mario (si corre o va hacia la izquierda, más rápido)
 			const r0 = this.rbyte(slot) & 3;
 			const ps = Math.floor(this.xSpeed / 256);
@@ -2110,7 +2110,7 @@ class Game {
 		}
 	}
 
-	// Cañones (ProcessCannons): por cada hueco libre (hay tres para Bullet Bills) se sortea cada cuadro un cañón de los seis de
+	// Cañones: por cada hueco libre (hay tres para Bullet Bills) se sortea cada cuadro un cañón de los seis de
 	// la tabla; si el sorteado existe, está pasada la página 0 y su temporizador llegó a cero, dispara y lo reinicia en 14; si
 	// no, el temporizador baja de a uno. Un Bullet Bill nace y muere enseguida si Mario está a menos de 40 px del cañón.
 	updateCannons(player, screenLeft, screenRight) {
@@ -2118,7 +2118,7 @@ class Game {
 		const playerX = player.position.x - this.mapOffset.x;
 		const visible = (this.cannons || []).filter(c => { const cx = c.tx * ts; return c.tx >= 16 && cx + ts >= screenLeft && cx <= screenRight; }).sort((a, b) => a.tx - b.tx).slice(0, 6);
 		if (!visible.length) return;
-		const mask = this.secondaryHard ? 0x07 : 0x0f;   // CannonBitmasks
+		const mask = this.secondaryHard ? 0x07 : 0x0f;
 		for (let st = 0; st < this.physicsSteps; st++) {
 			const free = CANNON_MAX_BILLS - this.enemies.filter(e => e.type === 'BulletBill' && !e.frenzy).length;
 			for (let slot = 0; slot < free; slot++) {
@@ -2153,13 +2153,13 @@ class Game {
 		}
 	}
 
-	// Lakitu (MoveLakitu / PlayerLakituDiff): flota arriba y se mueve hacia Mario más rápido cuanto más cerca está
+	// Lakitu: flota arriba y se mueve hacia Mario más rápido cuanto más cerca está
 	// (la velocidad es un valor base menos la distancia en cuartos, con la distancia limitada a 60 px) y más aún si
 	// Mario corre con la pantalla avanzando. Si se aleja de más en el sentido contrario, frena y da la vuelta.
 	// Cada 128 cuadros suelta un huevo de Spiny.
-	// Lakitu no cambia de altura: flota en la fila de los datos del nivel (3) y, si reaparece, en la 2 (Y = $20). Esas filas quedan
+	// Lakitu no cambia de altura: flota en la fila de los datos del nivel (3) y, si reaparece, en la 2. Esas filas quedan
 	// por encima de lo que muestra la vista (que arranca desde el piso y sólo ve unas 10 filas), así que se lo baja hasta 1,4 tiles
-	// del borde visible, que sigue a la cámara; en una ventana alta que muestra todo el nivel queda en su fila original
+	// del borde visible, que sigue a la cámara; en una ventana alta que muestra todo el nivel queda en su fila
 	lakituY(row) {
 		return Math.max(this.tileToScreen(0, row).y, this.tileSize * 1.4 - (this.cameraY || 0));
 	}
@@ -2210,7 +2210,7 @@ class Game {
 		}
 	}
 
-	// Hammer Bro (ProcHammerBro): mira a Mario y se mueve de un lado a otro (cada 64 cuadros cambia, a 1/4 px por cuadro);
+	// Hammer Bro: mira a Mario y se mueve de un lado a otro (cada 64 cuadros cambia, a 1/4 px por cuadro);
 	// pasados 128 cuadros, si Mario queda a su izquierda, camina hacia él a 1/2 px por cuadro. Salta cada 192 a 255
 	// cuadros (más alto desde abajo) y tira un martillo cada 48 cuadros.
 	hammerBroLogic(enemy, player) {
@@ -2227,7 +2227,7 @@ class Game {
 		if (enemy.grounded && --enemy.jumpTimer <= 0) {
 			const low = enemy.y > this.engine.getCanvasHeight() / 2;
 			enemy.vy = -(low ? 6 : 3) * k;
-			enemy.jumpTimer = 0xc0 | this.rbyte(1 + this.slotOf(enemy));   // (bits al azar | $c0): de 192 a 255 cuadros
+			enemy.jumpTimer = 0xc0 | this.rbyte(1 + this.slotOf(enemy));   // (bits al azar | 0xc0): de 192 a 255 cuadros
 		}
 		enemy.warning = enemy.throwTimer < 20;
 		if (--enemy.throwTimer <= 0) {
@@ -2263,7 +2263,7 @@ class Game {
 	}
 
 	// --- Plataformas móviles -------------------------------------------------------------------
-	// Posiciones en px del NES: x en el mundo e y desde la fila 0 del nivel. Mario sólo aterriza sobre ellas
+	// Posiciones en px lógicos: x en el mundo e y desde la fila 0 del nivel. Mario sólo aterriza sobre ellas
 	// (desde arriba): se lo lleva con la plataforma mientras está encima.
 
 	// Superficie del resorte: su parte de arriba, que baja al comprimirse. Va 8 px sobre el metatile 0x67.
@@ -2323,7 +2323,7 @@ class Game {
 		}
 	}
 
-	// La Y de Mario en el original (Player_Y_Position), en px del NES: los pies menos 32 px (para el chico, el borde de arriba menos 16)
+	// La Y de Mario para la natación, en px lógicos: los pies menos 32 px (para el chico, el borde de arriba menos 16)
 	swimY(playerPos, playerHeight) { return (playerPos.y + playerHeight - this.tileToScreen(0, 0).y) / this.tileScale - 32; }
 
 	platformBaseY() { return this.tileToScreen(0, 2).y; }
@@ -2434,13 +2434,13 @@ class Game {
 		}
 	}
 
-	// Modo difícil primario (el de la segunda vuelta del original): los enemigos caminan a 3/4 px por cuadro, los Goombas
+	// Modo difícil primario (el de la segunda vuelta): los enemigos caminan a 3/4 px por cuadro, los Goombas
 	// se vuelven Buzzy Beetles, los caparazones se reviven antes y más rápido, y rige también el secundario
 	get primaryHard() { return this.difficulty === 'HARD'; }
 
 	enemyWalkSpeed() { return this.primaryHard ? 0.75 : ENEMY_WALK_SPEED; }
 
-	// Modo difícil secundario del original: rige desde el 5-3 y acelera el Hammer Bro, a las llamas de Bowser y a los
+	// Modo difícil secundario: rige desde el 5-3 y acelera el Hammer Bro, a las llamas de Bowser y a los
 	// cheep-cheeps, y achica las plataformas grandes
 	get secondaryHard() {
 		if (this.primaryHard) return true;
@@ -2450,14 +2450,14 @@ class Game {
 		return w > 5 || (w === 5 && l >= 3);
 	}
 
-	// Centro de la oscilación del paratroopa rojo (InitRedPTroopa), a partir de la altura en que nace
+	// Centro de la oscilación del paratroopa rojo, a partir de la altura en que nace
 	paraCenterY(screenY) {
 		const k = this.tileScale;
 		const nesY = (screenY - this.tileToScreen(0, 0).y) / k;
 		return screenY + (nesY < 0x80 ? 0x30 : -0x20) * k;
 	}
 
-	// Paratroopa rojo (ProcMoveRedPTroopa): acelera 3/256 px por cuadro hacia su centro, con velocidad máxima de 2 px
+	// Paratroopa rojo: acelera 3/256 px por cuadro hacia su centro, con velocidad máxima de 2 px
 	stepRedParatroopa(enemy) {
 		const k = this.tileScale;
 		enemy.vx = -1;
@@ -2465,7 +2465,7 @@ class Game {
 		enemy.y += enemy.vy;
 	}
 
-	// Paratroopa verde volador (MoveFlyGreenPTroopa): va de lado a lado con los contadores de las plataformas horizontales
+	// Paratroopa verde volador: va de lado a lado con los contadores de las plataformas horizontales
 	// (velocidad máxima 19/16 px) y ondea en vertical: cada 4 cuadros sube o baja 1 px, 64 cuadros para cada lado
 	stepFlyParatroopa(enemy) {
 		const k = this.tileScale;
@@ -2486,7 +2486,7 @@ class Game {
 		return this.tileToScreen(0, (ax ? ax.y : 8) + 2).y;
 	}
 
-	// Bowser (RunBowser / BowserControl): patrulla cerca de su lugar, se vuelve hacia Mario, salta cada tanto y
+	// Bowser: patrulla cerca de su lugar, se vuelve hacia Mario, salta cada tanto y
 	// abre la boca antes de soltar una llama. Tiene 5 puntos de vida, que le quitan las bolas de fuego.
 	stepBowser(enemy, player) {
 		const k = this.tileScale;
@@ -2521,7 +2521,7 @@ class Game {
 			enemy.y = floor; enemy.vy = 0;
 			if (--enemy.jumpTimer <= 0) {
 				enemy.vy = -BOWSER_JUMP_SPEED * k;
-				enemy.jumpTimer = BOWSER_RANGE[this.rbyte(this.slotOf(enemy)) & 3];   // EnemyFrameTimer: en cuadros
+				enemy.jumpTimer = BOWSER_RANGE[this.rbyte(this.slotOf(enemy)) & 3];   // en cuadros
 			}
 		} else {
 			enemy.vy += BOWSER_GRAVITY * k;
@@ -2589,7 +2589,7 @@ class Game {
 		return balls;
 	}
 
-	// El Podoboo (MovePodoboo) arranca 18 px por debajo del borde de abajo de la pantalla, sube 7 px por cuadro
+	// El Podoboo arranca 18 px por debajo del borde de abajo de la pantalla, sube 7 px por cuadro
 	// frenándose y vuelve a caer; salta de nuevo cuando vence su temporizador, que es (bits al azar | 6) intervalos:
 	// 6, 7, 14 o 15 intervalos de 21 cuadros (entre salto y salto queda un rato escondido)
 	stepPodoboo(enemy) {
@@ -2604,7 +2604,7 @@ class Game {
 		enemy.vy = Math.min(enemy.vy + PODOBOO_GRAVITY * k, 3 * k);   // la caída tiene tope de 3 px por cuadro
 	}
 
-	// Cheep-cheep y Bloober (MoveSwimmingCheepCheep / MoveBloober). El cheep-cheep avanza a la izquierda
+	// Cheep-cheep y Bloober. El cheep-cheep avanza a la izquierda
 	// 1/4 px por cuadro (gris) o 1/2 (rojo) y sube y baja 15 px alrededor de su altura inicial. El Bloober
 	// acelera y frena a brazadas (fuerza 0, 1, 2, 1, 0), sube y avanza hacia Mario con esa fuerza, y después
 	// se deja caer de a medio píxel hasta quedar al nivel de Mario. Mario no los pisa: lo lastiman.
@@ -2635,7 +2635,7 @@ class Game {
 		const player_ = player.position;
 		// Cuando unos bits al azar valen cero (1 de cada 64 cuadros, 1 de cada 4 en el modo difícil) se vuelve a orientar: los de
 		// lugar impar toman el sentido en que se mueve Mario, y los de lugar par van hacia él
-		if ((this.rbyte(1 + this.slotOf(enemy)) & (this.secondaryHard ? 0x03 : 0x3f)) === 0) {   // BlooberBitmasks
+		if ((this.rbyte(1 + this.slotOf(enemy)) & (this.secondaryHard ? 0x03 : 0x3f)) === 0) {
 			enemy.dir = (enemy.id & 1) ? (this.movingDir || this.facingDir || 1) : ((player_.x - this.mapOffset.x) < enemy.x ? -1 : 1);
 		}
 		const every8 = enemy.frame % 8 === 0;
@@ -2701,8 +2701,8 @@ class Game {
 		this.engine.playAudioOverlap(audio["Shell"]);
 	}
 
-	// Caja de colisión de Mario contra enemigos y objetos: 10x12 px del NES si es chico o está agachado,
-	// 12x24 si es grande (BoundBoxCtrlData); el resto del sprite no cuenta
+	// Caja de colisión de Mario contra enemigos y objetos: 10x12 px lógicos si es chico o está agachado,
+	// 12x24 si es grande; el resto del sprite no cuenta
 	playerHitbox(player) {
 		const k = this.tileScale;
 		const bigStanding = this.playerSize > Player_Size.Small && !this.wasCrouching;
@@ -2717,8 +2717,8 @@ class Game {
 		return tall ? this.tileSize * 1.5 : this.tileSize;
 	}
 
-	// Caja de choque de un enemigo, con los desplazamientos de BoundBoxCtrlData del original (en px del NES, respecto de
-	// la esquina de arriba a la izquierda del sprite). La del Goomba y los que usan SmallBBox es de 10x6; la de los
+	// Caja de choque de un enemigo, con desplazamientos propios de cada tipo (en px lógicos, respecto de
+	// la esquina de arriba a la izquierda del sprite). La del Goomba y los de caja chica es de 10x6; la de los
 	// koopas, de 12x12. Devuelve null si el enemigo usa la caja entera.
 	enemyHitRect(enemy) {
 		const k = this.tileScale, x = enemy.x + this.mapOffset.x, y = enemy.y;
@@ -2748,7 +2748,7 @@ class Game {
 		return { x: enemy.x + this.mapOffset.x, y, w: this.tileSize, h };
 	}
 
-	// Al golpear o romper un bloque mueren los enemigos que están parados encima (KillEnemyAboveBlock)
+	// Al golpear o romper un bloque mueren los enemigos que están parados encima
 	killEnemiesAbove(tx, ty) {
 		const ts = this.tileSize;
 		const top = this.tileToScreen(tx, ty).y;
@@ -2800,7 +2800,7 @@ class Game {
 		const overlapping = this.rectsOverlap(playerRect, this.enemyHitRect(enemy) ?? enemyRect);
 		if (!overlapping) { enemy.touching = false; return; }
 		if (enemy.state === 'stomped' || enemy.state === 'falling') return;
-		// Como en el original (bit 0 de Enemy_CollisionBits), cada contacto se resuelve una sola vez: mientras Mario siga
+		// Cada contacto se resuelve una sola vez: mientras Mario siga
 		// encimado con el enemigo no se vuelve a patear ni a lastimar. Así no mata el caparazón recién pateado ni el koopa
 		// que se levanta justo donde está Mario.
 		if (enemy.touching) return;
@@ -2822,8 +2822,8 @@ class Game {
 			return;
 		}
 
-		// Como en el original: cayendo sobre el enemigo se lo pisa; si no, la parte alta de Mario
-		// tiene que estar bastante por encima (12 px del NES)
+		// Cayendo sobre el enemigo se lo pisa; si no, la parte alta de Mario
+		// tiene que estar bastante por encima (12 px lógicos)
 		const above = (playerRect.y + 12 * this.tileScale) < enemyRect.y;
 		let isStomping = (!this.isOnGround && this.velocityY > 0) || above;
 		if (enemy.type === 'Pakkun' || SWIMMERS.has(enemy.type) || enemy.type === 'Podoboo' || enemy.type === 'Spiny') isStomping = false;
@@ -3277,7 +3277,7 @@ class Game {
 		}
 	}
 
-	// Escenografía de fondo del nivel, tal como la deja el original: fija en el mapa y sin parallax
+	// Escenografía de fondo del nivel: fija en el mapa y sin parallax
 	drawScenery() {
 		const list = this.currentMap?.scenery;
 		if (!list) return;
@@ -3447,7 +3447,7 @@ class Game {
 	}
 
 	spawnFireball() {
-		// Como en el original, a lo sumo dos bolas de fuego a la vez
+		// A lo sumo dos bolas de fuego a la vez
 		if (this.activeFireballs.filter(f => f.state === 'moving').length >= MAX_FIREBALLS) return;
 
 		const fireSprite = this.engine.animatedSprites[PlayerName[this.player] + "_Fire"];
@@ -3743,7 +3743,7 @@ class Game {
 			if (this.state === Game_State.Player_Dying) {
 
 				this.deathTimer += dt;
-				// Mario se queda quieto unos 15 cuadros y después sube y cae (PlayerKilled)
+				// Mario se queda quieto unos 15 cuadros y después sube y cae
 				if (this.deathTimer > DEATH_PAUSE_MS) {
 					this.velocityY = Math.min(this.velocityY + DEATH_GRAVITY * this.tileScale * this.fk, ENEMY_MAX_FALL * 2 * this.tileScale);
 					playerPos.y += this.velocityY * this.fk;
@@ -3761,14 +3761,14 @@ class Game {
 			const mapWidth = this.currentMap.dimensions.width;
 			const inBounds = (x, y) => x >= 0 && x < mapWidth;
 			
-			// Física vertical en pasos fijos de 1/60 s (ver stepFrame), igual que el original, sin importar los Hz de la pantalla.
+			// Física vertical en pasos fijos de 1/60 s (ver stepFrame), sin importar los Hz de la pantalla.
 			const physicsSteps = this.climbVine ? 0 : this.physicsSteps;
 
 			for (let physicsStep = 0; physicsStep < physicsSteps; physicsStep++) {
 			const newY = playerPos.y + this.velocityY;
 			if (this.blockBounceTimer > 0) this.blockBounceTimer--;
 
-			// Puntos de colisión del original (BlockBuffer_X_Adder y BlockBuffer_Y_Adder), en px del NES contra el sprite de 16 px:
+			// Puntos de colisión de Mario, en px lógicos contra el sprite de 16 px:
 			// la cabeza es un solo punto en x+8, a 4 px del borde de arriba (2 si es chico, agachado o nada); los pies son dos
 			// puntos en x+3 y x+12; y a los costados hay un punto arriba y otro abajo (x+2 y x+13), a 8 y a 24 px del borde
 			// de arriba (para Mario chico o agachado sólo el de 8, que cae en la mitad del sprite)
@@ -3785,15 +3785,15 @@ class Game {
 					const idx = this.engine.coordsToIndex(headCenterTile, mapWidth);
 					this.handleCoinCollision(idx); 
 					const blockId = this.currentMap.map[idx] || 0;
-					// Regla del original: si el borde de arriba del sprite está a menos de 4 px de una fila de bloques (nibble bajo de Y < 4),
+					// Regla: si el borde de arriba del sprite está a menos de 4 px de una fila de bloques (nibble bajo de Y < 4),
 					// la cabeza ya pasó de largo y el golpe no cuenta; sigue subiendo
 					const yNibble = (((newY - this.tileToScreen(0, 0).y) / kc) % 16 + 16) % 16;
 					if ((isSolid(blockId) || HIDDEN_BLOCKS.has(blockId)) && yNibble >= 4) {
 						let ceilingSpeed = SMB_CEILING_SPEED;
 						const { x: blockX, y: blockY } = this.tileToScreen(headCenterTile.x, headCenterTile.y);
 						let blockSoundPlayed = false;
-						// Como en el original: un bloque macizo suena y frena el salto (velocidad 1), sin rebotar; bajo el agua, o mientras el
-						// golpe anterior sigue rebotando (BlockBounceTimer, 16 cuadros), el bloque tampoco se procesa
+						// Un bloque macizo suena y frena el salto (velocidad 1), sin rebotar; bajo el agua, o mientras el
+						// golpe anterior sigue rebotando (16 cuadros), el bloque tampoco se procesa
 						const bumpable = isBumpableMetatile(blockId);
 						if (!bumpable || this.isWater || this.blockBounceTimer > 0) {
 							if (!bumpable) this.engine.playAudioOverlap(audio["Player_Bump"]);
@@ -3829,7 +3829,7 @@ class Game {
 							const item = BLOCK_ITEM[blockId];
 							let coinGivenNow = false;
 							if (item === 'coins') {
-								// Da una moneda por golpe durante unos 3,8 s desde el primero (BrickCoinTimer)
+								// Da una moneda por golpe durante unos 3,8 s desde el primero
 								if (!this.specialBlocks[idx]) { this.specialBlocks[idx] = { revealed: false, expiresAt: this.clockMs + BRICK_COIN_TIMER_MS }; }
 								const info = this.specialBlocks[idx];
 								info.revealed = true;
@@ -3869,7 +3869,7 @@ class Game {
 
 						this.blockBounceTimer = 16;
 						this.killEnemiesAbove(headCenterTile.x, headCenterTile.y);
-						this.velocityY = ceilingSpeed * this.tileScale; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y - headOff; hitCeiling = true;   // la cabeza queda dentro del bloque lo que mide su punto, como en el original
+						this.velocityY = ceilingSpeed * this.tileScale; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y - headOff; hitCeiling = true;   // la cabeza queda dentro del bloque lo que mide su punto
 						}
 					}
 				}
@@ -3886,9 +3886,9 @@ class Game {
 						this.handleCoinCollision(idx);
 						if (isSolid(this.currentMap.map[idx])) {
 							const tileTop = this.tileToScreen(tx, bottomLeft.y).y;
-							// Regla del original: con los pies a 5 px o más dentro del bloque (nibble bajo de Y >= 5) no aterriza, lo trata como
-							// un choque de costado (ImpedePlayerMove): frena y lo empuja 1 px para atrás. "Atrás" es alejándolo del bloque (el
-							// original lo saca de hacia dónde iba); si se lo sacaba según hacia dónde mira, con el bloque del otro lado lo
+							// Regla: con los pies a 5 px o más dentro del bloque (nibble bajo de Y >= 5) no aterriza, lo trata como
+							// un choque de costado: frena y lo empuja 1 px para atrás. "Atrás" es alejándolo del bloque (no según
+							// hacia dónde iba ni hacia dónde mira); si se lo sacaba según hacia dónde mira, con el bloque del otro lado lo
 							// metía 1 px por cuadro contra la pared, y la x del mundo seguía subiendo sin que Mario pasara
 							if ((newY + playerHeight - tileTop) / kc >= 5) {
 								const blockCenter = this.tileToScreen(tx, bottomLeft.y).x + this.tileSize / 2, marioCenter = playerPos.x + 8 * kc;
@@ -3905,11 +3905,11 @@ class Game {
 				if (!foundGround) { this.isOnGround = false; playerPos.y = newY; }
 			}
 
-			// La gravedad se aplica después de mover, como en el original. Subiendo con el salto
+			// La gravedad se aplica después de mover. Subiendo con el salto
 			// apretado (o sin haber subido todavía 1 px) rige la fuerza suave; soltando o cayendo, la fuerte.
 			const rising = this.velocityY < 0;
 			const risenEnough = (this.jumpOriginY - playerPos.y) >= this.tileScale;
-			// Nadando, cerca de la superficie el original frena mucho la subida (ProcSwim): sin eso Mario sale del agua y de la pantalla.
+			// Nadando, cerca de la superficie se frena mucho la subida: sin eso Mario sale del agua y de la pantalla.
 			// Su Y es la de los pies menos 32 px (para el chico, el borde de arriba menos 16)
 			if (this.isWater && this.swimY(playerPos, playerHeight) < SWIM_CEILING_Y) this.jumpForceUp = SWIM_CEILING_FORCE;
 			const force = (rising && (this.jumpHeld || !risenEnough)) ? this.jumpForceUp : this.jumpForceDown;
@@ -4012,7 +4012,7 @@ class Game {
 					if (scroll > 0) { this.mapOffset.x -= scroll; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); }
 				}
 			}
-			// Como en el original, el salto solo se dispara al apretar: mantener apretado no repite.
+			// El salto solo se dispara al apretar: mantener apretado no repite.
 			const jumpDown = !!(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']);
 			if (jumpDown && !this.jumpHeld && this.isWater) {
 				// Brazada: se puede dar de nuevo enseguida, o al empezar a caer
@@ -4082,10 +4082,10 @@ class Game {
 
 			this.engine.drawAnimatedSprite(currentSpriteName, this.frameDt, Pivot.Top_Left);
 			// Con la estrella Mario recorre las cuatro paletas de sprites del área: cada 2 cuadros mientras queda mucho tiempo y
-			// cada 8 en los últimos 8 intervalos (CyclePlayerPalette). Se vuelve a dibujar encima el mismo cuadro, recoloreado
+			// cada 8 en los últimos 8 intervalos. Se vuelve a dibujar encima el mismo cuadro, recoloreado
 			if (this.starTimer > 0) {
-				const intervalsLeft = this.starTimer / (21 * 1000 / NES_FPS);
-				const pal = (this.nesFrame >> (intervalsLeft >= 8 ? 1 : 3)) & 3;
+				const intervalsLeft = this.starTimer / (21 * 1000 / GAME_FPS);
+				const pal = (this.frameCount >> (intervalsLeft >= 8 ? 1 : 3)) & 3;
 				const name = pal ? this.starSprite(player.spriteName, pal) : null;
 				if (name) this.engine.drawSprite(name, this.engine.getCurrentFrame(currentSpriteName), player.position, player.scale, player.flipped, 0, Pivot.Top_Left);
 			}
@@ -4095,7 +4095,7 @@ class Game {
 		}
 	}
 
-	// Número flotante de puntos: sube 1 px por cuadro y dura 48 cuadros (FloateyNum_Timer), dibujado con los tiles de la ROM
+	// Número flotante de puntos: sube 1 px por cuadro y dura 48 cuadros, dibujado con tiles propios
 	spawnScorePopup(text, x, y) {
 		this.scorePopups.push({ text: text, x: x, y: y, timer: 48 });
 	}
@@ -4186,7 +4186,7 @@ class Game {
 		const player = this.engine.animatedSprites[currentSpriteName];
 
                 const playerPos = player.position;
-                const slideSpeed = 1 * this.tileScale * this.fk;   // baja 1 px por cuadro, como en el original
+                const slideSpeed = 1 * this.tileScale * this.fk;   // baja 1 px por cuadro
                 const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
 
                 switch(this.levelCompleteState) {
@@ -4235,7 +4235,7 @@ class Game {
                             const t = this.screenToTile(playerPos.x + this.tileSize / 2, feet + 1);
                             const solid = isSolidMetatile(tiles[this.engine.coordsToIndex(t, mw)]);
                             if (solid && this.axeVy >= 0) { this.axeVy = 0; playerPos.y = this.tileToScreen(t.x, t.y).y - playerHeight; }
-                            else { this.axeVy = Math.min(this.axeVy + BASE_GRAVITY_NES * k, 4 * k); playerPos.y += this.axeVy; }
+                            else { this.axeVy = Math.min(this.axeVy + BASE_GRAVITY_PX * k, 4 * k); playerPos.y += this.axeVy; }
                         }
                         if (playerPos.x >= stopX) {
                             const pfx = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
@@ -4253,7 +4253,7 @@ class Game {
                         this.stopAllMusic();
                         this.engine.playAudio(audio["Flagpole"], false);
 
-                        // Premio según la altura (en píxeles del NES) a la que Mario tocó el mástil
+                        // Premio según la altura (en píxeles lógicos) a la que Mario tocó el mástil
                         const offsetY = this.currentMap.dimensions.height * this.tileSize - this.engine.getCanvasHeight();
                         const nesY = ((playerPos.y - this.mapOffset.y + offsetY) / this.tileSize) * 16;
                         let flagZone = 0;
@@ -4300,9 +4300,9 @@ class Game {
 				break;
 
 			case 'time_bonus': {
-				// 50 puntos por cada unidad de tiempo que sobra, una por cuadro del NES
+				// 50 puntos por cada unidad de tiempo que sobra, una por cuadro
 				if (this.time > 0) {
-					const n = Math.min(this.time, Math.max(1, Math.round(dt / (1000 / NES_FPS))));
+					const n = Math.min(this.time, Math.max(1, Math.round(dt / (1000 / GAME_FPS))));
 					this.time -= n;
 					this.score += 50 * n;
 				} else {
@@ -4320,7 +4320,7 @@ class Game {
 			case 'fireworks':
 				this.bonusTimer += dt;
 				if (this.fireworksLeft > 0 && this.bonusTimer > 400) {
-					// Cada cohete explota en un lugar distinto sobre el castillo, en el orden de las tablas del original
+					// Cada cohete explota en un lugar distinto sobre el castillo, en el orden de una tabla
 					const i = (this.fireworksTotal - this.fireworksLeft) % FIREWORK_X.length;
 					const ts = this.tileSize, k = this.tileScale;
 					this.fireworkBursts.push({
@@ -4377,8 +4377,8 @@ class Game {
 
 	// Crecer o encogerse: el juego queda congelado 59 cuadros y Mario parpadea entre chico y grande cada 4 cuadros
 	updateAndDrawGrowingPlayer(dt) {
-		const GROW_DURATION = 59 * 1000 / NES_FPS;
-		const FLASH_MS = 4 * 1000 / NES_FPS;
+		const GROW_DURATION = 59 * 1000 / GAME_FPS;
+		const FLASH_MS = 4 * 1000 / GAME_FPS;
 		const shrinking = this.sizeChange === 'shrink';
 		this.growTimer += dt;
 
@@ -4450,7 +4450,7 @@ class Game {
 
 			for (let step = 0; step < this.physicsSteps; step++) {
 				if (p.state === "emerging") {
-					// Sube un píxel del NES cada 4 cuadros
+					// Sube un píxel lógico cada 4 cuadros
 					p.y -= 0.25 * k;
 					p.emergeCounter -= 0.25 * k;
 					if (p.emergeCounter <= 0) p.state = "moving";

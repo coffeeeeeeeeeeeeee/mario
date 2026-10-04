@@ -1086,10 +1086,10 @@ function generate(lines, report) {
 
 function formatLevels(out) {
 	const L = [];
-	L.push('// Generado por tools/smb-levels.js a partir del desensamblado de Super Mario Bros.');
+	L.push('// Generado por tools/smb-levels.js.');
 	L.push('// No editar a mano: volver a correr `node tools/smb-levels.js --out levels_smb.js`.');
 	L.push('//');
-	L.push('// map: grilla de números de metatile originales (0 = vacío), fila por fila, con 2 filas vacías');
+	L.push('// map: grilla de números de metatile (0 = vacío), fila por fila, con 2 filas vacías');
 	L.push('// arriba. scenery: lista plana x, y, id de la escenografía de fondo (nubes, colinas, arbustos,');
 	L.push('// árboles, vallas), que no es sólida y va detrás de los bloques. enemies: { type, color, x, y }, con x, y la celda que ocupa el enemigo; las plantas');
 	L.push('// piraña van sobre la boca del caño.');
