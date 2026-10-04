@@ -8,7 +8,7 @@
 Para entrenar con muchas partidas a la vez (cada una en su hilo, en paralelo) está `SmbVecClient`. Si Gymnasium y NumPy están
 instalados, también hay `SuperMarioEnv`, con la interfaz estándar reset/step.
 Las posiciones van en píxeles del NES (16 px = una celda). La grilla (`obs["grid"]["cells"]`) tiene 13 filas, de la
-2 a la 14 del mapa, y 16 columnas alrededor de Mario; vale 0 vacío, 1 sólido, 2 bloque golpeable, 3 moneda, 4 mástil.
+2 a la 14 del mapa, y 16 columnas alrededor de Mario; vale 0 vacío, 1 sólido, 2 bloque golpeable, 3 moneda, 4 meta (mástil, hacha o boca del caño de salida).
 
 Con obs="compact" la observación viene en arreglos (mucho más liviana, ver el README) y con obs="none" no viene ninguna.
 `compact_grid(obs)` devuelve su grilla como lista de filas de texto, y `compact_mario(obs)` el estado de Mario como diccionario.
@@ -91,17 +91,17 @@ class SmbVecClient:
     """n partidas en paralelo. Con autoreset (lo normal), la partida que termina arranca de nuevo sola: la observación que
     devuelve es la del nuevo comienzo y la última de la anterior queda en info["terminal_obs"]."""
 
-    def __init__(self, n, url="http://127.0.0.1:8777", worlds=("1-1",), size="small", hard=False, seed=0, repeat=4, autoreset=True, obs="compact"):
+    def __init__(self, n, url="http://127.0.0.1:8777", worlds=("1-1",), size="small", hard=False, seed=0, repeat=4, autoreset=True, obs="compact", shaping=0.0):
         self.n, self.repeat, self.autoreset, self.obs = n, repeat, autoreset, obs
         self.http = _Http(url)
-        self.opts = {"n": n, "worlds": list(worlds), "size": size, "hard": hard, "seed": seed, "obs": obs}
+        self.opts = {"n": n, "worlds": list(worlds), "size": size, "hard": hard, "seed": seed, "obs": obs, "shaping": shaping}
 
     def reset(self):
         return self.http.request("/api/vreset", self.opts)
 
     def reset_one(self, i, world="1-1", seed=None, size=None):
         """Reinicia sólo la partida i (por ejemplo, en otro nivel)."""
-        body = {"world": world, "size": size or self.opts["size"], "hard": self.opts["hard"], "obs": self.obs, "env": str(i)}
+        body = {"world": world, "size": size or self.opts["size"], "hard": self.opts["hard"], "obs": self.obs, "shaping": self.opts["shaping"], "env": str(i)}
         if seed is not None:
             body["seed"] = seed
         return self.http.request("/api/reset", body)
@@ -127,8 +127,9 @@ class SmbClient:
         sep = "&" if "?" in path else "?"
         return self.http.request(f"{path}{sep}env={self.env}")
 
-    def reset(self, world="1-1", seed=None, size="small", hard=False, obs="full"):
-        body = {"world": world, "size": size, "hard": hard, "obs": obs}
+    def reset(self, world="1-1", seed=None, size="small", hard=False, obs="full", shaping=0.0):
+        """shaping: peso de la recompensa por acercarse a la meta (el mástil, el hacha o el caño de salida); 0 la apaga."""
+        body = {"world": world, "size": size, "hard": hard, "obs": obs, "shaping": shaping}
         if seed is not None:
             body["seed"] = seed
         return self._call("/api/reset", body)

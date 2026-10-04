@@ -16,6 +16,7 @@
 #   --steps 2000000      pasos de entrenamiento (cada paso son 4 cuadros del juego)         [1000000]
 #   --envs 8             partidas en paralelo                                              [8]
 #   --name modelo        nombre del modelo, que queda en .entrenamiento/modelos/            [modelo]
+#   --shaping 0.5        peso de la recompensa por acercarse a la meta (mástil, hacha o caño de salida); 0 la apaga  [0.5]
 #   --nuevo              empezar de cero aunque haya un modelo guardado (el viejo queda como modelo.copia-FECHA.zip)
 #   --resume modelo      seguir desde otro modelo guardado antes (nombre o ruta); sin esto se sigue el del --name
 #   --watch 6            cuántas pantallas se ven a la vez al abrir la vista (1, 2, 4, 6, 8 o 16; se cambia en la
@@ -35,14 +36,14 @@ if [ "${1:-}" = "--pausa" ]; then
 	trap 'echo; read -r -n1 -s -p "Enter para cerrar esta ventana" || true; echo' EXIT
 fi
 
-RUN=.entrenamiento
+RUN=${ENTRENAR_DIR:-.entrenamiento}   # ENTRENAR_DIR: otra carpeta de trabajo, para no tocar los modelos de otro entrenamiento
 VENV=tools/ai/.venv
 PY=${PYTHON:-}
 if [ -z "$PY" ]; then
 	if [ -x "$VENV/bin/python" ]; then PY="$VENV/bin/python"; else PY=python3; fi
 fi
 
-WORLDS=todos; STEPS=1000000; ENVS=8; NAME=modelo; RESUME=""; WATCH=6; SPEED=1; PORT=8777; OPEN=1; NEW=0
+WORLDS=todos; STEPS=1000000; ENVS=8; NAME=modelo; RESUME=""; WATCH=6; SPEED=1; PORT=8777; OPEN=1; NEW=0; SHAPING=0.5
 
 die() { echo "Error: $*" >&2; exit 1; }
 alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
@@ -93,6 +94,7 @@ cmd_start() {
 			--speed) SPEED=$2; shift 2 ;;
 			--port) PORT=$2; shift 2 ;;
 			--no-browser) OPEN=0; shift ;;
+			--shaping) SHAPING=$2; shift 2 ;;
 			--nuevo) NEW=1; shift ;;
 			*) die "opción desconocida: $1 (mirá el principio de este archivo)" ;;
 		esac
@@ -125,6 +127,13 @@ cmd_start() {
 	elif [ -f "$own" ]; then
 		resume_args=(--resume "$own")   # lo normal: seguir con lo aprendido
 	fi
+	# Copia del modelo tal como estaba antes de esta corrida: el entrenamiento lo va guardando encima cada 50.000 pasos, y si se
+	# retoma con otros niveles o con un error, así se puede volver atrás
+	if [ ${#resume_args[@]} -gt 0 ]; then
+		cp -f "${resume_args[1]}" "$RUN/modelos/$NAME.inicio.zip"
+		[ -f "${resume_args[1]%.zip}.json" ] && cp -f "${resume_args[1]%.zip}.json" "$RUN/modelos/$NAME.inicio.json" || true
+		echo "Copia del modelo antes de seguir: $RUN/modelos/$NAME.inicio.zip"
+	fi
 
 	if curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1; then
 		die "el puerto $PORT ya está en uso (¿otro entrenamiento que sigue en marcha? probá ./entrenar.sh stop o --port)"
@@ -138,8 +147,8 @@ cmd_start() {
 	curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1 || die "el servidor no contesta en el puerto $PORT"
 
 	launch "$RUN/train.pid" "$RUN/train.log" "$PY" -u tools/ai/train.py train --worlds "$WORLDS" --steps "$STEPS" --envs "$ENVS" \
-		--out "$RUN/modelos/$NAME" --url "http://127.0.0.1:$PORT" "${resume_args[@]}"
-	printf 'PORT=%q\nWATCH=%q\nSPEED=%q\nNAME=%q\nWORLDS=%q\nSTEPS=%q\nENVS=%q\n' "$PORT" "$WATCH" "$SPEED" "$NAME" "$WORLDS" "$STEPS" "$ENVS" > "$RUN/settings"
+		--out "$RUN/modelos/$NAME" --url "http://127.0.0.1:$PORT" --goal-shaping "$SHAPING" "${resume_args[@]}"
+	printf 'PORT=%q\nWATCH=%q\nSPEED=%q\nNAME=%q\nWORLDS=%q\nSTEPS=%q\nENVS=%q\nSHAPING=%q\n' "$PORT" "$WATCH" "$SPEED" "$NAME" "$WORLDS" "$STEPS" "$ENVS" "$SHAPING" > "$RUN/settings"
 
 	if [ ${#resume_args[@]} -gt 0 ]; then echo "Continuando desde ${resume_args[1]}."; else echo "Empezando de cero."; fi
 	echo "Entrenando en $WORLDS ($STEPS pasos más, $ENVS partidas en paralelo)."

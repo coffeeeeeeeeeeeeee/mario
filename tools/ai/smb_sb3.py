@@ -33,8 +33,8 @@ def featurize(o):
 
 class SmbSb3VecEnv(VecEnv):
     def __init__(self, n_envs, worlds=("1-1",), url="http://127.0.0.1:8777", repeat=4, max_steps=2500, stuck_steps=200,
-                 size="small", hard=False, seed=0, reward_scale=0.1):
-        self.client = SmbVecClient(n_envs, url, worlds=worlds, size=size, hard=hard, seed=seed, repeat=repeat, autoreset=False, obs="compact")
+                 size="small", hard=False, seed=0, reward_scale=0.1, goal_shaping=0.5):
+        self.client = SmbVecClient(n_envs, url, worlds=worlds, size=size, hard=hard, seed=seed, repeat=repeat, autoreset=False, obs="compact", shaping=goal_shaping)
         n_actions = len(SmbClient(url).actions)
         super().__init__(n_envs, gym.spaces.Box(-np.inf, np.inf, shape=(OBS_DIM,), dtype=np.float32), gym.spaces.Discrete(n_actions))
         self.worlds, self.max_steps, self.stuck_steps, self.reward_scale = list(worlds), max_steps, stuck_steps, reward_scale

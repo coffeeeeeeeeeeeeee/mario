@@ -6,14 +6,14 @@
 //                               no está en /usr/bin/google-chrome)
 //
 //   GET  /api/info                       -> acciones y niveles
-//   POST /api/reset  {world, seed, size, hard, obs, env} -> observación (obs: "full", "compact" o "none"; ver README)
+//   POST /api/reset  {world, seed, size, hard, obs, shaping, env} -> observación (obs: "full", "compact" o "none"; ver README)
 //   POST /api/step   {action, repeat, obs, env}          -> { obs, reward, done, info }
 //   GET  /api/observe?env=0              -> observación actual
 //   GET  /api/pixels?w=84&h=84&env=0     -> cuadro en grises (sólo con --browser)
 //   GET  /watch                          -> página para ver las partidas en vivo (?n=4 partidas, ?speed=2)
 //
 // Para entrenar con muchas partidas a la vez (cada una en su hilo, en paralelo):
-//   POST /api/vreset {n, worlds, seeds, size, hard, obs}  -> lista de observaciones de las partidas 0 a n-1
+//   POST /api/vreset {n, worlds, seeds, size, hard, obs, shaping} -> lista de observaciones de las partidas 0 a n-1
 //   POST /api/vstep  {actions, repeat, autoreset, obs}    -> lista de { obs, reward, done, info }, una por acción
 //
 // "env" elige una partida independiente; sin él, la 0. Sólo escucha en 127.0.0.1.
@@ -181,7 +181,7 @@ async function handleApi(url, body) {
 		case '/api/vreset': {
 			const worlds = [].concat(body.worlds ?? body.world ?? '1-1');
 			return Promise.all(Array.from({ length: body.n || 1 }, (_, i) =>
-				resetEnv(String(i), { world: worlds[i % worlds.length], seed: body.seeds ? body.seeds[i] : (body.seed ?? 0) + i, size: body.size, hard: body.hard, obs: body.obs })));
+				resetEnv(String(i), { world: worlds[i % worlds.length], seed: body.seeds ? body.seeds[i] : (body.seed ?? 0) + i, size: body.size, hard: body.hard, obs: body.obs, shaping: body.shaping })));
 		}
 		case '/api/vstep':
 			return Promise.all(body.actions.map((a, i) => stepEnv(String(i), a, body.repeat, { obs: body.obs }, body.autoreset)));

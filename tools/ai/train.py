@@ -76,7 +76,7 @@ def train(a):
     if a.seed is None:   # al retomar, otra semilla: si no, el agente vería otra vez los mismos primeros episodios
         a.seed = int(time.time()) % 100000 if a.resume else 0
     print(f"entrenando en {len(worlds)} nivel{'es' if len(worlds) > 1 else ''}: {' '.join(worlds)}", flush=True)
-    env = SmbSb3VecEnv(a.envs, worlds=worlds, url=a.url, seed=a.seed)
+    env = SmbSb3VecEnv(a.envs, worlds=worlds, url=a.url, seed=a.seed, goal_shaping=a.goal_shaping)
     model = PPO("MlpPolicy", env, learning_rate=lambda f: a.lr * f, n_steps=128, batch_size=256, n_epochs=4, gamma=0.995,
                 gae_lambda=0.95, clip_range=0.2, ent_coef=0.01, seed=a.seed, verbose=0,
                 policy_kwargs=dict(net_arch=dict(pi=[256, 128], vf=[256, 128])))
@@ -137,6 +137,7 @@ if __name__ == "__main__":
     p.add_argument("--max-steps", type=int, default=2500)
     p.add_argument("--deterministic", action="store_true")
     p.add_argument("--lr", type=float, default=2.5e-4)
+    p.add_argument("--goal-shaping", type=float, default=0.5, help="peso de la recompensa por acercarse a la meta; 0 la apaga")
     p.add_argument("--threads", type=int, default=2)
     p.add_argument("--seed", type=int, default=None, help="semilla (si se retoma un modelo, por defecto una distinta cada vez)")
     p.add_argument("--url", default="http://127.0.0.1:8777")

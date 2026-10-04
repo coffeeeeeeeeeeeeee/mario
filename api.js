@@ -63,11 +63,12 @@
 	}
 
 	// Qué hay en cada celda, para el agente: 0 vacío, 1 sólido (suelo, bloque duro, caño, bloque usado), 2 bloque que se golpea
-	// (ladrillo o de interrogación), 3 moneda, 4 mástil. Los bloques ocultos no se ven, como para el jugador.
+	// (ladrillo o de interrogación), 3 moneda, 4 meta (el mástil, el hacha o la boca del caño que lleva a otro nivel; tocarla
+	// completa el nivel). Los bloques ocultos no se ven, como para el jugador.
 	function cellCode(id) {
 		if (!id || HIDDEN_BLOCKS.has(id)) return 0;
 		if (isCoinMetatile(id)) return 3;
-		if (id === MT.Flagpole || id === MT.FlagpoleTop) return 4;
+		if (id === MT.Flagpole || id === MT.FlagpoleTop || id === MT.Axe) return 4;
 		if (isBumpableMetatile(id)) return 2;
 		return isSolidMetatile(id) ? 1 : 0;
 	}
@@ -86,6 +87,34 @@
 		return out;
 	}
 
+	// Un caño que lleva a otro de los 32 niveles (el del final de los niveles de agua y del 1-2, las zonas de atajos) completa el
+	// nivel actual; las salas secretas, y volver de ellas, no
+	const leadsToNextLevel = wp => !!wp && mainLevels.has(wp.to) && wp.to !== mainWorld;
+
+	// Celdas de la boca de esos caños (arriba, de 2 de ancho, si se entra por arriba; a la izquierda, de 2 de alto, si se entra de lado)
+	// y, para la recompensa por acercarse, los puntos (centro de cada celda, en px del NES) de todas las metas del nivel: esos
+	// caños, el mástil y el hacha
+	let goalCache = { map: null, mainWorld: null, cells: null, points: null };
+	function goalData() {
+		const m = smb.currentMap;
+		if (goalCache.map !== m || goalCache.mainWorld !== mainWorld) {
+			const w = m.dimensions.width, cells = new Set(), points = [];
+			for (const wp of m.warps || []) {
+				if (!leadsToNextLevel(wp)) continue;
+				if (wp.type === 'right') { cells.add(wp.y * w + wp.x); cells.add((wp.y + 1) * w + wp.x); }
+				else if (wp.type === 'down') { cells.add(wp.y * w + wp.x); cells.add(wp.y * w + wp.x + 1); }
+			}
+			for (const i of cells) points.push([(i % w) * 16 + 8, Math.floor(i / w) * 16 + 8]);
+			for (let i = 0; i < m.map.length; i++) {
+				if (m.map[i] === MT.Flagpole || m.map[i] === MT.FlagpoleTop) points.push([(i % w) * 16 + 8, Math.floor(i / w) * 16 + 8]);
+			}
+			if (m.axe) points.push([m.axe.x * 16 + 8, m.axe.y * 16 + 8]);
+			goalCache = { map: m, mainWorld, cells, points };
+		}
+		return goalCache;
+	}
+	const goalCells = () => goalData().cells;
+
 	function observeFull(opts) {
 		const k = smb.tileScale, top = worldTop();
 		const p = sprite();
@@ -94,10 +123,11 @@
 		const left = opts.left ?? 5, right = opts.right ?? 10;
 		const x = (p.position.x - smb.mapOffset.x) / k;
 		const col0 = Math.floor((x + 8) / 16) - left;
+		const goal = goalCells();
 		const grid = [];
 		for (let r = 2; r < 15; r++) {
 			const row = [];
-			for (let c = col0; c <= col0 + left + right; c++) row.push(c < 0 || c >= w ? 0 : cellCode(m.map[r * w + c]));
+			for (let c = col0; c <= col0 + left + right; c++) row.push(c < 0 || c >= w ? 0 : goal.has(r * w + c) ? 4 : cellCode(m.map[r * w + c]));
 			grid.push(row);
 		}
 		const enemies = nearbyEnemies(x, left, right, top).map(([e, ex, ey, ew, eh]) => ({ type: e.type, color: e.color ?? null, state: e.state ?? null, x: ex, y: ey, w: ew, h: eh, dir: e.dir ?? e.vx ?? 0 }));
@@ -131,9 +161,10 @@
 		const left = opts.left ?? 5, right = opts.right ?? 10;
 		const x = (p.position.x - smb.mapOffset.x) / k;
 		const col0 = Math.floor((x + 8) / 16) - left;
+		const goal = goalCells();
 		let g = '';
 		for (let r = 2; r < 15; r++) {
-			for (let c = col0; c <= col0 + left + right; c++) g += c < 0 || c >= w ? '0' : cellCode(m.map[r * w + c]);
+			for (let c = col0; c <= col0 + left + right; c++) g += c < 0 || c >= w ? '0' : goal.has(r * w + c) ? 4 : cellCode(m.map[r * w + c]);
 		}
 		const e = nearbyEnemies(x, left, right, top).map(([en, ex, ey, ew, eh]) => [en.type, en.color ?? null, ex, ey, ew, eh, en.dir ?? en.vx ?? 0, en.state ?? null]);
 		const pl = [];
@@ -158,12 +189,24 @@
 	}
 
 	let last = null;   // lo que se mide para la recompensa
+	let shapingWeight = 0;   // peso de la recompensa por acercarse a la meta (opts.shaping de reset); 0: sin ella
 	let mainWorld = null;   // el último de los 32 niveles en que estuvo (las salas secretas no cuentan)
 	let mainLevels = new Set();
 
+	// Distancia (px del NES) del centro de Mario a la meta más cercana; Infinity si el nivel no tiene ninguna a la vista
+	function goalDistance(x, y) {
+		const pts = goalData().points;
+		if (!pts.length) return Infinity;
+		const cx = x + 8, cy = y + smb.playerHeightPx() / smb.tileScale / 2;
+		let best = Infinity;
+		for (const [gx, gy] of pts) best = Math.min(best, Math.hypot(gx - cx, gy - cy));
+		return best;
+	}
+
 	function snapshot() {
 		const p = sprite();
-		return { world: smb.currentMap.world, x: (p.position.x - smb.mapOffset.x) / smb.tileScale, time: smb.time, score: smb.score };
+		const x = (p.position.x - smb.mapOffset.x) / smb.tileScale, y = (p.position.y - worldTop()) / smb.tileScale;
+		return { world: smb.currentMap.world, x, time: smb.time, score: smb.score, d: goalDistance(x, y) };
 	}
 
 	function reset(opts = {}) {
@@ -177,6 +220,7 @@
 		smb.currentWorldIndex = idx;
 		mainLevels = new Set(smb.availableWorlds.filter(n => n !== '0-0'));
 		mainWorld = opts.world ?? '1-1';
+		shapingWeight = opts.shaping ?? 0;
 		smb.selectPlayer(opts.player ?? 0);
 		// La pantalla negra del principio no se espera
 		for (let i = 0; i < 600 && smb.state !== Game_State.Playing; i++) {
@@ -202,7 +246,7 @@
 
 	function step(action, repeat = 4, opts = {}) {
 		if (!last) throw new Error('Falta llamar a reset()');
-		let reward = 0, done = false, reason = null, flag = false;
+		let reward = 0, shaped = 0, done = false, reason = null, flag = false;
 		const startTime = last.time;
 		for (let i = 0; i < repeat; i++) {
 			pressed(action);
@@ -211,22 +255,28 @@
 			const st = smb.state;
 			// Avanzar en x es lo que se premia; un salto de más de 48 px en un paso (el laberinto que devuelve a Mario, un caño) no cuenta
 			const dx = now.x - last.x;
-			if (now.world === last.world && Math.abs(dx) <= 48) reward += dx;
+			if (now.world === last.world && Math.abs(dx) <= 48) {
+				reward += dx;
+				// Recompensa por acercarse a la meta (distancia en x e y): guía también al llegar a un caño de lado o a un hacha
+				if (shapingWeight && Number.isFinite(last.d) && Number.isFinite(now.d)) shaped += shapingWeight * (last.d - now.d);
+			}
 			// Pasar a otro nivel de los 32 (el caño del final de los niveles de agua, una zona de atajos) cuenta como completar el
 			// actual; entrar a una sala secreta, o volver de ella, no
 			const nextMain = now.world !== last.world && mainLevels.has(now.world) && now.world !== mainWorld;
+			// Entrar a uno de esos caños cuenta desde que Mario empieza a bajar o a meterse, no recién cuando carga el otro nivel
+			const intoExit = st === Game_State.Pipe_Transition && smb.pipeTransition && smb.pipeTransition.phase === 'enter' && leadsToNextLevel(smb.pipeTransition.warp);
 			if (mainLevels.has(now.world)) mainWorld = now.world;
 			last = now;
 			if (st === Game_State.Player_Dying) { done = true; reason = 'dead'; break; }
-			if (st === Game_State.Level_Complete || nextMain) { done = true; reason = 'clear'; flag = true; break; }
+			if (st === Game_State.Level_Complete || nextMain || intoExit) { done = true; reason = 'clear'; flag = true; break; }
 			// Fuera del final del mapa (nadando, en un nivel de agua) no hay nada más: se da por perdido
 			if (now.x > smb.currentMap.dimensions.width * 16 + 16) { done = true; reason = 'out'; break; }
 			if (st === Game_State.Title_Menu || st === Game_State.Black_Screen && smb.screenType === Black_Screen_Type.Game_Over) { done = true; reason = 'over'; break; }
 		}
 		const clockPenalty = Math.min(0, last.time - startTime) * 0.1;   // el reloj del juego corre: apurarse rinde
-		reward = round(reward + clockPenalty - (reason === 'dead' || reason === 'out' ? 15 : 0) + (flag ? 50 : 0));
+		reward = round(reward + shaped + clockPenalty - (reason === 'dead' || reason === 'out' ? 15 : 0) + (flag ? 50 : 0));
 		const obs = observe(opts);
-		return { obs, reward, done, info: { reason, x: last.x, time: last.time, score: last.score, world: last.world, width: smb.currentMap.dimensions.width * 16 } };
+		return { obs, reward, done, info: { reason, x: last.x, time: last.time, score: last.score, world: last.world, width: smb.currentMap.dimensions.width * 16, shaping: round(shaped), goal_distance: Number.isFinite(last.d) ? round(last.d) : null } };
 	}
 
 	// Cuadro actual achicado, en grises (0 a 255), por si se prefiere aprender de la imagen
