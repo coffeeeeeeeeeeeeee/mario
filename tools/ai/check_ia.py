@@ -23,7 +23,7 @@ ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 def main():
     src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, ".entrenamiento", "modelos", "modelo.zip")
     with tempfile.TemporaryDirectory() as tmp:
-        subprocess.run([sys.executable, os.path.join(HERE, "export_model.py"), src, tmp], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([sys.executable, os.path.join(HERE, "export_model.py"), src, tmp, "--con-bin"], check=True, stdout=subprocess.DEVNULL)
         subprocess.run(["node", os.path.join(HERE, "ia_dump.js"), tmp], check=True)
         data = json.load(open(os.path.join(tmp, "paridad.json")))
     model = PPO.load(src, device="cpu")

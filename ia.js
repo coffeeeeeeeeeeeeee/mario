@@ -27,10 +27,29 @@ const SmbIA = (() => {
 		net = { layers, obsDim: meta.obsDim, meta };
 	}
 
+	// Los pesos vienen en assets/ia/modelo.js (un script con SMB_IA_MODEL, en base64): un script se puede cargar aunque el juego se abra
+	// directamente desde la carpeta (file://), donde el navegador no deja leer archivos con fetch. Si no está, se prueba con modelo.json y
+	// modelo.bin (sólo sirve con un servidor). Cualquier falla queda en `error` y en la consola, y el título usa el demo grabado.
+	let error = null;
 	async function load(base = 'assets/ia/') {
-		const [meta, bin] = await Promise.all([fetch(base + 'modelo.json').then(r => r.json()), fetch(base + 'modelo.bin').then(r => r.arrayBuffer())]);
-		setWeights(meta, bin);
-		return net.meta;
+		try {
+			if (typeof SMB_IA_MODEL !== 'undefined') {
+				const text = atob(SMB_IA_MODEL.data), bytes = new Uint8Array(text.length);
+				for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+				setWeights(SMB_IA_MODEL.meta, bytes.buffer);
+			} else {
+				const probe = await fetch(base + 'modelo.json');
+				if (!probe.ok) throw new Error('falta assets/ia/modelo.js (se genera con ./entrenar.sh exportar)');
+				const [meta, bin] = await Promise.all([probe.json(), fetch(base + 'modelo.bin').then(r => r.arrayBuffer())]);
+				setWeights(meta, bin);
+			}
+			error = null;
+			return net.meta;
+		} catch (e) {
+			error = String(e.message || e);
+			console.warn('[IA] No se pudieron cargar los pesos de la IA; el título usa el demo grabado. Motivo: ' + error);
+			throw e;
+		}
 	}
 
 	// Qué hay en cada celda: 0 vacío, 1 sólido, 2 bloque que se golpea, 3 moneda, 4 meta (mástil, hacha o boca de un caño que lleva
@@ -137,7 +156,7 @@ const SmbIA = (() => {
 
 	return {
 		ACTIONS, KEYS, load, setWeights, features, logits, pick, press, release,
-		get ready() { return !!net; }, get meta() { return net && net.meta; },
+		get ready() { return !!net; }, get meta() { return net && net.meta; }, get error() { return error; },
 		// Un paso completo: mira, calcula y aprieta
 		act(smb, mainWorld, opts = {}) {
 			const a = pick(logits(features(smb, mainWorld)), opts.deterministic ? null : Math.random, opts.temperature ?? 1);

@@ -1044,6 +1044,28 @@ class Game {
 		if (this.demoIdle >= DEMO_IDLE_STEPS) this.startDemo(this.aiDemoDue() ? 'ia' : 'grabado');
 	}
 
+	// El nivel del próximo demo de la IA: sale de un mazo de los 32 niveles mezclados, así no se repite ninguno hasta haber pasado todos
+	// (con azar puro, en pocos demos ya aparece algún repetido y parece que siempre juega los mismos). El mazo se guarda en el navegador
+	// para que al recargar la página siga donde estaba y no empiece siempre con el mismo orden.
+	nextAiLevel() {
+		const levels = this.availableWorlds.filter(n => n !== '0-0'), valid = new Set(levels);
+		let deck = null;
+		try { deck = JSON.parse(localStorage.getItem('smb_ai_deck')); } catch (e) { /* sin almacenamiento: queda sólo en memoria */ }
+		let queue = deck && Array.isArray(deck.queue) ? deck.queue.filter(n => valid.has(n)) : [];
+		let last = deck && valid.has(deck.last) ? deck.last : (this.aiDeck && this.aiDeck.last);
+		if (!queue.length && this.aiDeck) { queue = this.aiDeck.queue.filter(n => valid.has(n)); last = this.aiDeck.last; }
+		if (!queue.length) {
+			queue = levels.slice();
+			for (let i = queue.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [queue[i], queue[j]] = [queue[j], queue[i]]; }
+			// al empezar un mazo nuevo, el primero no puede ser el último del anterior
+			if (queue.length > 1 && queue[0] === last) [queue[0], queue[queue.length - 1]] = [queue[queue.length - 1], queue[0]];
+		}
+		const world = queue.shift();
+		this.aiDeck = { queue, last: world, total: levels.length };
+		try { localStorage.setItem('smb_ai_deck', JSON.stringify(this.aiDeck)); } catch (e) { /* idem */ }
+		return world;
+	}
+
 	// ¿Puede jugar la IA? (hace falta que sus pesos se hayan cargado)
 	aiDemoDue() {
 		return typeof SmbIA !== 'undefined' && SmbIA.ready;
@@ -1063,8 +1085,7 @@ class Game {
 		// El demo grabado es siempre el 1-1; la IA juega uno de los 32 niveles, al azar
 		let world = '1-1';
 		if (kind === 'ia') {
-			const levels = this.availableWorlds.filter(n => n !== '0-0');
-			world = levels[Math.floor(Math.random() * levels.length)];
+			world = this.nextAiLevel();
 			this.demoAi = { frame: 0, mainWorld: world, action: 0, bestX: 0, lastProgress: 0 };
 		}
 		this.currentWorldIndex = Math.max(0, this.availableWorlds.indexOf(world));
@@ -1105,7 +1126,8 @@ class Game {
 	drawDemoLabel() {
 		if (!this.demoMode || this.demoKind !== 'ia' || this.state !== Game_State.Playing) return;
 		const W = this.engine.getCanvasWidth();
-		this.engine.drawTextCustom(font, `IA JUGANDO ${this.demoAi.mainWorld}`, TEXT_SIZE, Color.WHITE, { x: W / 2, y: this.tileSize * 2.1 }, "center");
+		const d = this.aiDeck, n = d ? d.total - d.queue.length : 0;   // cuántos niveles del mazo van, contando éste
+		this.engine.drawTextCustom(font, `IA JUGANDO ${this.demoAi.mainWorld}` + (d ? `  ${n}/${d.total}` : ''), TEXT_SIZE, Color.WHITE, { x: W / 2, y: this.tileSize * 2.1 }, "center");
 	}
 
 	endDemo() {
