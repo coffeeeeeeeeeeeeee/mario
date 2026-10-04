@@ -5,17 +5,20 @@
 	<title>Partidas en vivo</title>
 	<style>
 		html, body { margin: 0; height: 100%; background: #111; color: #ddd; font: 14px monospace; overflow: hidden; }
-		#bar { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; box-sizing: border-box; white-space: nowrap; }
+		#bar { height: 36px; display: flex; align-items: center; gap: 5px; padding: 0 10px; box-sizing: border-box; white-space: nowrap; }
 		#bar span { display: inline-flex; gap: 4px; }
-		#bar button { font: inherit; background: #333; color: #ddd; border: 1px solid #555; padding: 2px 10px; cursor: pointer; }
+		#bar button { font: inherit; background: #333; color: #ddd; border: 1px solid #555; padding: 2px 7px; cursor: pointer; }
 		#bar button.on { background: #6a4; color: #000; }
+		#bar #stats { display: block; flex: 1 1 0; min-width: 0; margin-left: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #889; cursor: help; }
+		#bar #stats b { color: #8c8; font-weight: normal; }
+		#bar #stats .old { color: #c96; }
 		#grid { position: relative; }
 		.cell { position: absolute; overflow: hidden; }
 		.cell iframe { border: 0; width: 640px; height: 480px; transform-origin: top left; image-rendering: pixelated; }
 	</style>
 </head>
 <body>
-	<div id="bar"><span>pantallas:</span><span id="counts"></span><span style="margin-left:14px">velocidad:</span><span id="speeds"></span><span id="note" style="margin-left:14px;color:#9a9"></span></div>
+	<div id="bar"><span>pantallas:</span><span id="counts"></span><span style="margin-left:8px">velocidad:</span><span id="speeds"></span><span id="stats">esperando los datos del entrenamiento…</span></div>
 	<div id="grid"></div>
 	<script>
 		// Cada partida va en su propio iframe de 640x480, el tamaño con el que corre el entrenamiento: el juego calcula sus
@@ -62,7 +65,7 @@
 			while (frames.length > n) frames.pop().cell.remove();
 			buttons.counts.forEach((b, k) => b.classList.toggle('on', COUNTS[k] === n));
 			q.set('n', n); history.replaceState(null, '', '?' + q);
-			document.getElementById('note').textContent = n > 8 ? 'con muchas pantallas el navegador se carga; bajá la velocidad si se traba' : '';
+			document.getElementById('bar').firstElementChild.title = n > 8 ? 'Con muchas pantallas el navegador se carga: bajá la velocidad si se traba' : '';
 			layout();
 		}
 
@@ -85,6 +88,38 @@
 		setSpeed(speed);
 		setCount(n);
 		addEventListener('resize', layout);
+
+		// Datos del entrenamiento que manda train.py: una sola línea junto a los botones (lo más importante primero; si la ventana es
+		// angosta se corta con "…") y, al apoyar el mouse encima, el detalle completo
+		const fmt = (v, d = 0) => (v === null || v === undefined || Number.isNaN(v) ? '–' : Number(v).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d }));
+		const exp = v => (v === null || v === undefined ? '–' : v.toExponential(2).replace('.', ','));
+		const dur = s => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? `${h} h ${m} min` : m ? `${m} min ${s % 60} s` : `${s} s`; };
+		const v = x => `<b>${x}</b>`;
+		async function refreshStats() {
+			const box = document.getElementById('stats');
+			try {
+				const { stats: s, now } = await (await fetch('/api/stats')).json();
+				if (!s) { box.textContent = 'esperando los datos del entrenamiento (llegan cuando arranca una corrida con esta versión)'; box.title = ''; return; }
+				const age = now - s.t, t = s.train || {}, o = s.optimizer || {};
+				const left = s.sps > 0 ? (s.target_steps - s.run_steps) / s.sps : null;
+				box.innerHTML = [
+					`${v(fmt(s.total_steps))} pasos (+${fmt(s.run_steps)}/${fmt(s.target_steps)})`, `${v(fmt(s.sps))}/s`, `falta ${v(left === null ? '–' : dur(left))}`,
+					`avance ${v(fmt(s.progress, 0) + '%')}`, `mástil ${v(fmt(s.clear, 0) + '%')}`, `recomp. ${v(fmt(s.reward))}`,
+					`${o.name || 'opt.'} lr ${v(exp(o.lr))} paso ${v(fmt(o.step))}`, `pérd. ${v(fmt(t.loss, 1))}`, `KL ${v(fmt(t.approx_kl, 4))}`,
+					`guardó ${v(s.last_save ? 'hace ' + dur(now - s.last_save.t) : 'aún no')}`,
+				].join(' · ') + (age > 8 ? ` · <span class="old">sin datos hace ${dur(age)} (terminó o se detuvo)</span>` : '');
+				box.title = [
+					`Pasos totales: ${fmt(s.total_steps)} (esta corrida ${fmt(s.run_steps)} de ${fmt(s.target_steps)}; retomó desde ${fmt(s.resumed_from)})`,
+					`Velocidad: ${fmt(s.sps)} pasos/s · tiempo ${dur(s.elapsed)} · falta ${left === null ? '–' : dur(left)} · ${s.envs} partidas · ${s.worlds} niveles · peso de la meta ${s.shaping}`,
+					`Últimos ${s.episodes} episodios: avance ${fmt(s.progress, 1)}% · mástil ${fmt(s.clear, 1)}% · recompensa ${fmt(s.reward)} · largo ${fmt(s.ep_len)} pasos`,
+					`Optimizador ${o.name || '–'}: tasa de aprendizaje ${exp(o.lr)} · paso ${fmt(o.step)} · momento |m| ${exp(o.momentum)} · varianza v ${exp(o.variance)} · betas ${(o.betas || []).join(' / ') || '–'}`,
+					`Red: pérdida ${fmt(t.loss, 3)} · política ${fmt(t.policy_gradient_loss, 4)} · valor ${fmt(t.value_loss, 2)} · entropía ${fmt(t.entropy_loss, 3)} · KL ${fmt(t.approx_kl, 4)} · recorte ${fmt(100 * t.clip_fraction, 1)}% · var. explicada ${fmt(t.explained_variance, 2)} · actualizaciones ${fmt(t.n_updates)}`,
+					`Último guardado: ${s.last_save ? `paso ${fmt(s.last_save.steps)}, hace ${dur(now - s.last_save.t)}` : 'todavía no (cada 50.000 pasos)'}`,
+				].join('\n');
+			} catch (e) { box.textContent = 'sin conexión con el servidor'; }
+		}
+		setInterval(refreshStats, 1500);
+		refreshStats();
 	</script>
 </body>
 </html>

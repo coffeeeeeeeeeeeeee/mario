@@ -102,6 +102,9 @@ function update(dt) {
             break;
 
         case Game_State.Player_Dying:
+            // La cámara vertical sigue aplicada, congelada como estaba: si se la quitaba de golpe, con Mario arriba el mundo
+            // saltaba de lugar en el cuadro de la muerte
+            smb.beginWorldCamera(true);
             smb.drawBackground();
             smb.drawBlocks();
             smb.updateCoins();
@@ -110,10 +113,12 @@ function update(dt) {
             smb.drawEnemies(dt);
             smb.drawForegroundBlocks();
             smb.drawPlayer(PlayerName[smb.player], dt);
+            smb.endWorldCamera();
             smb.drawUI();
             break;
 
         case Game_State.Level_Complete:
+            smb.beginWorldCamera();   // sigue a Mario (en el mástil, arriba) y vuelve de a poco, no de golpe
             smb.drawBackground();
             smb.drawBlocks();
             smb.updateCoins();
@@ -123,10 +128,12 @@ function update(dt) {
             smb.updateAndDrawLevelComplete(dt);
             smb.drawForegroundBlocks();
             smb.updateAndDrawScorePopups();
+            smb.endWorldCamera();
             smb.drawUI();
             break;
 
         case Game_State.Player_Growing:
+            smb.beginWorldCamera();
             smb.drawBackground();
             smb.drawBlocks();
             smb.drawPowerups();
@@ -134,8 +141,9 @@ function update(dt) {
             smb.drawBumpingBlocksOverlay();
             smb.drawEnemies(dt);
             smb.drawForegroundBlocks();
-            smb.drawUI();
             smb.updateAndDrawGrowingPlayer(dt);
+            smb.endWorldCamera();
+            smb.drawUI();
             break;
 
         case Game_State.Playing:
@@ -154,6 +162,10 @@ function update(dt) {
             smb.updateCoins();
 
             smb.beginWorldCamera();
+            // drawPlayer mueve a Mario y, con él, la cámara. Todo lo que se dibuja en el cuadro tiene que usar la misma cámara: si el
+            // primer plano (los caños) usaba la ya adelantada y el fondo la del cuadro anterior, al desplazarse quedaban corridos entre
+            // sí 1 a 3 px y entre un caño y los bloques de al lado aparecía una rendija
+            const cameraX = smb.mapOffset.x;
             smb.drawBackground();
             smb.drawPowerups();
             smb.updateAndDrawFireballs();
@@ -163,7 +175,10 @@ function update(dt) {
             smb.drawBumpingBlocksOverlay();
             smb.drawEnemies(dt);
             smb.drawPlayer(PlayerName[smb.player], dt);
+            const cameraAfterPlayer = smb.mapOffset.x;
+            smb.mapOffset.x = cameraX;
             smb.drawForegroundBlocks();
+            smb.mapOffset.x = cameraAfterPlayer;
             smb.updateAndDrawScorePopups();   // después del fondo, para que se vean
             smb.endWorldCamera();
             smb.drawUI();

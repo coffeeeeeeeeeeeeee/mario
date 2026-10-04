@@ -14,6 +14,7 @@ evaluar en niveles que no estuvieron en --worlds del entrenamiento.
 import argparse
 import collections
 import json
+import urllib.request
 import os
 import signal
 import sys
@@ -38,18 +39,63 @@ from smb_sb3 import SmbSb3VecEnv
 class Progress(BaseCallback):
     """Resumen de los últimos episodios cada `every` pasos."""
 
-    def __init__(self, every=20000, save_path=None, save_every=0, offset=0):
+    def __init__(self, every=20000, save_path=None, save_every=0, offset=0, url=None, info=None):
         super().__init__()
+        self.url, self.info, self.last_save = url, info or {}, None   # url: dónde mandar los datos de la barra de /watch
         self.offset = offset   # pasos que el modelo ya tenía de antes, para mostrar el total acumulado
         self.every, self.next, self.recent, self.t0 = every, every, collections.deque(maxlen=100), time.time()
         self.save_path, self.save_every, self.next_save = save_path, save_every, save_every
+        self.sent = 0.0
         self.stop = False   # lo activa la señal de parada: se termina la pasada actual y se guarda
 
     def save(self):
-        self.model.save(self.save_path)
+        # Se guarda en un archivo temporal y recién entonces reemplaza al anterior: si el proceso se corta justo mientras escribe,
+        # queda el modelo de antes completo y no un zip a medias. (Con .zip explícito, SB3 no le cambia el nombre.)
+        tmp = self.save_path + "_tmp.zip"
+        self.model.save(tmp)
+        os.replace(tmp, self.save_path + ".zip")
         # Cuántos pasos lleva el modelo en total, para seguir contando al retomarlo
-        with open(self.save_path + ".json", "w") as f:
+        self.last_save = {"t": time.time(), "steps": self.offset + self.num_timesteps}
+        with open(self.save_path + ".json.tmp", "w") as f:
             json.dump({"steps": self.offset + self.num_timesteps}, f)
+        os.replace(self.save_path + ".json.tmp", self.save_path + ".json")
+
+    def _on_rollout_end(self):
+        self.report()
+
+    def report(self, force=False):
+        """Manda a la barra de /watch cómo va el entrenamiento: pasos, rendimiento, pérdidas y estado del optimizador."""
+        if not self.url or (not force and time.time() - self.sent < 1.0):
+            return
+        self.sent = time.time()
+        n = len(self.recent)
+        v = self.model.logger.name_to_value   # lo último que registró PPO al actualizar la red
+        opt = self.model.policy.optimizer
+        st = list(opt.state.values())
+        mean = lambda xs: sum(xs) / len(xs) if xs else None
+        stats = {
+            "t": time.time(), "run_steps": self.num_timesteps, "total_steps": self.offset + self.num_timesteps,
+            "sps": self.num_timesteps / max(1e-9, time.time() - self.t0), "elapsed": time.time() - self.t0, **self.info,
+            "episodes": n,
+            "progress": 100 * sum(e["progress"] for e in self.recent) / n if n else None,
+            "clear": 100 * sum(e["clear"] for e in self.recent) / n if n else None,
+            "reward": sum(e["r"] for e in self.recent) / n if n else None,
+            "ep_len": sum(e["l"] for e in self.recent) / n if n else None,
+            "train": {k.split("/")[-1]: float(x) for k, x in v.items() if k.startswith("train/")},
+            "optimizer": {
+                "name": type(opt).__name__, "lr": opt.param_groups[0]["lr"], "betas": list(opt.param_groups[0].get("betas", [])),
+                "step": int(float(st[0]["step"])) if st else 0,
+                "momentum": mean([float(s["exp_avg"].abs().mean()) for s in st]),       # |m| medio de Adam (la dirección acumulada)
+                "variance": mean([float(s["exp_avg_sq"].mean()) for s in st]),          # v medio de Adam (el tamaño típico del gradiente al cuadrado)
+                "tensors": len(st),
+            },
+            "last_save": self.last_save,
+        }
+        try:
+            req = urllib.request.Request(self.url.rstrip("/") + "/api/stats", data=json.dumps(stats).encode(), headers={"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=1).read()
+        except Exception:
+            pass   # si el servidor no contesta, el entrenamiento sigue igual
 
     def _on_step(self):
         if self.stop:
@@ -90,7 +136,8 @@ def train(a):
         except (OSError, KeyError, ValueError):
             pass
         print(f"continuando desde {a.resume} ({done_before} pasos acumulados)", flush=True)
-    progress = Progress(save_path=a.out, save_every=a.save_every, offset=done_before)
+    progress = Progress(save_path=a.out, save_every=a.save_every, offset=done_before, url=a.url,
+                        info={"target_steps": a.steps, "envs": a.envs, "worlds": len(worlds), "shaping": a.goal_shaping, "resumed_from": done_before})
     # Con TERM o INT (por ejemplo, ./entrenar.sh stop) se corta y se guarda lo aprendido hasta ahí
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: setattr(progress, "stop", True))

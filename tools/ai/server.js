@@ -11,6 +11,7 @@
 //   GET  /api/observe?env=0              -> observación actual
 //   GET  /api/pixels?w=84&h=84&env=0     -> cuadro en grises (sólo con --browser)
 //   GET  /watch                          -> página para ver las partidas en vivo (?n=4 partidas, ?speed=2)
+//   POST /api/stats / GET /api/stats     -> los datos del entrenamiento que muestra la barra de /watch
 //
 // Para entrenar con muchas partidas a la vez (cada una en su hilo, en paralelo):
 //   POST /api/vreset {n, worlds, seeds, size, hard, obs, shaping} -> lista de observaciones de las partidas 0 a n-1
@@ -111,6 +112,16 @@ function onEnv(env, fn) {
 
 const lastReset = new Map();   // cómo se reinició cada partida, para el autoreset
 
+// Datos del entrenamiento (pasos, rendimiento, pérdidas, optimizador) que manda train.py para la barra de /watch, con una
+// historia corta para dibujar cómo van el avance y la recompensa
+let trainStats = null;
+const statsHistory = [];
+function putStats(s) {
+	trainStats = s;
+	statsHistory.push({ steps: s.total_steps, progress: s.progress, reward: s.reward });
+	if (statsHistory.length > 240) statsHistory.shift();
+}
+
 // Registro de lo que juega cada partida, para poder verla en /watch: cómo arrancó cada episodio y las acciones de cada paso.
 // Como el juego es determinista, repetir eso en un navegador da exactamente la misma partida.
 const recordings = new Map();   // env -> { next, list: [episodio, ...] }
@@ -177,6 +188,9 @@ async function handleApi(url, body) {
 		case '/api/step': return stepEnv(env, body.action, body.repeat, { left: body.left, right: body.right, obs: body.obs }, body.autoreset);
 		case '/api/observe': return onEnv(env, () => backend.call(env, 'observe', [{ obs: url.searchParams.get('obs') || body.obs }]));
 		case '/api/pixels': return onEnv(env, () => backend.call(env, 'pixels', [+(url.searchParams.get('w') || 84), +(url.searchParams.get('h') || 84)]));
+		case '/api/stats':
+			if (body && body.total_steps !== undefined) { putStats(body); return { ok: true }; }
+			return { stats: trainStats, history: statsHistory, now: Date.now() / 1000 };
 		case '/api/watch': return watchState(env, +(url.searchParams.get('ep') ?? -1), +(url.searchParams.get('from') || 0));
 		case '/api/vreset': {
 			const worlds = [].concat(body.worlds ?? body.world ?? '1-1');

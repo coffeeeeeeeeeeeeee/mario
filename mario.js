@@ -3236,19 +3236,26 @@ class Game {
 
 	// Cámara vertical: la vista muestra el pie del nivel, pero al trepar una enredadera sube para seguir a Mario.
 	// Es sólo un desplazamiento al dibujar el mundo; la lógica sigue en coordenadas de pantalla.
-	beginWorldCamera() {
+	// Con freeze la cámara se queda donde estaba (al morir, el mundo no tiene que moverse mientras Mario salta y cae)
+	beginWorldCamera(freeze = false) {
 		const ts = this.tileSize, ctx = this.engine.ctx;
 		const player = this.engine.animatedSprites[this.currentPlayerSpriteName()];
 		const hidden = Math.max(0, -this.tileToScreen(0, 0).y);   // lo que queda por encima de la pantalla (hasta la fila 0 del mapa)
 		// La cámara sube cuando Mario pasa por arriba del borde visible (trepando, saltando alto o sobre plataformas altas)
 		const target = player ? Math.min(hidden, Math.max(0, ts * 2.5 - player.position.y)) : 0;
-		this.cameraY = (this.cameraY || 0) + (target - (this.cameraY || 0)) * Math.min(1, 0.15 * this.fk);
-		if (Math.abs(this.cameraY - target) < 0.5) this.cameraY = target;
+		if (!freeze) {
+			this.cameraY = (this.cameraY || 0) + (target - (this.cameraY || 0)) * Math.min(1, 0.15 * this.fk);
+			if (Math.abs(this.cameraY - target) < 0.5) this.cameraY = target;
+		}
 		if (this.cameraY <= 0) { this.cameraShift = false; return; }
 		// El borde de arriba que queda al desplazar se pinta con el color de fondo
 		this.engine.drawRectangle(this.engine.getCanvasRectangle(), this.backgroundColor());
 		ctx.save();
-		ctx.translate(0, this.cameraY);
+		// La cámara sube con un movimiento suave, así que casi siempre vale algo con decimales. js2d ajusta cada tile a píxeles
+		// físicos, pero un translate fraccionario pasa por encima de eso: los bordes de los tiles caen a medio píxel y entre
+		// filas (las nubes, al saltar) aparecen líneas finas. Se desplaza sólo de a píxeles físicos enteros
+		const dpr = this.engine.dpr || 1;
+		ctx.translate(0, Math.round(this.cameraY * dpr) / dpr);
 		this.cameraShift = true;
 	}
 

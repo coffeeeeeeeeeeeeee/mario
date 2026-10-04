@@ -26,7 +26,8 @@
 #   --no-browser         no abrir el navegador (la dirección se muestra igual)
 #
 # Con --pausa al principio (./entrenar.sh --pausa start) la ventana espera una tecla al terminar; sirve para los accesos directos.
-# Todo lo que genera (registros, modelos, procesos) queda en .entrenamiento/. Se puede cambiar el Python con PYTHON=ruta.
+# Todo lo que genera queda en .entrenamiento/: modelos/modelo.zip (el modelo, que se va acumulando) con modelo.json (los pasos que lleva),
+# las copias de los últimos 5 arranques, train.log (la corrida actual) e historial.log (las anteriores). Se puede cambiar el Python con PYTHON=ruta.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -111,7 +112,9 @@ cmd_start() {
 		fi
 	fi
 	mkdir -p "$RUN/modelos"
-	if alive "$RUN/train.pid" || alive "$RUN/server.pid"; then die "ya hay un entrenamiento en marcha (./entrenar.sh status, ./entrenar.sh stop)"; fi
+	if alive "$RUN/train.pid"; then die "ya hay un entrenamiento en marcha (./entrenar.sh status, ./entrenar.sh stop)"; fi
+	# Si el entrenamiento terminó solo, el servidor del juego queda encendido: se apaga acá en vez de pedir que se lo detenga a mano
+	if alive "$RUN/server.pid"; then echo "Apagando el servidor que quedó de la vez anterior..."; stop_one "$RUN/server.pid" "el servidor" 5; fi
 
 	local resume_args=() own="$RUN/modelos/$NAME.zip"
 	if [ -n "$RESUME" ]; then
@@ -130,10 +133,21 @@ cmd_start() {
 	# Copia del modelo tal como estaba antes de esta corrida: el entrenamiento lo va guardando encima cada 50.000 pasos, y si se
 	# retoma con otros niveles o con un error, así se puede volver atrás
 	if [ ${#resume_args[@]} -gt 0 ]; then
-		cp -f "${resume_args[1]}" "$RUN/modelos/$NAME.inicio.zip"
-		[ -f "${resume_args[1]%.zip}.json" ] && cp -f "${resume_args[1]%.zip}.json" "$RUN/modelos/$NAME.inicio.json" || true
-		echo "Copia del modelo antes de seguir: $RUN/modelos/$NAME.inicio.zip"
+		# Se guardan las copias de los últimos 5 arranques (inicio = el último, inicio.1 = el anterior, ... inicio.5): cada una es el
+		# modelo tal como estaba antes de esa corrida
+		local m="$RUN/modelos/$NAME" i
+		for i in 4 3 2 1; do
+			[ -f "$m.inicio.$i.zip" ] && mv -f "$m.inicio.$i.zip" "$m.inicio.$((i + 1)).zip"
+			[ -f "$m.inicio.$i.json" ] && mv -f "$m.inicio.$i.json" "$m.inicio.$((i + 1)).json"
+		done
+		[ -f "$m.inicio.zip" ] && mv -f "$m.inicio.zip" "$m.inicio.1.zip"
+		[ -f "$m.inicio.json" ] && mv -f "$m.inicio.json" "$m.inicio.1.json"
+		cp -f "${resume_args[1]}" "$m.inicio.zip"
+		[ -f "${resume_args[1]%.zip}.json" ] && cp -f "${resume_args[1]%.zip}.json" "$m.inicio.json" || true
+		echo "Copia del modelo antes de seguir: $m.inicio.zip"
 	fi
+	# El registro de la corrida anterior se agrega al historial antes de que el nuevo lo reemplace
+	if [ -s "$RUN/train.log" ]; then { echo; echo "===== $(date '+%F %T') ====="; cat "$RUN/train.log"; } >> "$RUN/historial.log"; fi
 
 	if curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1; then
 		die "el puerto $PORT ya está en uso (¿otro entrenamiento que sigue en marcha? probá ./entrenar.sh stop o --port)"
