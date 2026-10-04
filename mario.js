@@ -281,8 +281,8 @@ const SCORE_POPUP_INDEX = { '100': 0, '200': 1, '400': 2, '500': 3, '800': 4, '1
 // Demo del título (DemoActionData / DemoTimingData): sin tocar nada durante 24 intervalos de 21 cuadros, Mario juega solo el
 // 1-1 con estos movimientos grabados. Bits de cada acción: 1 derecha, 2 izquierda, $40 B (correr), $80 A (saltar)
 const DEMO_IDLE_STEPS = 24 * 21;
-// Si el título lleva tanto sin que nadie lo toque, el demo lo juega la IA entrenada (ia.js) en un nivel al azar, en vez de la grabación
-const AI_IDLE_MS = 60 * 1000;
+// Al cumplirse la espera del título (DEMO_IDLE_STEPS, unos 8 segundos sin que nadie toque nada), el demo lo juega la IA entrenada
+// (ia.js) en un nivel al azar; la grabación del original queda sólo para cuando no se pudieron cargar sus pesos
 const AI_ACT_EVERY = 4;                 // cuadros entre una decisión de la IA y la siguiente (así se la entrenó)
 const AI_DEMO_MAX_FRAMES = 60 * 150;    // un demo de la IA dura como mucho 2,5 minutos
 const AI_STUCK_FRAMES = 60 * 12;        // y se corta si pasan 12 segundos sin que avance
@@ -325,7 +325,6 @@ class Game {
 	demoMode = false;      // Mario juega solo en el título
 	demoEndPending = false;   // el demo terminó (murió Mario) y se lo cierra al empezar el próximo cuadro
 	demoKind = null;       // 'grabado' (el del original) o 'ia' (juega la red entrenada)
-	lastActivityAt = performance.now();   // la última vez que alguien tocó algo (para saber cuánto lleva el título sin uso)
 	demoIdle = 0;          // cuadros que lleva el título sin que se toque nada
 	demoIndex = -1; demoTimer = 0; demoBackup = null;
 	playerStates = null;   // lo que lleva cada jugador (vidas, puntos, nivel...) cuando no está jugando
@@ -492,7 +491,6 @@ class Game {
 				this.engine.mouseButtons[0] = false;
 			}
 			this.demoIdle = 0;
-			this.lastActivityAt = performance.now();
 		};
 		['keydown', 'mousedown', 'touchstart'].forEach(ev => window.addEventListener(ev, onActivity));
 
@@ -1046,9 +1044,9 @@ class Game {
 		if (this.demoIdle >= DEMO_IDLE_STEPS) this.startDemo(this.aiDemoDue() ? 'ia' : 'grabado');
 	}
 
-	// ¿Pasó tanto tiempo sin uso que le toca jugar a la IA? (hace falta que sus pesos se hayan cargado)
+	// ¿Puede jugar la IA? (hace falta que sus pesos se hayan cargado)
 	aiDemoDue() {
-		return typeof SmbIA !== 'undefined' && SmbIA.ready && performance.now() - this.lastActivityAt >= AI_IDLE_MS;
+		return typeof SmbIA !== 'undefined' && SmbIA.ready;
 	}
 
 	startDemo(kind = 'grabado') {
