@@ -281,6 +281,11 @@ const SCORE_POPUP_INDEX = { '100': 0, '200': 1, '400': 2, '500': 3, '800': 4, '1
 // Demo del título (DemoActionData / DemoTimingData): sin tocar nada durante 24 intervalos de 21 cuadros, Mario juega solo el
 // 1-1 con estos movimientos grabados. Bits de cada acción: 1 derecha, 2 izquierda, $40 B (correr), $80 A (saltar)
 const DEMO_IDLE_STEPS = 24 * 21;
+// Si el título lleva tanto sin que nadie lo toque, el demo lo juega la IA entrenada (ia.js) en un nivel al azar, en vez de la grabación
+const AI_IDLE_MS = 60 * 1000;
+const AI_ACT_EVERY = 4;                 // cuadros entre una decisión de la IA y la siguiente (así se la entrenó)
+const AI_DEMO_MAX_FRAMES = 60 * 150;    // un demo de la IA dura como mucho 2,5 minutos
+const AI_STUCK_FRAMES = 60 * 12;        // y se corta si pasan 12 segundos sin que avance
 const DEMO_ACTIONS = [0x01, 0x80, 0x02, 0x81, 0x41, 0x80, 0x01, 0x42, 0xc2, 0x02, 0x80, 0x41, 0xc1, 0x41, 0xc1, 0x01, 0xc1, 0x01, 0x02, 0x80, 0x00];
 const DEMO_TIMES = [0x9b, 0x10, 0x18, 0x05, 0x2c, 0x20, 0x24, 0x15, 0x5a, 0x10, 0x20, 0x28, 0x30, 0x20, 0x10, 0x80, 0x20, 0x30, 0x30, 0x01, 0xff, 0x00];   // en cuadros; el 0 final termina el demo
 const NPC_TYPES = new Set(['Toad', 'Princess']);
@@ -318,6 +323,9 @@ class Game {
 	nesFrame = 0;          // contador de cuadros (FrameCounter)
 	twoPlayers = false;    // partida de dos jugadores alternados
 	demoMode = false;      // Mario juega solo en el título
+	demoEndPending = false;   // el demo terminó (murió Mario) y se lo cierra al empezar el próximo cuadro
+	demoKind = null;       // 'grabado' (el del original) o 'ia' (juega la red entrenada)
+	lastActivityAt = performance.now();   // la última vez que alguien tocó algo (para saber cuánto lleva el título sin uso)
 	demoIdle = 0;          // cuadros que lleva el título sin que se toque nada
 	demoIndex = -1; demoTimer = 0; demoBackup = null;
 	playerStates = null;   // lo que lleva cada jugador (vidas, puntos, nivel...) cuando no está jugando
@@ -484,6 +492,7 @@ class Game {
 				this.engine.mouseButtons[0] = false;
 			}
 			this.demoIdle = 0;
+			this.lastActivityAt = performance.now();
 		};
 		['keydown', 'mousedown', 'touchstart'].forEach(ev => window.addEventListener(ev, onActivity));
 
@@ -1034,20 +1043,33 @@ class Game {
 	updateDemoIdle(dt) {
 		if (this.state !== Game_State.Title_Menu || this.demoMode) { this.demoIdle = 0; return; }
 		this.demoIdle += dt * NES_FPS / 1000;
-		if (this.demoIdle >= DEMO_IDLE_STEPS) this.startDemo();
+		if (this.demoIdle >= DEMO_IDLE_STEPS) this.startDemo(this.aiDemoDue() ? 'ia' : 'grabado');
 	}
 
-	startDemo() {
+	// ¿Pasó tanto tiempo sin uso que le toca jugar a la IA? (hace falta que sus pesos se hayan cargado)
+	aiDemoDue() {
+		return typeof SmbIA !== 'undefined' && SmbIA.ready && performance.now() - this.lastActivityAt >= AI_IDLE_MS;
+	}
+
+	startDemo(kind = 'grabado') {
 		this.demoBackup = {
 			player: this.player, lives: this.lives, score: this.score, coins: this.coins, worldIndex: this.currentWorldIndex,
 			playerSize: this.playerSize, halfwayPage: this.halfwayPage, hidden1UpFlag: this.hidden1UpFlag,
 			twoPlayers: this.twoPlayers, playerStates: this.playerStates, savedState: this.savedState,
 		};
 		this.demoMode = true;
+		this.demoKind = kind;
 		this.stopAllMusic();
 		this.player = Player.Mario; this.lives = 1; this.score = 0; this.coins = 0;
 		this.twoPlayers = false; this.playerStates = null;
-		this.currentWorldIndex = Math.max(0, this.availableWorlds.indexOf('1-1'));
+		// El demo grabado es siempre el 1-1; la IA juega uno de los 32 niveles, al azar
+		let world = '1-1';
+		if (kind === 'ia') {
+			const levels = this.availableWorlds.filter(n => n !== '0-0');
+			world = levels[Math.floor(Math.random() * levels.length)];
+			this.demoAi = { frame: 0, mainWorld: world, action: 0, bestX: 0, lastProgress: 0 };
+		}
+		this.currentWorldIndex = Math.max(0, this.availableWorlds.indexOf(world));
 		this.halfwayPage = 0; this.hidden1UpFlag = false; this.playerSize = Player_Size.Small; this.playerIsVisible = true;
 		this.resetLevelState();
 		this.demoIndex = -1; this.demoTimer = 0;
@@ -1056,6 +1078,7 @@ class Game {
 
 	// Un cuadro del demo: pone en las teclas lo que dice la grabación
 	demoStep() {
+		if (this.demoKind === 'ia') { this.aiDemoStep(); return; }
 		if (this.demoTimer <= 0) {
 			this.demoIndex++;
 			this.demoTimer = DEMO_TIMES[this.demoIndex] ?? 0;
@@ -1067,9 +1090,32 @@ class Game {
 		k['ArrowRight'] = !!(a & 0x01); k['ArrowLeft'] = !!(a & 0x02); k['ArrowUp'] = !!(a & 0x80); k['ShiftLeft'] = !!(a & 0x40);
 	}
 
+	// Un cuadro del demo de la IA: cada AI_ACT_EVERY cuadros mira el juego, la red elige los botones y se los aprieta
+	aiDemoStep() {
+		const d = this.demoAi;
+		d.frame++;
+		const world = this.currentMap.world;
+		if (world !== '0-0' && this.availableWorlds.includes(world)) d.mainWorld = world;   // las salas secretas no cambian el nivel principal
+		if (d.frame % AI_ACT_EVERY === 1) d.action = SmbIA.act(this, d.mainWorld);
+		const p = this.engine.animatedSprites[this.currentPlayerSpriteName()];
+		const x = (p.position.x - this.mapOffset.x) / this.tileScale;
+		if (x > d.bestX + 0.5) { d.bestX = x; d.lastProgress = d.frame; }
+		if (d.frame - d.lastProgress > AI_STUCK_FRAMES || d.frame > AI_DEMO_MAX_FRAMES) this.endDemo();
+	}
+
+	// Cartel del demo de la IA
+	drawDemoLabel() {
+		if (!this.demoMode || this.demoKind !== 'ia' || this.state !== Game_State.Playing) return;
+		const W = this.engine.getCanvasWidth();
+		this.engine.drawTextCustom(font, `IA JUGANDO ${this.demoAi.mainWorld}`, TEXT_SIZE, Color.WHITE, { x: W / 2, y: this.tileSize * 2.1 }, "center");
+	}
+
 	endDemo() {
 		if (!this.demoMode) return;
 		this.demoMode = false;
+		this.demoEndPending = false;
+		this.demoKind = null;
+		if (typeof SmbIA !== 'undefined') SmbIA.release(this);
 		const k = this.engine.keysPressed;
 		k['ArrowRight'] = k['ArrowLeft'] = k['ArrowUp'] = k['ShiftLeft'] = false;
 		const b = this.demoBackup || {};
@@ -1188,7 +1234,9 @@ class Game {
 	}
 
 	killPlayer() {
-		if (this.demoMode) { this.endDemo(); return; }
+		// En el demo, morir lo termina. Se pide acá y se hace al empezar el cuadro siguiente (update en game.js): killPlayer se llama en
+		// medio de recorridos (los enemigos, las bolas de fuego) y vaciar esas listas ahí mismo los dejaba leyendo elementos que ya no existen
+		if (this.demoMode) { this.demoEndPending = true; return; }
 		if (this.state === Game_State.Playing) {
 			this.state = Game_State.Player_Dying;
 			this.deathTimer = 0;

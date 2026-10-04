@@ -8,6 +8,8 @@
 #   ./entrenar.sh status                dice si está corriendo y cómo viene
 #   ./entrenar.sh logs                  sigue el registro del entrenamiento
 #   ./entrenar.sh watch                 abre de nuevo la vista en vivo
+#   ./entrenar.sh exportar [modelo]     pasa el modelo guardado (por defecto el que se está entrenando) a assets/ia/, de donde lo lee
+#                                       el título del juego para que juegue la IA cuando nadie lo usa
 #
 # Opciones de start:
 #   --worlds 1-1,2-1     niveles en los que entrena (se sortea uno en cada episodio, y cada partida toma uno distinto)  [todos]
@@ -206,6 +208,17 @@ cmd_status() {
 	ls "$RUN/modelos" 2>/dev/null | sed 's/^/  modelo: /' || true
 }
 
+cmd_exportar() {
+	local src="${1:-$RUN/modelos/$NAME.zip}"
+	[ -f "$src" ] || src="$RUN/modelos/${1%.zip}.zip"
+	[ -f "$src" ] || die "no encuentro el modelo a exportar"
+	"$PY" -c "import stable_baselines3" 2>/dev/null || die "faltan PyTorch y Stable-Baselines3: corré ./entrenar.sh setup"
+	local py="$PY"; case "$py" in /*) ;; */*) py="$PWD/$py" ;; esac   # el Python con ruta relativa deja de servir al cambiar de carpeta
+	local abs="$PWD/$src"; [ -f "$src" ] && case "$src" in /*) abs="$src" ;; esac
+	(cd tools/ai && "$py" export_model.py "$abs" ../../assets/ia) || die "no se pudo exportar"
+	echo "Listo: el título del juego va a usar este modelo (recargá la página). Para subirlo al repositorio: git add assets/ia"
+}
+
 cmd_logs() { [ -f "$RUN/train.log" ] || die "todavía no hay registro"; tail -n 20 -f "$RUN/train.log"; }
 
 cmd_watch() {
@@ -220,6 +233,7 @@ case "${1:-}" in
 	stop) cmd_stop ;;
 	status) cmd_status ;;
 	logs) cmd_logs ;;
+	exportar) shift; cmd_exportar "$@" ;;
 	watch) cmd_watch ;;
 	*) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"; exit 1 ;;
 esac

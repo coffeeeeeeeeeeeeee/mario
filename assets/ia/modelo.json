@@ -1,0 +1,78 @@
+{
+ "obsDim": 1072,
+ "layers": [
+  {
+   "in": 1072,
+   "out": 256,
+   "act": "tanh"
+  },
+  {
+   "in": 256,
+   "out": 128,
+   "act": "tanh"
+  },
+  {
+   "in": 128,
+   "out": 14,
+   "act": "linear"
+  }
+ ],
+ "actions": [
+  [],
+  [
+   "right"
+  ],
+  [
+   "right",
+   "jump"
+  ],
+  [
+   "right",
+   "run"
+  ],
+  [
+   "right",
+   "run",
+   "jump"
+  ],
+  [
+   "jump"
+  ],
+  [
+   "left"
+  ],
+  [
+   "left",
+   "jump"
+  ],
+  [
+   "left",
+   "run"
+  ],
+  [
+   "left",
+   "run",
+   "jump"
+  ],
+  [
+   "down"
+  ],
+  [
+   "fire"
+  ],
+  [
+   "right",
+   "run",
+   "fire"
+  ],
+  [
+   "right",
+   "run",
+   "jump",
+   "fire"
+  ]
+ ],
+ "trainedSteps": 5374584,
+ "exportedAt": "2026-10-04 12:26:15",
+ "floats": 309390
+}

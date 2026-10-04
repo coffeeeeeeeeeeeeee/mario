@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const SCRIPTS = ['js2d.js', null, 'atlas.js', 'levels_smb.js', 'mario.js', 'game.js', 'api.js'];   // null: lo que index.html escribe en línea
+const SCRIPTS = ['js2d.js', null, 'atlas.js', 'levels_smb.js', 'mario.js', 'ia.js', 'game.js', 'api.js'];   // null: lo que index.html escribe en línea
 // Funciones que sólo dibujan (no mueven ni deciden nada)
 const PURE_DRAW = ['drawBlocks', 'drawForegroundBlocks', 'drawBackground', 'drawScenery', 'drawUI', 'drawWarpZoneText'];
 const INLINE = 'const canvas = document.getElementById("game"); const js2d = new Js2d(canvas);';

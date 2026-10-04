@@ -78,6 +78,8 @@ function update(dt) {
         }
     }
 
+    if (smb.demoEndPending) smb.endDemo();   // murió Mario en el demo: se lo cierra acá, fuera de cualquier recorrido de listas
+
     switch (smb.state) {
         case Game_State.Title_Menu:
             // smb.loadMap("0-0");
@@ -118,6 +120,7 @@ function update(dt) {
             break;
 
         case Game_State.Level_Complete:
+            if (smb.demoMode) { smb.endDemo(); break; }   // la IA llegó a la meta: el demo termina y se vuelve al título
             smb.beginWorldCamera();   // sigue a Mario (en el mástil, arriba) y vuelve de a poco, no de golpe
             smb.drawBackground();
             smb.drawBlocks();
@@ -182,6 +185,7 @@ function update(dt) {
             smb.updateAndDrawScorePopups();   // después del fondo, para que se vean
             smb.endWorldCamera();
             smb.drawUI();
+            smb.drawDemoLabel();
             smb.drawWarpZoneText();
             break;
 
@@ -502,6 +506,9 @@ async function init() {
     smb = new Game(js2d, fontSize, tileScale);
 
     smb.loadMap("0-0");
+
+    // Los pesos de la IA para el demo del título: si no están (assets/ia/), el título sigue con el demo grabado
+    if (typeof SmbIA !== 'undefined') SmbIA.load().catch(() => {});
 }
 
 init().then(() => {
