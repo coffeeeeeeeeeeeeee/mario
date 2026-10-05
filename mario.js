@@ -213,7 +213,7 @@ const BLOCK_ITEM = {
 };
 const PLAIN_BRICKS = new Set([MT.Brick, MT.BrickUnderground]);
 const HIDDEN_BLOCKS = new Set([MT.HiddenCoin, MT.Hidden1Up]);   // sólo se golpean desde abajo
-const NON_SOLID_BLOCKS = new Set([MT.FlagpoleTop, MT.HiddenCoin, MT.Hidden1Up, MT.Coin, MT.CoinWater]);
+const NON_SOLID_BLOCKS = new Set([MT.FlagpoleTop, MT.Flagpole, MT.HiddenCoin, MT.Hidden1Up, MT.Coin, MT.CoinWater]);
 const FOREGROUND_METATILES = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21]; // Mario pasa por detrás
 NON_SOLID_BLOCKS.add(0x0b); NON_SOLID_BLOCKS.add(0x0c); NON_SOLID_BLOCKS.add(MT.Axe);   // cadena y hacha: se tocan, no frenan
 for (let id = 0x45; id <= 0x4b; id++) NON_SOLID_BLOCKS.add(id);   // castillo: decoración
@@ -3964,7 +3964,7 @@ class Game {
 			const kc = this.tileScale;
 			const bodySmall = playerHeight <= this.tileSize + 0.5;
 			const sideYs = bodySmall ? [8 * kc] : [8 * kc, 24 * kc];
-			const solidAtPt = (px, py) => { const t = this.screenToTile(px, py); if (!inBounds(t.x, t.y)) return false; const id = this.currentMap.map[this.engine.coordsToIndex(t, mapWidth)]; return id !== MT.Flagpole && isSolid(id); };   // el mástil se agarra, no frena
+			const solidAtPt = (px, py) => { const t = this.screenToTile(px, py); if (!inBounds(t.x, t.y)) return false; const id = this.currentMap.map[this.engine.coordsToIndex(t, mapWidth)]; return isSolid(id); };
 			if (dx < 0) {
 				const newX = playerPos.x + dx;
 				const blocked = sideYs.some(dy => solidAtPt(newX + 2 * kc, playerPos.y + dy));
@@ -3982,7 +3982,7 @@ class Game {
 					const mapIndex = this.engine.coordsToIndex(tileCoords, mapWidth);
 					const blockId = this.currentMap.map[mapIndex];
 					this.handleCoinCollision(mapIndex);
-					if (blockId === MT.Flagpole && sx - this.tileToScreen(tileCoords.x, tileCoords.y).x >= 6 * kc) {
+					if ((blockId === MT.Flagpole || blockId === MT.FlagpoleTop) && sx - this.tileToScreen(tileCoords.x, tileCoords.y).x >= 6 * kc) {
 						const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
 						playerPos.x = poleCoords.x - this.tileSize / 2;
 						let groundYTile = ty;
