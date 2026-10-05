@@ -190,6 +190,9 @@
 
 	let last = null;   // lo que se mide para la recompensa
 	let shapingWeight = 0;   // peso de la recompensa por acercarse a la meta (opts.shaping de reset); 0: sin ella
+	// opts.reward de reset: 'signed' (lo de siempre: cada px que avanza suma y cada px que retrocede resta) o 'best' (sólo suma lo que
+	// pasa de lo más lejos que llegó, y de lo más cerca de la meta). Con 'best' retroceder para tomar carrera cuesta sólo el reloj
+	let rewardBest = false, bestX = 0, bestD = Infinity;
 	let mainWorld = null;   // el último de los 32 niveles en que estuvo (las salas secretas no cuentan)
 	let mainLevels = new Set();
 
@@ -221,6 +224,7 @@
 		mainLevels = new Set(smb.availableWorlds.filter(n => n !== '0-0'));
 		mainWorld = opts.world ?? '1-1';
 		shapingWeight = opts.shaping ?? 0;
+		rewardBest = opts.reward === 'best';
 		smb.selectPlayer(opts.player ?? 0);
 		// La pantalla negra del principio no se espera
 		for (let i = 0; i < 600 && smb.state !== Game_State.Playing; i++) {
@@ -239,10 +243,36 @@
 				big.position.x = small.position.x; big.position.y = small.position.y - smb.tileSize;
 			}
 		}
+		if (opts.startFrac > 0) startMidLevel(opts.startFrac);
 		tick(1);
 		last = snapshot();
+		bestX = last.x; bestD = last.d;
 		return observe(opts);
 	}
+
+	// Empieza en el medio del nivel: se busca, desde la fracción pedida (0 a 1) del largo hacia adelante, la primera página donde
+	// Mario puede caer al suelo desde arriba sin atravesar nada ni caer a un pozo. Así los episodios también pasan por lugares que
+	// piden retroceder para tomar carrera, que desde el principio casi no se ven
+	function startMidLevel(frac) {
+		const m = smb.currentMap, w = m.dimensions.width, pages = Math.floor(w / 16);
+		const solid = (c, r) => isSolidMetatile(m.map[r * w + c]);
+		const k = smb.tileScale, ts = smb.tileSize;
+		for (let page = Math.min(pages - 3, Math.max(1, Math.floor(pages * frac))); page < pages - 3; page++) {
+			const col = page * 16 + 2;   // donde cae Mario: a 2,5 celdas del borde izquierdo de la pantalla
+			let ground = -1;
+			for (let r = 3; r < 14 && ground < 0; r++) if (solid(col, r) || solid(col + 1, r)) ground = r;
+			// Libre de cabeza a pies (filas 3 a la del suelo) y con suelo firme debajo de las dos celdas
+			if (ground < 8 || ground > 13 || !solid(col, ground) || !solid(col + 1, ground)) continue;
+			let free = true;
+			for (let r = 3; r < ground; r++) if (solid(col, r) || solid(col + 1, r) || isHazard(m.map[r * w + col])) free = false;
+			if (!free) continue;
+			smb.mapOffset.x = -(page * 16 * ts); smb.maxMapOffsetX = smb.mapOffset.x;
+			sprite().position.x = 2.5 * ts;
+			return page;
+		}
+		return 0;
+	}
+	const isHazard = id => id === MT.Flagpole || id === MT.FlagpoleTop;
 
 	function step(action, repeat = 4, opts = {}) {
 		if (!last) throw new Error('Falta llamar a reset()');
@@ -256,10 +286,14 @@
 			// Avanzar en x es lo que se premia; un salto de más de 48 px en un paso (el laberinto que devuelve a Mario, un caño) no cuenta
 			const dx = now.x - last.x;
 			if (now.world === last.world && Math.abs(dx) <= 48) {
-				reward += dx;
+				if (rewardBest) { if (now.x > bestX) { reward += now.x - bestX; bestX = now.x; } }
+				else reward += dx;
 				// Recompensa por acercarse a la meta (distancia en x e y): guía también al llegar a un caño de lado o a un hacha
-				if (shapingWeight && Number.isFinite(last.d) && Number.isFinite(now.d)) shaped += shapingWeight * (last.d - now.d);
-			}
+				if (shapingWeight && Number.isFinite(last.d) && Number.isFinite(now.d)) {
+					if (rewardBest) { if (now.d < bestD) { shaped += shapingWeight * (bestD - now.d); bestD = now.d; } }
+					else shaped += shapingWeight * (last.d - now.d);
+				}
+			} else { bestX = now.x; bestD = now.d; }   // otro nivel o un salto grande (el laberinto): se empieza a contar de nuevo desde ahí
 			// Pasar a otro nivel de los 32 (el caño del final de los niveles de agua, una zona de atajos) cuenta como completar el
 			// actual; entrar a una sala secreta, o volver de ella, no
 			const nextMain = now.world !== last.world && mainLevels.has(now.world) && now.world !== mainWorld;

@@ -74,14 +74,15 @@ def featurize(o):
 
 class SmbSb3VecEnv(VecEnv):
     def __init__(self, n_envs, worlds=("1-1",), url="http://127.0.0.1:8777", repeat=4, max_steps=2500, stuck_steps=200,
-                 size="small", hard=False, seed=0, reward_scale=0.1, goal_shaping=0.5, memory=True):
-        self.client = SmbVecClient(n_envs, url, worlds=worlds, size=size, hard=hard, seed=seed, repeat=repeat, autoreset=False, obs="compact", shaping=goal_shaping)
+                 size="small", hard=False, seed=0, reward_scale=0.1, goal_shaping=0.5, memory=True, progress_reward="best", mid_start=0.0):
+        self.client = SmbVecClient(n_envs, url, worlds=worlds, size=size, hard=hard, seed=seed, repeat=repeat, autoreset=False, obs="compact", shaping=goal_shaping, reward=progress_reward)
         n_actions = len(SmbClient(url).actions)
         super().__init__(n_envs, gym.spaces.Box(-np.inf, np.inf, shape=(OBS_DIM if memory else BASE_DIM,), dtype=np.float32), gym.spaces.Discrete(n_actions))
         self.worlds, self.max_steps, self.stuck_steps, self.reward_scale = list(worlds), max_steps, stuck_steps, reward_scale
         self.rng = random.Random(seed)
         self.seed_counter = seed * 100003
         self.size, self.hard, self.memory = size, hard, memory
+        self.mid_start = mid_start   # fracción de los episodios que empiezan en el medio del nivel (sólo al entrenar)
         self.mem = [None] * n_envs
         self._actions = None
         self._begin()
@@ -91,6 +92,7 @@ class SmbSb3VecEnv(VecEnv):
         self.recent = []   # los últimos niveles sorteados
         self.steps = [0] * self.num_envs
         self.best_x = [0.0] * self.num_envs
+        self.start_x = [0.0] * self.num_envs   # x de donde empezó el episodio (0 si fue desde el principio): el avance se mide desde ahí
         self.last_gain = [0] * self.num_envs
         self.ret = [0.0] * self.num_envs
 
@@ -111,7 +113,11 @@ class SmbSb3VecEnv(VecEnv):
         self.seed_counter += 1
         self.world[i] = self._pick_world(i)
         self.steps[i], self.best_x[i], self.last_gain[i], self.ret[i] = 0, 0.0, 0, 0.0
-        return self._features(i, self.client.reset_one(i, self.world[i], seed=self.seed_counter), None)
+        mid = self.mid_start > 0 and self.rng.random() < self.mid_start
+        o = self.client.reset_one(i, self.world[i], seed=self.seed_counter, start_frac=self.rng.uniform(0.1, 0.9) if mid else None)
+        # Si no encontró un lugar para empezar en el medio (castillos, algunos niveles de agua) arranca desde el principio
+        self.start_x[i] = o["m"][0] if mid and o["m"][0] > 80 else 0.0
+        return self._features(i, o, None)
 
     def _features(self, i, o, action):
         """Las entradas de la red para la partida i: la observación y, si el modelo tiene memoria, lo que recuerda (se actualiza
@@ -147,7 +153,7 @@ class SmbSb3VecEnv(VecEnv):
                 info["terminal_observation"] = f
                 info["TimeLimit.truncated"] = truncated
                 info["episode"] = {"r": self.ret[i], "l": self.steps[i], "world": self.world[i], "clear": info.get("reason") == "clear",
-                                   "progress": min(1.0, self.best_x[i] / max(1, info.get("width", 1)))}
+                                   "progress": min(1.0, max(0.0, self.best_x[i] - self.start_x[i]) / max(1, info.get("width", 1) - self.start_x[i]))}
                 f = self._start(i)
             feats.append(f)
             out_r.append(rewards[i] * self.reward_scale)

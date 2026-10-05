@@ -91,19 +91,22 @@ class SmbVecClient:
     """n partidas en paralelo. Con autoreset (lo normal), la partida que termina arranca de nuevo sola: la observación que
     devuelve es la del nuevo comienzo y la última de la anterior queda en info["terminal_obs"]."""
 
-    def __init__(self, n, url="http://127.0.0.1:8777", worlds=("1-1",), size="small", hard=False, seed=0, repeat=4, autoreset=True, obs="compact", shaping=0.0):
+    def __init__(self, n, url="http://127.0.0.1:8777", worlds=("1-1",), size="small", hard=False, seed=0, repeat=4, autoreset=True, obs="compact", shaping=0.0, reward="signed"):
         self.n, self.repeat, self.autoreset, self.obs = n, repeat, autoreset, obs
         self.http = _Http(url)
-        self.opts = {"n": n, "worlds": list(worlds), "size": size, "hard": hard, "seed": seed, "obs": obs, "shaping": shaping}
+        self.opts = {"n": n, "worlds": list(worlds), "size": size, "hard": hard, "seed": seed, "obs": obs, "shaping": shaping, "reward": reward}
 
     def reset(self):
         return self.http.request("/api/vreset", self.opts)
 
-    def reset_one(self, i, world="1-1", seed=None, size=None):
-        """Reinicia sólo la partida i (por ejemplo, en otro nivel)."""
-        body = {"world": world, "size": size or self.opts["size"], "hard": self.opts["hard"], "obs": self.obs, "shaping": self.opts["shaping"], "env": str(i)}
+    def reset_one(self, i, world="1-1", seed=None, size=None, start_frac=None):
+        """Reinicia sólo la partida i (por ejemplo, en otro nivel). start_frac (0 a 1): empezar en esa parte del nivel."""
+        body = {"world": world, "size": size or self.opts["size"], "hard": self.opts["hard"], "obs": self.obs, "shaping": self.opts["shaping"],
+                "reward": self.opts["reward"], "env": str(i)}
         if seed is not None:
             body["seed"] = seed
+        if start_frac:
+            body["startFrac"] = start_frac
         return self.http.request("/api/reset", body)
 
     def step(self, actions):
@@ -127,9 +130,13 @@ class SmbClient:
         sep = "&" if "?" in path else "?"
         return self.http.request(f"{path}{sep}env={self.env}")
 
-    def reset(self, world="1-1", seed=None, size="small", hard=False, obs="full", shaping=0.0):
-        """shaping: peso de la recompensa por acercarse a la meta (el mástil, el hacha o el caño de salida); 0 la apaga."""
-        body = {"world": world, "size": size, "hard": hard, "obs": obs, "shaping": shaping}
+    def reset(self, world="1-1", seed=None, size="small", hard=False, obs="full", shaping=0.0, reward="signed", start_frac=None):
+        """shaping: peso de la recompensa por acercarse a la meta (el mástil, el hacha o el caño de salida); 0 la apaga.
+        reward: "signed" (suma lo que avanza y resta lo que retrocede) o "best" (sólo suma lo que pasa de lo más lejos que llegó).
+        start_frac: empezar en esa fracción (0 a 1) del largo del nivel, en el primer lugar donde Mario puede caer a suelo firme."""
+        body = {"world": world, "size": size, "hard": hard, "obs": obs, "shaping": shaping, "reward": reward}
+        if start_frac:
+            body["startFrac"] = start_frac
         if seed is not None:
             body["seed"] = seed
         return self._call("/api/reset", body)

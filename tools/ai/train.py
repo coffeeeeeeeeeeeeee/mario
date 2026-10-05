@@ -137,9 +137,10 @@ def train(a):
     print(f"entrenando en {len(worlds)} nivel{'es' if len(worlds) > 1 else ''}: {' '.join(worlds)}", flush=True)
     memory = has_memory(a, a.resume)
     print("con memoria (últimas acciones y avance)" if memory else "SIN memoria (modelo de antes; para tenerla hay que empezar un modelo nuevo)", flush=True)
-    env = SmbSb3VecEnv(a.envs, worlds=worlds, url=a.url, seed=a.seed, goal_shaping=a.goal_shaping, memory=memory)
+    env = SmbSb3VecEnv(a.envs, worlds=worlds, url=a.url, seed=a.seed, goal_shaping=a.goal_shaping, memory=memory,
+                          progress_reward=a.progress_reward, mid_start=a.mid_start)
     model = PPO("MlpPolicy", env, learning_rate=lambda f: a.lr * f, n_steps=128, batch_size=256, n_epochs=4, gamma=0.995,
-                gae_lambda=0.95, clip_range=0.2, ent_coef=0.01, seed=a.seed, verbose=0,
+                gae_lambda=0.95, clip_range=0.2, ent_coef=a.ent_coef, seed=a.seed, verbose=0,
                 policy_kwargs=dict(net_arch=dict(pi=[256, 128], vf=[256, 128])))
     if a.resume:
         model.set_parameters(a.resume)
@@ -152,7 +153,7 @@ def train(a):
             pass
         print(f"continuando desde {a.resume} ({done_before} pasos acumulados)", flush=True)
     progress = Progress(save_path=a.out, save_every=a.save_every, offset=done_before, url=a.url,
-                        info={"memory": memory, "target_steps": a.steps, "envs": a.envs, "worlds": len(worlds), "shaping": a.goal_shaping, "resumed_from": done_before})
+                        info={"memory": memory, "progress_reward": a.progress_reward, "mid_start": a.mid_start, "ent_coef": a.ent_coef, "target_steps": a.steps, "envs": a.envs, "worlds": len(worlds), "shaping": a.goal_shaping, "resumed_from": done_before})
     # Con TERM o INT (por ejemplo, ./entrenar.sh stop) se corta y se guarda lo aprendido hasta ahí
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: setattr(progress, "stop", True))
@@ -201,6 +202,10 @@ if __name__ == "__main__":
     p.add_argument("--lr", type=float, default=2.5e-4)
     p.add_argument("--goal-shaping", type=float, default=0.5, help="peso de la recompensa por acercarse a la meta; 0 la apaga")
     p.add_argument("--memory", choices=["auto", "si", "no"], default="auto", help="darle a la red memoria de los últimos pasos (auto: la de un modelo que se retoma; si es nuevo, sí)")
+    p.add_argument("--progress-reward", choices=["best", "signed"], default="best",
+                   help="best: sólo suma lo que pasa de lo más lejos que llegó (retroceder para tomar carrera cuesta sólo el reloj); signed: suma lo que avanza y resta lo que retrocede")
+    p.add_argument("--mid-start", type=float, default=0.3, help="fracción de los episodios que empiezan en el medio del nivel, para ver más lugares que piden retroceder")
+    p.add_argument("--ent-coef", type=float, default=0.02, help="coeficiente de entropía de PPO: más alto, más exploración (antes 0,01)")
     p.add_argument("--threads", type=int, default=2)
     p.add_argument("--seed", type=int, default=None, help="semilla (si se retoma un modelo, por defecto una distinta cada vez)")
     p.add_argument("--url", default="http://127.0.0.1:8777")

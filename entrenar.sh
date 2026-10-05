@@ -19,6 +19,11 @@
 #   --envs 8             partidas en paralelo                                              [8]
 #   --name modelo        nombre del modelo, que queda en .entrenamiento/modelos/            [modelo]
 #   --shaping 0.5        peso de la recompensa por acercarse a la meta (mástil, hacha o caño de salida); 0 la apaga  [0.5]
+#   --mid-start 0.3      fracción de los episodios que empiezan en el medio del nivel, para ver más lugares que piden retroceder
+#                        y tomar carrera; 0 los apaga                                                   [0.3]
+#   --progress-reward best   best: sólo suma lo que pasa de lo más lejos que llegó (retroceder cuesta sólo el reloj);
+#                        signed: suma lo que avanza y resta lo que retrocede                                  [best]
+#   --ent-coef 0.02      coeficiente de entropía de PPO: más alto, más exploración                          [0.02]
 #   --nuevo              empezar de cero aunque haya un modelo guardado (el viejo queda como modelo.copia-FECHA.zip). Los modelos
 #                        nuevos llevan memoria de los últimos pasos; uno de antes (sin ella) sigue sin ella al continuarlo
 #   --resume modelo      seguir desde otro modelo guardado antes (nombre o ruta); sin esto se sigue el del --name
@@ -49,7 +54,7 @@ if [ -z "$PY" ]; then
 	if [ -x "$VENV/bin/python" ]; then PY="$VENV/bin/python"; else PY=python3; fi
 fi
 
-WORLDS=todos; STEPS=1000000; ENVS=8; NAME=modelo; RESUME=""; WATCH=6; SPEED=1; PORT=8777; OPEN=1; NEW=0; SHAPING=0.5
+TRAIN_EXTRA=(); WORLDS=todos; STEPS=1000000; ENVS=8; NAME=modelo; RESUME=""; WATCH=6; SPEED=1; PORT=8777; OPEN=1; NEW=0; SHAPING=0.5
 
 die() { echo "Error: $*" >&2; exit 1; }
 alive() { [ -f "$1" ] && kill -0 "$(cat "$1")" 2>/dev/null; }
@@ -101,6 +106,9 @@ cmd_start() {
 			--port) PORT=$2; shift 2 ;;
 			--no-browser) OPEN=0; shift ;;
 			--shaping) SHAPING=$2; shift 2 ;;
+			--mid-start) TRAIN_EXTRA+=(--mid-start "$2"); shift 2 ;;
+			--progress-reward) TRAIN_EXTRA+=(--progress-reward "$2"); shift 2 ;;
+			--ent-coef) TRAIN_EXTRA+=(--ent-coef "$2"); shift 2 ;;
 			--nuevo) NEW=1; shift ;;
 			*) die "opción desconocida: $1 (mirá el principio de este archivo)" ;;
 		esac
@@ -166,7 +174,7 @@ cmd_start() {
 	curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1 || die "el servidor no contesta en el puerto $PORT"
 
 	launch "$RUN/train.pid" "$RUN/train.log" "$PY" -u tools/ai/train.py train --worlds "$WORLDS" --steps "$STEPS" --envs "$ENVS" \
-		--out "$RUN/modelos/$NAME" --url "http://127.0.0.1:$PORT" --goal-shaping "$SHAPING" "${resume_args[@]}"
+		--out "$RUN/modelos/$NAME" --url "http://127.0.0.1:$PORT" --goal-shaping "$SHAPING" "${TRAIN_EXTRA[@]}" "${resume_args[@]}"
 	# Mientras el entrenamiento viva, la máquina no se suspende por inactividad (el bloqueo termina solo con el entrenamiento)
 	if command -v systemd-inhibit >/dev/null 2>&1 && [ -s "$RUN/train.pid" ]; then
 		launch "$RUN/inhibit.pid" /dev/null systemd-inhibit --what=sleep:idle --who="entrenamiento mario" --why="entrenamiento de la IA" tail --pid="$(cat "$RUN/train.pid")" -f /dev/null

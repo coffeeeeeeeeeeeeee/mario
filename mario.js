@@ -78,6 +78,11 @@ const SWIM_TIMER_STEPS = 0x20;            // se puede dar otra brazada en seguid
 // Altura de Mario al tocar el mástil (en píxeles lógicos) -> premio
 const FLAGPOLE_Y_DATA = [0x18, 0x22, 0x50, 0x68, 0x90];
 const FLAGPOLE_SCORES = [5000, 2000, 800, 400, 100];
+// La bandera espera arriba del mástil (y = 0x30); al tocarlo baja 2 px por cuadro hasta y = 0xaa, y el número del premio sube
+// desde y = 0xb0 a la par. El premio se suma recién cuando termina de bajar
+// Mario deja de bajar cuando su Y (los pies menos 32 px) llega a 0x9e: se queda pegado al pie del mástil, sobre el bloque de la base,
+// y recién después salta al costado y cae al suelo
+const FLAGPOLE_FLAG_TOP = 0x30, FLAGPOLE_FLAG_END = 0xaa, FLAGPOLE_NUMBER_START = 0xb0, FLAGPOLE_SLIDE_PX = 2, FLAGPOLE_SLIDE_STOP = 0x9e;
 const BASE_VELOCITY_SWIM = (TILE_PIXEL_SIZE * 17.6 / 16) * 60;
 
 const TEXT_SIZE = 16;
@@ -3429,6 +3434,21 @@ class Game {
 			const blockPos = this.tileToScreen(Math.floor(coords.x), Math.floor(coords.y));
 			this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
 		}
+		this.drawFlagpoleFlagAtRest();
+	}
+
+	// La bandera que espera arriba del mástil hasta que Mario lo toca (después la dibuja el final del nivel)
+	drawFlagpoleFlagAtRest() {
+		if (this.flagpoleFlag || this.isEditorMode) return;
+		const m = this.currentMap;
+		if (this.poleCache?.map !== m) {
+			const i = m.map.indexOf(MT.FlagpoleTop);
+			this.poleCache = { map: m, x: i < 0 ? -1 : i % m.dimensions.width };
+		}
+		const sprite = this.engine.sprites['Object_Flag'];
+		if (this.poleCache.x < 0 || !sprite) return;
+		const pole = this.tileToScreen(this.poleCache.x, 0);
+		this.engine.drawSprite('Object_Flag', 0, { x: pole.x - this.tileSize / 2, y: pole.y + FLAGPOLE_FLAG_TOP * this.tileScale }, sprite.scale, false, 0, Pivot.Top_Left);
 	}
 
 	drawForegroundBlocks() {
@@ -3986,14 +4006,17 @@ class Game {
 					this.handleCoinCollision(mapIndex);
 					if ((blockId === MT.Flagpole || blockId === MT.FlagpoleTop) && sx - this.tileToScreen(tileCoords.x, tileCoords.y).x >= 6 * kc) {
 						const poleCoords = this.tileToScreen(tileCoords.x, tileCoords.y);
-						playerPos.x = poleCoords.x - this.tileSize / 2;
+						playerPos.x = poleCoords.x - 7 * kc;   // Mario se agarra 7 px a la izquierda del borde del casillero del mástil
 						let groundYTile = ty;
 						while (this.currentMap.map[this.engine.coordsToIndex({x: tileCoords.x, y: groundYTile + 1}, mapWidth)] === MT.Flagpole) {
 							groundYTile++;
 						}
 						const finalLandingY = this.tileToScreen(tileCoords.x, groundYTile + 1).y - playerHeight + this.tileSize;
-						this.flagpoleInfo = { topY: poleCoords.y, groundY: finalLandingY, castleDoorX: poleCoords.x + this.tileSize * 5 };
-						this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: playerPos.y };
+						const mapTop = this.tileToScreen(0, 0).y;
+						this.flagpoleInfo = { topY: poleCoords.y, groundY: finalLandingY, castleDoorX: poleCoords.x + this.tileSize * 5, flagEndY: mapTop + FLAGPOLE_FLAG_END * kc, points: 0,
+							// dónde quedan los pies al terminar de bajar: lo del original, sin pasar del bloque de la base
+							stopFeetY: Math.min(mapTop + (FLAGPOLE_SLIDE_STOP + 32) * kc, this.tileToScreen(tileCoords.x, groundYTile + 1).y) };
+						this.flagpoleFlag = { x: poleCoords.x - this.tileSize / 2, y: mapTop + FLAGPOLE_FLAG_TOP * kc, num: null };
 						this.state = Game_State.Level_Complete; this.levelCompleteState = 'none'; 
 						this.xSpeed = 0;
 						return;
@@ -4197,7 +4220,7 @@ class Game {
 		const player = this.engine.animatedSprites[currentSpriteName];
 
                 const playerPos = player.position;
-                const slideSpeed = 1 * this.tileScale * this.fk;   // baja 1 px por cuadro
+                const slideSpeed = FLAGPOLE_SLIDE_PX * this.tileScale * this.fk;   // Mario y la bandera bajan 2 px por cuadro
                 const playerHeight = isBig ? this.tileSize * 2 : this.tileSize;
 
                 switch(this.levelCompleteState) {
@@ -4264,16 +4287,18 @@ class Game {
                         this.stopAllMusic();
                         this.engine.playAudio(audio["Flagpole"], false);
 
-                        // Premio según la altura (en píxeles lógicos) a la que Mario tocó el mástil
+                        // Premio según la altura (en píxeles lógicos) a la que Mario tocó el mástil. La Y con que se compara es la de los
+                        // pies menos 32 px: para Mario grande, el borde de arriba; para el chico, 16 px más arriba que el suyo
                         const offsetY = this.currentMap.dimensions.height * this.tileSize - this.engine.getCanvasHeight();
-                        const nesY = ((playerPos.y - this.mapOffset.y + offsetY) / this.tileSize) * 16;
+                        const nesY = ((playerPos.y + playerHeight - this.mapOffset.y + offsetY) / this.tileSize) * 16 - 32;
                         let flagZone = 0;
                         for (let z = 4; z >= 1; z--) { if (nesY >= FLAGPOLE_Y_DATA[z]) { flagZone = z; break; } }
                         const points = FLAGPOLE_SCORES[flagZone];
                         this.levelTimeAtFlag = this.time;
 
-				this.score += points;
-				this.spawnScorePopup(points.toString(), playerPos.x + this.tileSize, playerPos.y);
+				// El premio se suma al terminar de bajar; el número sube por el mástil mientras tanto, a la derecha de la bandera
+				this.flagpoleInfo.points = points;
+				this.flagpoleFlag.num = { text: points.toString(), x: this.flagpoleFlag.x + 28 * this.tileScale, y: this.tileToScreen(0, 0).y + FLAGPOLE_NUMBER_START * this.tileScale };
 				
 				player.flipped = false;   // mira hacia el mástil
 				
@@ -4283,16 +4308,23 @@ class Game {
 				this.levelCompleteState = 'sliding';
 				break;
 
-			case 'sliding':
-				playerPos.y += slideSpeed;
-				if (this.flagpoleFlag) {
-					this.flagpoleFlag.y += slideSpeed;
+			case 'sliding': {
+				const fi = this.flagpoleInfo, fl = this.flagpoleFlag;
+				const atBottom = () => playerPos.y + playerHeight >= fi.stopFeetY - 0.01 * this.tileScale;
+				if (!atBottom()) playerPos.y += slideSpeed;
+				// La bandera baja siempre desde arriba hasta el pie del mástil, aunque Mario lo haya tocado abajo; hasta que llega,
+				// el nivel no sigue
+				if (fl.y < fi.flagEndY) {
+					const step = Math.min(slideSpeed, fi.flagEndY - fl.y);
+					fl.y += step;
+					if (fl.num) fl.num.y -= step;
 				}
 
-				if (playerPos.y >= this.flagpoleInfo.groundY) {
-					playerPos.y = this.flagpoleInfo.groundY;
+				if (atBottom() && fl.y >= fi.flagEndY) {
+					this.score += fi.points;
 					player.flipped = false;
-					playerPos.x += this.tileSize / 2;
+					playerPos.x += 14 * this.tileScale;   // salta 14 px hacia la derecha, al otro lado del mástil, y cae al suelo
+					this.flagFallV = 0;
 
 					const runAnimPrefix = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
 					this.engine.setAnimationForSprite(currentSpriteName, `${runAnimPrefix}_Run`);
@@ -4300,9 +4332,14 @@ class Game {
 					this.levelCompleteState = 'walking_to_castle';
 				}
 				break;
+			}
 
 			case 'walking_to_castle':
 				playerPos.x += 1.5 * this.tileScale * this.fk;   // camina a 1,5 px por cuadro
+				if (playerPos.y < this.flagpoleInfo.groundY) {   // y antes cae desde el pie del mástil hasta el suelo
+					this.flagFallV = Math.min((this.flagFallV || 0) + BASE_GRAVITY_PX * this.tileScale * this.fk, 4 * this.tileScale);
+					playerPos.y = Math.min(playerPos.y + this.flagFallV * this.fk, this.flagpoleInfo.groundY);
+				}
 				if (playerPos.x >= this.flagpoleInfo.castleDoorX) {
 					this.playerIsVisible = false;
 					this.levelCompleteState = 'time_bonus';
@@ -4362,6 +4399,11 @@ class Game {
 			const flagSprite = this.engine.sprites['Object_Flag'];
 			if(flagSprite){
 				 this.engine.drawSprite('Object_Flag', 0, this.flagpoleFlag, flagSprite.scale, false, 0, Pivot.Top_Left);
+			}
+			const num = this.flagpoleFlag.num, idx = num && SCORE_POPUP_INDEX[num.text];
+			if (idx !== undefined && num) {
+				const k = this.tileScale;
+				this.engine.drawSprite('Score_Popup', idx, { x: num.x - 8 * k, y: num.y }, k, false, 0, Pivot.Top_Left);
 			}
 		}
 
