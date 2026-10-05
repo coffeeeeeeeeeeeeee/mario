@@ -1086,7 +1086,7 @@ class Game {
 		let world = '1-1';
 		if (kind === 'ia') {
 			world = this.nextAiLevel();
-			this.demoAi = { frame: 0, mainWorld: world, action: 0, bestX: 0, lastProgress: 0 };
+			this.demoAi = { frame: 0, mainWorld: world, action: 0, bestX: 0, lastProgress: 0, memory: SmbIA.newMemory() };
 		}
 		this.currentWorldIndex = Math.max(0, this.availableWorlds.indexOf(world));
 		this.halfwayPage = 0; this.hidden1UpFlag = false; this.playerSize = Player_Size.Small; this.playerIsVisible = true;
@@ -1115,7 +1115,7 @@ class Game {
 		d.frame++;
 		const world = this.currentMap.world;
 		if (world !== '0-0' && this.availableWorlds.includes(world)) d.mainWorld = world;   // las salas secretas no cambian el nivel principal
-		if (d.frame % AI_ACT_EVERY === 1) d.action = SmbIA.act(this, d.mainWorld);
+		if (d.frame % AI_ACT_EVERY === 1) d.action = SmbIA.act(this, d.mainWorld, { memory: d.memory });
 		const p = this.engine.animatedSprites[this.currentPlayerSpriteName()];
 		const x = (p.position.x - this.mapOffset.x) / this.tileScale;
 		if (x > d.bestX + 0.5) { d.bestX = x; d.lastProgress = d.frame; }

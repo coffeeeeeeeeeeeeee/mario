@@ -19,7 +19,8 @@
 #   --envs 8             partidas en paralelo                                              [8]
 #   --name modelo        nombre del modelo, que queda en .entrenamiento/modelos/            [modelo]
 #   --shaping 0.5        peso de la recompensa por acercarse a la meta (mástil, hacha o caño de salida); 0 la apaga  [0.5]
-#   --nuevo              empezar de cero aunque haya un modelo guardado (el viejo queda como modelo.copia-FECHA.zip)
+#   --nuevo              empezar de cero aunque haya un modelo guardado (el viejo queda como modelo.copia-FECHA.zip). Los modelos
+#                        nuevos llevan memoria de los últimos pasos; uno de antes (sin ella) sigue sin ella al continuarlo
 #   --resume modelo      seguir desde otro modelo guardado antes (nombre o ruta); sin esto se sigue el del --name
 #   --watch 6            cuántas pantallas se ven a la vez al abrir la vista (1, 2, 4, 6, 8 o 16; se cambia en la
 #                        propia página). Sólo hay datos para tantas como --envs                [6]

@@ -3,6 +3,9 @@ con un solo pedido HTTP por paso. Necesita gymnasium, numpy y stable-baselines3.
 
 La observación es un vector: la grilla de celdas alrededor de Mario en one-hot (5 clases x 13 x 16), su estado (velocidad,
 si está en el suelo, tamaño, hacia dónde mira, altura) y los 6 enemigos más cercanos (posición relativa y tamaño).
+Con memoria (lo normal en los modelos nuevos) se le suman 19 números que resumen lo que pasó en los últimos pasos: la última acción
+que eligió, hace cuánto no avanza, cuánto retrocedió respecto de lo más lejos que llegó y cuánto se movió en los últimos 8 y 32 pasos
+(clase Memory). Sin eso la red no puede darse cuenta de que lleva rato empujando contra lo mismo y que le conviene retroceder.
 Los episodios se cortan (truncados) a los `max_steps` pasos o si Mario no avanza en `stuck_steps`; al terminar uno, la partida
 arranca de nuevo en un nivel sorteado entre `worlds`.
 """
@@ -15,8 +18,46 @@ from stable_baselines3.common.vec_env import VecEnv
 from smb_env import GRID_COLS, SmbClient, SmbVecClient
 
 N_ENEMIES = 6
-OBS_DIM = 5 * 13 * GRID_COLS + 8 + N_ENEMIES * 4
+BASE_DIM = 5 * 13 * GRID_COLS + 8 + N_ENEMIES * 4
+N_ACTIONS = 14
+MEM_DIM = N_ACTIONS + 5
+OBS_DIM = BASE_DIM + MEM_DIM
 _EYE = np.eye(5, dtype=np.float32)
+
+
+class Memory:
+    """Lo que la red recuerda de un episodio. Se actualiza en cada paso con la acción que se acaba de elegir y la posición en que
+    quedó Mario (la x de la observación, ya redondeada); ia.js tiene la misma cuenta (SmbIA.newMemory) y check_ia.py comprueba que
+    coincidan. Al cambiar de nivel (una zona de atajos, el laberinto) se olvida la posición, no la última acción."""
+    HIST = 33   # posiciones guardadas: la actual y las 32 anteriores
+
+    def __init__(self, x, world):
+        self.prev = None
+        self.reset_position(x, world)
+
+    def reset_position(self, x, world):
+        self.world, self.best, self.since, self.hist = world, x, 0, [x]
+
+    def update(self, action, x, world):
+        self.prev = action
+        if world != self.world:
+            self.reset_position(x, world)
+            return
+        self.hist.append(x)
+        del self.hist[:-self.HIST]
+        if x > self.best + 0.5:
+            self.best, self.since = x, 0
+        else:
+            self.since += 1
+
+    def features(self):
+        out = np.zeros(MEM_DIM, dtype=np.float32)
+        if self.prev is not None:
+            out[self.prev] = 1
+        x, h = self.hist[-1], self.hist
+        out[N_ACTIONS:] = (min(self.since / 32, 1), min(self.since / 200, 1), min(max((self.best - x) / 64, 0), 2),
+                           min(max((x - h[max(0, len(h) - 9)]) / 32, -2), 2), min(max((x - h[max(0, len(h) - 33)]) / 64, -2), 2))
+        return out
 
 
 def featurize(o):
@@ -33,14 +74,15 @@ def featurize(o):
 
 class SmbSb3VecEnv(VecEnv):
     def __init__(self, n_envs, worlds=("1-1",), url="http://127.0.0.1:8777", repeat=4, max_steps=2500, stuck_steps=200,
-                 size="small", hard=False, seed=0, reward_scale=0.1, goal_shaping=0.5):
+                 size="small", hard=False, seed=0, reward_scale=0.1, goal_shaping=0.5, memory=True):
         self.client = SmbVecClient(n_envs, url, worlds=worlds, size=size, hard=hard, seed=seed, repeat=repeat, autoreset=False, obs="compact", shaping=goal_shaping)
         n_actions = len(SmbClient(url).actions)
-        super().__init__(n_envs, gym.spaces.Box(-np.inf, np.inf, shape=(OBS_DIM,), dtype=np.float32), gym.spaces.Discrete(n_actions))
+        super().__init__(n_envs, gym.spaces.Box(-np.inf, np.inf, shape=(OBS_DIM if memory else BASE_DIM,), dtype=np.float32), gym.spaces.Discrete(n_actions))
         self.worlds, self.max_steps, self.stuck_steps, self.reward_scale = list(worlds), max_steps, stuck_steps, reward_scale
         self.rng = random.Random(seed)
         self.seed_counter = seed * 100003
-        self.size, self.hard = size, hard
+        self.size, self.hard, self.memory = size, hard, memory
+        self.mem = [None] * n_envs
         self._actions = None
         self._begin()
 
@@ -69,7 +111,19 @@ class SmbSb3VecEnv(VecEnv):
         self.seed_counter += 1
         self.world[i] = self._pick_world(i)
         self.steps[i], self.best_x[i], self.last_gain[i], self.ret[i] = 0, 0.0, 0, 0.0
-        return featurize(self.client.reset_one(i, self.world[i], seed=self.seed_counter))
+        return self._features(i, self.client.reset_one(i, self.world[i], seed=self.seed_counter), None)
+
+    def _features(self, i, o, action):
+        """Las entradas de la red para la partida i: la observación y, si el modelo tiene memoria, lo que recuerda (se actualiza
+        con la acción elegida, o con None al empezar el episodio)."""
+        f = featurize(o)
+        if not self.memory:
+            return f
+        if action is None:
+            self.mem[i] = Memory(o["m"][0], o["w"])
+        else:
+            self.mem[i].update(action, o["m"][0], o["w"])
+        return np.concatenate([f, self.mem[i].features()])
 
     def reset(self):
         self._begin()
@@ -88,7 +142,7 @@ class SmbSb3VecEnv(VecEnv):
             if info["x"] > self.best_x[i] + 0.5:
                 self.best_x[i], self.last_gain[i] = info["x"], self.steps[i]
             truncated = not done and (self.steps[i] >= self.max_steps or self.steps[i] - self.last_gain[i] >= self.stuck_steps)
-            f = featurize(obs[i])
+            f = self._features(i, obs[i], int(self._actions[i]))
             if done or truncated:
                 info["terminal_observation"] = f
                 info["TimeLimit.truncated"] = truncated

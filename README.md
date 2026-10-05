@@ -16,7 +16,7 @@ Las flechas y `W` `A` `S` `D` hacen lo mismo.
 | `Esc` | Salir al menú sin guardar | Volver |
 | `E` | Editor de niveles | |
 
-Si en el título no se toca nada durante unos 8 segundos, Mario juega solo el 1-1 (demo); cualquier tecla o clic lo corta.
+Si en el título no se toca nada durante unos 8 segundos, arranca un demo en el que juega la IA (ver más abajo); cualquier tecla o clic lo corta.
 
 En el editor: flechas para mover la vista, rueda del ratón para elegir el bloque, clic izquierdo para colocar y clic derecho para borrar.
 
@@ -70,6 +70,8 @@ obs, rewards, dones, infos = vec.step([2] * 8)       # la que termina arranca de
 ```
 
 Si ya hay un modelo guardado, `start` lo continúa (con los mismos niveles y opciones de la vez anterior, y contando los pasos acumulados) en vez de empezar de cero; para empezar de cero está `--nuevo`, que guarda una copia del modelo viejo. Cada partida toma un nivel distinto de los que están en juego, así que la vista muestra un surtido (`--watch 6` por defecto).
+
+**Memoria de la red.** Los modelos nuevos reciben, además de lo que ven (1072 números), 19 que resumen lo que pasó en los últimos pasos: la última acción elegida, hace cuánto no avanza, cuánto retrocedió respecto de lo más lejos que llegó y cuánto se movió en los últimos 8 y 32 pasos (`Memory` en `tools/ai/smb_sb3.py`, y lo mismo en `ia.js`). Sin eso la red no se da cuenta de que lleva rato empujando contra lo mismo y que le conviene retroceder para tomar carrera. Un modelo de antes (1072 entradas) sigue funcionando y se puede seguir entrenando sin memoria; para tenerla hay que empezar un modelo nuevo (`./entrenar.sh start --name memoria`, o `--nuevo`). `train.py` lo detecta solo por el tamaño de la entrada del modelo, y `--memory si|no` fuerza lo que se quiere para los nuevos.
 
 `--worlds` acepta los 32 niveles: nombres (`1-1`), comodines (`1-*`, `*-4`), grupos (`todos`, `exterior`, `subterraneo`, `agua`, `castillo`) y, con un `-` delante, los que se sacan. Por ejemplo `--worlds "todos,-5-*,-6-*"` entrena en todos menos los mundos 5 y 6, que quedan para evaluar si lo aprendido sirve en niveles nuevos (`python3 tools/ai/train.py worlds` los lista con su tipo).
 

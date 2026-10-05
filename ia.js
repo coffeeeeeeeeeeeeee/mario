@@ -3,6 +3,8 @@
 // (tools/ai/smb_sb3.py): mira la grilla de celdas alrededor de Mario, su estado y los enemigos más cercanos, y una red de dos capas
 // escondidas con tanh elige entre 14 combinaciones de botones.
 //
+// Los modelos nuevos tienen además memoria (19 entradas más, ver Memory más abajo); los viejos, entrenados sin ella, siguen andando.
+//
 // La observación tiene que ser idéntica a la de api.js (observeCompact) y smb_sb3.featurize: tools/ai/check.js lo comprueba.
 const SmbIA = (() => {
 	const ACTIONS = [
@@ -11,6 +13,7 @@ const SmbIA = (() => {
 	];
 	const KEYS = { left: 'ArrowLeft', right: 'ArrowRight', down: 'ArrowDown', jump: 'ArrowUp', run: 'ShiftLeft', fire: 'Space' };
 	const COLS = 16, LEFT = 5, ROWS = 13, N_ENEMIES = 6;
+	const BASE_DIM = 5 * ROWS * COLS + 8 + N_ENEMIES * 4, MEM_DIM = ACTIONS.length + 5;
 	const round2 = v => Math.round(v * 100) / 100;
 
 	let net = null;   // { layers: [{ nIn, nOut, act, w: Float32Array, b: Float32Array }], obsDim, meta }
@@ -24,6 +27,7 @@ const SmbIA = (() => {
 			return { nIn: l.in, nOut: l.out, act: l.act, w, b };
 		});
 		if (at !== all.length) throw new Error(`modelo.bin no coincide con modelo.json (${all.length} números, se esperaban ${at})`);
+		if (meta.obsDim !== BASE_DIM && meta.obsDim !== BASE_DIM + MEM_DIM) throw new Error(`la red espera ${meta.obsDim} entradas y ia.js arma ${BASE_DIM} (o ${BASE_DIM + MEM_DIM} con memoria)`);
 		net = { layers, obsDim: meta.obsDim, meta };
 	}
 
@@ -78,16 +82,45 @@ const SmbIA = (() => {
 		return goalCache.cells;
 	}
 
-	// El vector que entra a la red (1072 números): la grilla en one-hot por clase (5 x 13 x 16), el estado de Mario (8) y los 6
+	// Lo que la red recuerda de un episodio: la última acción que eligió, hace cuánto no avanza, cuánto retrocedió respecto de lo más
+	// lejos que llegó y cuánto se movió en los últimos 8 y 32 pasos. Es la misma cuenta que Memory de tools/ai/smb_sb3.py. Se llama a
+	// see() en cada decisión, antes de calcular las entradas, y a choose() con la acción elegida. Al cambiar de nivel se olvida la
+	// posición, no la última acción.
+	class Memory {
+		constructor() { this.prev = null; this.world = null; this.best = 0; this.since = 0; this.hist = []; }
+		see(x, world) {
+			if (world !== this.world) { this.world = world; this.best = x; this.since = 0; this.hist = [x]; return; }
+			this.hist.push(x);
+			if (this.hist.length > 33) this.hist.shift();
+			if (x > this.best + 0.5) { this.best = x; this.since = 0; } else this.since++;
+		}
+		choose(action) { this.prev = action; }
+		features() {
+			const out = new Float32Array(MEM_DIM), h = this.hist, x = h[h.length - 1], clip = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+			if (this.prev !== null) out[this.prev] = 1;
+			const n = ACTIONS.length;
+			out[n] = Math.min(this.since / 32, 1); out[n + 1] = Math.min(this.since / 200, 1); out[n + 2] = clip((this.best - x) / 64, 0, 2);
+			out[n + 3] = clip((x - h[Math.max(0, h.length - 9)]) / 32, -2, 2); out[n + 4] = clip((x - h[Math.max(0, h.length - 33)]) / 64, -2, 2);
+			return out;
+		}
+	}
+
+	// Mira dónde está Mario y lo anota en la memoria (lo mismo que ve el entrenamiento: la x redondeada de la observación)
+	function remember(smb, memory) {
+		const p = smb.engine.animatedSprites[smb.currentPlayerSpriteName()];
+		memory.see(round2((p.position.x - smb.mapOffset.x) / smb.tileScale), smb.currentMap.world);
+	}
+
+	// El vector que entra a la red (1072 números, o 1091 con memoria): la grilla en one-hot por clase (5 x 13 x 16), el estado de Mario (8) y los 6
 	// enemigos más cercanos (4 cada uno). Igual que api.js (observeCompact) más smb_sb3.featurize.
-	function features(smb, mainWorld) {
+	function features(smb, mainWorld, memory = null) {
 		const k = smb.tileScale, top = smb.tileToScreen(0, 0).y;
 		const p = smb.engine.animatedSprites[smb.currentPlayerSpriteName()];
 		const m = smb.currentMap, w = m.dimensions.width;
 		const x = (p.position.x - smb.mapOffset.x) / k;
 		const col0 = Math.floor((x + 8) / 16) - LEFT;
 		const goal = goalCells(smb, mainWorld);
-		const out = new Float32Array(5 * ROWS * COLS + 8 + N_ENEMIES * 4);
+		const out = new Float32Array(BASE_DIM + (memory ? MEM_DIM : 0));
 		for (let r = 2; r < 2 + ROWS; r++) {
 			for (let c = col0; c < col0 + COLS; c++) {
 				const code = c < 0 || c >= w ? 0 : goal.has(r * w + c) ? 4 : cellCode(m.map[r * w + c]);
@@ -114,6 +147,7 @@ const SmbIA = (() => {
 		for (const [ex, ey, ew, eh] of near.slice(0, N_ENEMIES)) {
 			out[i++] = (ex + ew / 2 - cx) / 128; out[i++] = (ey + eh / 2 - cy) / 128; out[i++] = ew / 16; out[i++] = 1;
 		}
+		if (memory) out.set(memory.features(), BASE_DIM);
 		return out;
 	}
 
@@ -155,11 +189,18 @@ const SmbIA = (() => {
 	}
 
 	return {
-		ACTIONS, KEYS, load, setWeights, features, logits, pick, press, release,
+		ACTIONS, KEYS, load, setWeights, features, logits, pick, press, release, remember,
+		newMemory: () => new Memory(),
 		get ready() { return !!net; }, get meta() { return net && net.meta; }, get error() { return error; },
-		// Un paso completo: mira, calcula y aprieta
+		// Un paso completo: mira, calcula y aprieta. Si la red tiene memoria hay que pasar opts.memory (SmbIA.newMemory(), uno por episodio)
 		act(smb, mainWorld, opts = {}) {
-			const a = pick(logits(features(smb, mainWorld)), opts.deterministic ? null : Math.random, opts.temperature ?? 1);
+			const mem = net.obsDim > BASE_DIM ? opts.memory : null;
+			if (net.obsDim > BASE_DIM) {
+				if (!mem) throw new Error('esta red tiene memoria: falta opts.memory (SmbIA.newMemory())');
+				remember(smb, mem);
+			}
+			const a = pick(logits(features(smb, mainWorld, mem)), opts.deterministic ? null : Math.random, opts.temperature ?? 1);
+			if (mem) mem.choose(a);
 			press(smb, a);
 			return a;
 		},

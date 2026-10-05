@@ -33,7 +33,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 
 from smb_env import SmbClient, resolve_worlds
-from smb_sb3 import SmbSb3VecEnv
+from smb_sb3 import BASE_DIM, OBS_DIM, SmbSb3VecEnv
 
 
 class Progress(BaseCallback):
@@ -116,13 +116,28 @@ class Progress(BaseCallback):
         return True
 
 
+def has_memory(a, path):
+    """Si el entorno tiene que darle memoria a la red: la de un modelo guardado se ve por cuántas entradas tiene (así se puede seguir
+    entrenando, o evaluar, uno de antes de que existiera); un modelo nuevo la tiene salvo que se pida --memory no."""
+    if path:
+        dim = PPO.load(path, device="cpu").observation_space.shape[0]
+        if dim not in (BASE_DIM, OBS_DIM):
+            raise SystemExit(f"{path} espera {dim} entradas y el entorno arma {BASE_DIM} (sin memoria) o {OBS_DIM} (con memoria)")
+        if a.memory != "auto" and (a.memory == "si") != (dim == OBS_DIM):
+            raise SystemExit(f"{path} {'tiene' if dim == OBS_DIM else 'no tiene'} memoria y se pidió --memory {a.memory}: para cambiarlo hay que entrenar un modelo nuevo (otro --name o --nuevo)")
+        return dim == OBS_DIM
+    return a.memory != "no"
+
+
 def train(a):
     torch.set_num_threads(a.threads)
     worlds = resolve_worlds(a.worlds, SmbClient(a.url).levels)
     if a.seed is None:   # al retomar, otra semilla: si no, el agente vería otra vez los mismos primeros episodios
         a.seed = int(time.time()) % 100000 if a.resume else 0
     print(f"entrenando en {len(worlds)} nivel{'es' if len(worlds) > 1 else ''}: {' '.join(worlds)}", flush=True)
-    env = SmbSb3VecEnv(a.envs, worlds=worlds, url=a.url, seed=a.seed, goal_shaping=a.goal_shaping)
+    memory = has_memory(a, a.resume)
+    print("con memoria (últimas acciones y avance)" if memory else "SIN memoria (modelo de antes; para tenerla hay que empezar un modelo nuevo)", flush=True)
+    env = SmbSb3VecEnv(a.envs, worlds=worlds, url=a.url, seed=a.seed, goal_shaping=a.goal_shaping, memory=memory)
     model = PPO("MlpPolicy", env, learning_rate=lambda f: a.lr * f, n_steps=128, batch_size=256, n_epochs=4, gamma=0.995,
                 gae_lambda=0.95, clip_range=0.2, ent_coef=0.01, seed=a.seed, verbose=0,
                 policy_kwargs=dict(net_arch=dict(pi=[256, 128], vf=[256, 128])))
@@ -137,7 +152,7 @@ def train(a):
             pass
         print(f"continuando desde {a.resume} ({done_before} pasos acumulados)", flush=True)
     progress = Progress(save_path=a.out, save_every=a.save_every, offset=done_before, url=a.url,
-                        info={"target_steps": a.steps, "envs": a.envs, "worlds": len(worlds), "shaping": a.goal_shaping, "resumed_from": done_before})
+                        info={"memory": memory, "target_steps": a.steps, "envs": a.envs, "worlds": len(worlds), "shaping": a.goal_shaping, "resumed_from": done_before})
     # Con TERM o INT (por ejemplo, ./entrenar.sh stop) se corta y se guarda lo aprendido hasta ahí
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: setattr(progress, "stop", True))
@@ -150,7 +165,7 @@ def evaluate(a):
     worlds = resolve_worlds(a.worlds, SmbClient(a.url).levels)
     model = PPO.load(a.model, device="cpu")
     n = min(a.envs, len(worlds) * a.episodes)
-    env = SmbSb3VecEnv(n, worlds=worlds, url=a.url, seed=(a.seed or 0) + 7, max_steps=a.max_steps)
+    env = SmbSb3VecEnv(n, worlds=worlds, url=a.url, seed=(a.seed or 0) + 7, max_steps=a.max_steps, memory=has_memory(a, a.model if os.path.exists(a.model) else a.model + ".zip"))
     results = collections.defaultdict(list)
     obs = env.reset()
     target = len(worlds) * a.episodes
@@ -185,6 +200,7 @@ if __name__ == "__main__":
     p.add_argument("--deterministic", action="store_true")
     p.add_argument("--lr", type=float, default=2.5e-4)
     p.add_argument("--goal-shaping", type=float, default=0.5, help="peso de la recompensa por acercarse a la meta; 0 la apaga")
+    p.add_argument("--memory", choices=["auto", "si", "no"], default="auto", help="darle a la red memoria de los últimos pasos (auto: la de un modelo que se retoma; si es nuevo, sí)")
     p.add_argument("--threads", type=int, default=2)
     p.add_argument("--seed", type=int, default=None, help="semilla (si se retoma un modelo, por defecto una distinta cada vez)")
     p.add_argument("--url", default="http://127.0.0.1:8777")
