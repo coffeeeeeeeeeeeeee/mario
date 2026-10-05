@@ -28,6 +28,8 @@
 #   --port 8777          puerto del servidor                                               [8777]
 #   --no-browser         no abrir el navegador (la dirección se muestra igual)
 #
+# Los accesos directos del escritorio llaman a "start" sin opciones: usa los de la última vez (niveles, pasos, partidas, nombre del
+# modelo, vista), así que arrancan igual que la última corrida a mano. start también evita que la máquina se suspenda mientras entrena.
 # Con --pausa al principio (./entrenar.sh --pausa start) la ventana espera una tecla al terminar; sirve para los accesos directos.
 # Todo lo que genera queda en .entrenamiento/: modelos/modelo.zip (el modelo, que se va acumulando) con modelo.json (los pasos que lleva),
 # las copias de los últimos 5 arranques, train.log (la corrida actual) e historial.log (las anteriores). Se puede cambiar el Python con PYTHON=ruta.
@@ -165,6 +167,10 @@ cmd_start() {
 
 	launch "$RUN/train.pid" "$RUN/train.log" "$PY" -u tools/ai/train.py train --worlds "$WORLDS" --steps "$STEPS" --envs "$ENVS" \
 		--out "$RUN/modelos/$NAME" --url "http://127.0.0.1:$PORT" --goal-shaping "$SHAPING" "${resume_args[@]}"
+	# Mientras el entrenamiento viva, la máquina no se suspende por inactividad (el bloqueo termina solo con el entrenamiento)
+	if command -v systemd-inhibit >/dev/null 2>&1 && [ -s "$RUN/train.pid" ]; then
+		launch "$RUN/inhibit.pid" /dev/null systemd-inhibit --what=sleep:idle --who="entrenamiento mario" --why="entrenamiento de la IA" tail --pid="$(cat "$RUN/train.pid")" -f /dev/null
+	fi
 	printf 'PORT=%q\nWATCH=%q\nSPEED=%q\nNAME=%q\nWORLDS=%q\nSTEPS=%q\nENVS=%q\nSHAPING=%q\n' "$PORT" "$WATCH" "$SPEED" "$NAME" "$WORLDS" "$STEPS" "$ENVS" "$SHAPING" > "$RUN/settings"
 
 	if [ ${#resume_args[@]} -gt 0 ]; then echo "Continuando desde ${resume_args[1]}."; else echo "Empezando de cero."; fi
@@ -192,6 +198,7 @@ cmd_stop() {
 	echo "Deteniendo el entrenamiento (se guarda el modelo)..."
 	stop_one "$RUN/train.pid" "el entrenamiento" 60
 	stop_one "$RUN/server.pid" "el servidor" 5
+	stop_one "$RUN/inhibit.pid" "el bloqueo de suspensión" 5
 	[ -f "$RUN/train.log" ] && tail -n 2 "$RUN/train.log"
 	echo "Modelos en $RUN/modelos/"
 }
