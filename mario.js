@@ -166,6 +166,7 @@ const MT = {
 	Brick: 0x51, BrickUnderground: 0x52, Ground: 0x54,
 	HiddenCoin: 0x5f, Hidden1Up: 0x60, Hard: 0x61,
 	Axe: 0xc5,
+	Bumping: 0xfe,   // el casillero de un bloque mientras rebota: sigue siendo sólido, aunque no se dibuja
 	QuestionCoin: 0xc0, QuestionPowerup: 0xc1, Coin: 0xc2, CoinWater: 0xc3, Used: 0xc4,
 };
 
@@ -949,6 +950,7 @@ class Game {
 	// Nombre del sprite con el que se dibuja una celda del mapa (null si no se dibuja).
 	spriteNameForCell(blockId, idx) {
 		if (blockId >= 0x100) return ENEMY_MARKERS.find(m => m.id === blockId)?.sprite ?? null;
+		if (blockId === MT.Bumping) return null;   // lo dibuja el bloque que rebota
 		if (HIDDEN_BLOCKS.has(blockId)) return this.isEditorMode ? 'Block_Invisible' : null;
 		if (BLOCK_ITEM[blockId] === 'coins') {
 			// Ladrillo con monedas: parece un ladrillo hasta el primer golpe y queda vacío al agotarse
@@ -3796,7 +3798,7 @@ class Game {
 						// golpe anterior sigue rebotando (16 cuadros), el bloque tampoco se procesa
 						const bumpable = isBumpableMetatile(blockId);
 						if (!bumpable || this.isWater || this.blockBounceTimer > 0) {
-							if (!bumpable) this.engine.playAudioOverlap(audio["Player_Bump"]);
+							if (!bumpable && blockId !== MT.Bumping) this.engine.playAudioOverlap(audio["Player_Bump"]);
 							this.velocityY = kc; playerPos.y = this.tileToScreen(headCenterTile.x, headCenterTile.y + 1).y - headOff; hitCeiling = true;
 						} else {
 
@@ -3858,7 +3860,7 @@ class Game {
 
 							if (!isAlreadyBumping && !justExhausted) {
 								this.bumpingBlocks.push({ x: blockX, y: blockY, originalY: blockY, vY: -6, mapIndex: idx, originalId: blockId });
-								this.currentMap.map[idx] = 0;
+								this.currentMap.map[idx] = MT.Bumping;   // sólido hasta que termine el rebote: si no, saltando de nuevo se lo atraviesa
 								ceilingSpeed = SMB_BUMP_SPEED;
 							}
 
@@ -4011,6 +4013,15 @@ class Game {
 					if (!blocked) this.wallHug = 0;
 					if (scroll > 0) { this.mapOffset.x -= scroll; this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x); }
 				}
+			}
+			// En todos los cuadros, se mueva o no: si un costado del cuerpo quedó dentro de un sólido (por ejemplo, subió rozando la
+			// esquina de una pila de ladrillos, donde el punto de la cabeza no llega a chocar), se lo saca 1 px por cuadro hacia el lado
+			// libre. Sin esto quedaba metido en la pared y al bajar aterrizaba sobre un ladrillo del medio de la pila.
+			if (!this.climbVine) {
+				const inLeft = sideYs.some(dy => solidAtPt(playerPos.x + 2 * kc, playerPos.y + dy));
+				const inRight = sideYs.some(dy => solidAtPt(playerPos.x + 13 * kc, playerPos.y + dy));
+				if (inRight && !inLeft) playerPos.x = Math.max(0, playerPos.x - kc);
+				else if (inLeft && !inRight) playerPos.x += kc;
 			}
 			// El salto solo se dispara al apretar: mantener apretado no repite.
 			const jumpDown = !!(this.engine.keysPressed['ArrowUp'] || this.engine.keysPressed['KeyW']);
