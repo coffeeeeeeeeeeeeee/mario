@@ -122,6 +122,38 @@ function putStats(s) {
 	if (statsHistory.length > 240) statsHistory.shift();
 }
 
+// Evolución del entrenamiento para la solapa de /watch: se arma leyendo los registros de la carpeta de trabajo (RUN_DIR, que pasa
+// entrenar.sh): historial.log, con las corridas anteriores, y train.log, con la actual. Cada tanto train.py anota una línea con el
+// avance medio, el porcentaje de llegadas a la meta, etc. de los últimos 100 episodios. Un modelo con memoria y uno sin ella son dos series.
+const RUN_DIR = path.resolve(ROOT, process.env.RUN_DIR || '.entrenamiento');
+const PROGRESS_LINE = /^\s*(\d+) pasos \|\s*(\d+) pasos\/s \| avance medio\s*([\d.]+)% \| mástil\s*([\d.]+)% \| recompensa\s*(-?[\d.]+)/;
+let evoCache = { key: '', value: null };
+function readEvolution() {
+	const files = ['historial.log', 'train.log'].map(f => path.join(RUN_DIR, f));
+	const key = files.map(f => { try { const st = fs.statSync(f); return st.mtimeMs + ':' + st.size; } catch (e) { return '-'; } }).join('|');
+	if (evoCache.key === key) return evoCache.value;
+	const read = f => { try { return fs.readFileSync(f, 'utf8'); } catch (e) { return ''; } };
+	const sections = read(files[0]).split(/^===== .* =====$/m).concat(read(files[1])).filter(t => t.trim());
+	const runs = {};
+	for (const sec of sections) {
+		const name = /con memoria/.test(sec) ? 'memoria' : 'sinmemoria';
+		const points = []; let recipe = null;
+		for (const line of sec.split('\n')) {
+			const m = PROGRESS_LINE.exec(line);
+			if (m) points.push([+m[1], +m[3], +m[4], +m[2], +m[5]]);   // pasos, avance %, mástil %, pasos/s, recompensa
+			else { const r = /^receta: (.*)$/.exec(line); if (r) recipe = r[1]; }
+		}
+		if (!points.length) continue;
+		const run = runs[name] || (runs[name] = { points: [], starts: [] });
+		const from = points[0][0];   // un tramo que se retomó de un guardado pisa lo que hubiera pasado de ese punto
+		run.points = run.points.filter(p => p[0] < from).concat(points);
+		run.starts = run.starts.filter(s => s.steps < from).concat([{ steps: from, recipe }]);
+	}
+	const value = { runs, now: Date.now() / 1000 };
+	evoCache = { key, value };
+	return value;
+}
+
 // Registro de lo que juega cada partida, para poder verla en /watch: cómo arrancó cada episodio y las acciones de cada paso.
 // Como el juego es determinista, repetir eso en un navegador da exactamente la misma partida.
 const recordings = new Map();   // env -> { next, list: [episodio, ...] }
@@ -188,6 +220,7 @@ async function handleApi(url, body) {
 		case '/api/step': return stepEnv(env, body.action, body.repeat, { left: body.left, right: body.right, obs: body.obs }, body.autoreset);
 		case '/api/observe': return onEnv(env, () => backend.call(env, 'observe', [{ obs: url.searchParams.get('obs') || body.obs }]));
 		case '/api/pixels': return onEnv(env, () => backend.call(env, 'pixels', [+(url.searchParams.get('w') || 84), +(url.searchParams.get('h') || 84)]));
+		case '/api/evolucion': return readEvolution();
 		case '/api/stats':
 			if (body && body.total_steps !== undefined) { putStats(body); return { ok: true }; }
 			return { stats: trainStats, history: statsHistory, now: Date.now() / 1000 };

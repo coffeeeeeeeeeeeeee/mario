@@ -67,17 +67,18 @@ const SmbIA = (() => {
 	}
 
 	// Celdas de la boca de los caños que llevan a otro de los 32 niveles (distinto del nivel principal en que está Mario)
-	let goalCache = { map: null, mainWorld: null, cells: null };
+	let goalCache = { map: null, mainWorld: null, cells: null, mazeKey: null };
 	function goalCells(smb, mainWorld) {
-		const m = smb.currentMap;
-		if (goalCache.map !== m || goalCache.mainWorld !== mainWorld) {
+		const m = smb.currentMap, mz = smb.mazeGoal();
+		if (goalCache.map !== m || goalCache.mainWorld !== mainWorld || goalCache.mazeKey !== (mz ? mz.key : null)) {
 			const w = m.dimensions.width, cells = new Set();
 			for (const wp of m.warps || []) {
 				if (!(smb.availableWorlds.includes(wp.to) && wp.to !== '0-0' && wp.to !== mainWorld)) continue;
 				if (wp.type === 'right') { cells.add(wp.y * w + wp.x); cells.add((wp.y + 1) * w + wp.x); }
 				else if (wp.type === 'down') { cells.add(wp.y * w + wp.x); cells.add(wp.y * w + wp.x + 1); }
 			}
-			goalCache = { map: m, mainWorld, cells };
+			if (mz) for (const c of mz.cells) cells.add(c);   // los niveles con laberinto suman lo que marca el motor (ver smb.mazeGoal)
+			goalCache = { map: m, mainWorld, cells, mazeKey: mz ? mz.key : null };
 		}
 		return goalCache.cells;
 	}

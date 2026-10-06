@@ -2045,6 +2045,40 @@ class Game {
 		}
 	}
 
+	// Lo que la IA tiene que alcanzar en los niveles con laberinto (4-4, 7-4, 8-4), donde avanzar no alcanza: devuelve las celdas y los
+	// puntos (centros, en px lógicos) a marcar como meta, o null si el nivel no tiene laberinto.
+	//  - El suelo donde hay que estar parado cuando el borde derecho de la pantalla cruza el próximo punto del laberinto (updateLoops):
+	//    los tiles de la fila que corresponde a su altura, en las columnas donde Mario está en ese momento (la pantalla lo deja entre
+	//    el 31 % y el 44 % de su ancho, así que a 56-69 % del ancho antes del borde).
+	//  - Los caños que adelantan a Mario dentro del mismo nivel (los que lo devuelven al principio no se marcan), como en 8-4.
+	// Se guarda mientras no cambie el próximo punto o el ancho de la pantalla.
+	mazeGoal() {
+		const m = this.currentMap;
+		if (!m || !m.loops || !m.loops.length) return null;
+		const k = this.tileScale, w = m.dimensions.width, h = m.dimensions.height, W = this.engine.getCanvasWidth() / k;
+		const right = (-this.mapOffset.x + this.engine.getCanvasWidth()) / k;
+		const next = m.loops.findIndex(L => L.page * 256 > right);
+		const key = `${next}/${Math.round(W)}`;
+		if (this.mazeCache && this.mazeCache.map === m && this.mazeCache.key === key) return this.mazeCache;
+		const solid = (r, c) => isSolidMetatile(m.map[r * w + c]);
+		const cells = new Set(), points = [];
+		const add = (c, r) => { cells.add(r * w + c); points.push([c * 16 + 8, r * 16 + 8]); };
+		if (next >= 0) {
+			const L = m.loops[next], r = 2 + L.y / 16;
+			if (Number.isInteger(r) && r >= 3 && r < h) {
+				const c0 = Math.floor((L.page * 256 - 0.6875 * W) / 16) - 1, c1 = Math.ceil((L.page * 256 - 0.5625 * W) / 16) + 1;
+				for (let c = Math.max(0, c0); c <= Math.min(w - 1, c1); c++) if (solid(r, c) && !solid(r - 1, c)) add(c, r);
+			}
+		}
+		for (const wp of m.warps || []) {
+			const back = wp.to === m.world ? wp.spawn : ((map.find(x => x.world === wp.to)?.warps) || []).find(b => b.to === m.world)?.spawn;
+			if (!back || back.x <= wp.x + 8) continue;
+			if (wp.type === 'right') { add(wp.x, wp.y); add(wp.x, wp.y + 1); }
+			else if (wp.type === 'down') { add(wp.x, wp.y); add(wp.x + 1, wp.y); }
+		}
+		return this.mazeCache = { map: m, key, cells, points };
+	}
+
 	loopBack(edgeCol) {
 		// Lo que ya está en pantalla no se vuelve a armar: Mario sigue parado sobre el mismo terreno y lo
 		// que sale por la derecha es lo que había cuatro páginas atrás. Acá el mapa es fijo, así que las columnas visibles se
@@ -3418,22 +3452,39 @@ class Game {
 		this.drawScenery();
 	}
 
+	// Columnas del mapa que se ven en pantalla, con una de margen a cada lado: lo que queda afuera no hace falta dibujarlo
+	// (un nivel tiene unas 200 columnas y la pantalla muestra 14)
+	visibleColumns() {
+		const w = this.currentMap.dimensions.width, ts = this.tileSize;
+		return [Math.max(0, Math.floor(-this.mapOffset.x / ts) - 1), Math.min(w, Math.ceil((this.engine.getCanvasWidth() - this.mapOffset.x) / ts) + 1)];
+	}
+
+	// Recorre los casilleros visibles en el mismo orden de siempre (fila por fila) y llama a draw(id, índice, x, y) con la posición en
+	// pantalla; es la misma cuenta que tileToScreen, sin armar un objeto por casillero
+	forEachVisibleTile(draw) {
+		const { width: mapWidth, height: mapHeight } = this.currentMap.dimensions, map = this.currentMap.map, ts = this.tileSize;
+		const mx = this.mapOffset.x, my = this.mapOffset.y - (mapHeight * ts - this.engine.getCanvasHeight());
+		const [c0, c1] = this.visibleColumns();
+		for (let r = 0; r < mapHeight; r++) {
+			const y = r * ts + my, rowBase = r * mapWidth;
+			for (let c = c0; c < c1; c++) draw(map[rowBase + c], rowBase + c, c * ts + mx, y);
+		}
+	}
+
 	drawBlocks(){
 		if (!this.currentMap) return;
 
-		const mapWidth = this.currentMap.dimensions.width;
-		for (let i = 0; i < this.currentMap.map.length; i++) {
-			const blockId = this.currentMap.map[i];
-			if (blockId === 0 || this.foregroundBlocks.includes(blockId)) continue;
+		const fg = this.foregroundSet ??= new Set(this.foregroundBlocks), sprites = this.engine.sprites, pos = { x: 0, y: 0 };
+		this.forEachVisibleTile((blockId, i, x, y) => {
+			if (blockId === 0 || fg.has(blockId)) return;
 
 			const spriteName = this.spriteNameForCell(blockId, i);
-			const sprite = spriteName && this.engine.sprites[spriteName];
-			if (!sprite) continue;
+			const sprite = spriteName && sprites[spriteName];
+			if (!sprite) return;
 
-			const coords = this.engine.indexToCoords(i, mapWidth);
-			const blockPos = this.tileToScreen(Math.floor(coords.x), Math.floor(coords.y));
-			this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
-		}
+			pos.x = x; pos.y = y;
+			this.engine.drawSprite(spriteName, 0, pos, sprite.scale, false, 0, Pivot.Top_Left);
+		});
 		this.drawFlagpoleFlagAtRest();
 	}
 
@@ -3453,19 +3504,16 @@ class Game {
 
 	drawForegroundBlocks() {
 		if (!this.currentMap) return;
-		const mapWidth = this.currentMap.dimensions.width;
-		for (let i = 0; i < this.currentMap.map.length; i++) {
-			const blockId = this.currentMap.map[i];
-			if (!this.foregroundBlocks.includes(blockId)) continue;
-			const coords = this.engine.indexToCoords(i, mapWidth);
-			const blockPos = this.tileToScreen(coords.x, coords.y);
+		const fg = this.foregroundSet ??= new Set(this.foregroundBlocks), sprites = this.engine.sprites, pos = { x: 0, y: 0 };
+		this.forEachVisibleTile((blockId, i, x, y) => {
+			if (!fg.has(blockId)) return;
 			const spriteName = this.spriteNameForCell(blockId, i);
-			const sprite = spriteName && this.engine.sprites[spriteName];
-
+			const sprite = spriteName && sprites[spriteName];
 			if (sprite) {
-				this.engine.drawSprite(spriteName, 0, blockPos, sprite.scale, false, 0, Pivot.Top_Left);
+				pos.x = x; pos.y = y;
+				this.engine.drawSprite(spriteName, 0, pos, sprite.scale, false, 0, Pivot.Top_Left);
 			}
-		}
+		});
 	}
 
 	spawnFireball() {

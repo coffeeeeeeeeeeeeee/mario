@@ -59,6 +59,9 @@ class Progress(BaseCallback):
         with open(self.save_path + ".json.tmp", "w") as f:
             json.dump({"steps": self.offset + self.num_timesteps}, f)
         os.replace(self.save_path + ".json.tmp", self.save_path + ".json")
+        env = self.training_env
+        if getattr(env, "level_stats", None):
+            env.save_level_stats(self.save_path + ".niveles.json")
 
     def _on_rollout_end(self):
         self.report()
@@ -108,6 +111,11 @@ class Progress(BaseCallback):
                 self.recent.append(info["episode"])
         if self.num_timesteps >= self.next and self.recent:
             self.next += self.every
+            env = self.training_env
+            if getattr(env, "adaptive_levels", False) and self.next % (self.every * 5) == 0:
+                t = env.level_table()
+                show = lambda r: f"{r[0]} {r[1]:.1f}" + (f" ({100 * r[2]['p']:.0f}%)" if r[2] else "")
+                print("niveles con más peso: " + ", ".join(show(r) for r in t[:5]) + " | con menos: " + ", ".join(show(r) for r in t[-3:]), flush=True)
             n = len(self.recent)
             print(f"{self.offset + self.num_timesteps:>9} pasos | {self.num_timesteps / (time.time() - self.t0):>5.0f} pasos/s | "
                   f"avance medio {100 * sum(e['progress'] for e in self.recent) / n:4.1f}% | "
@@ -137,13 +145,15 @@ def train(a):
     print(f"entrenando en {len(worlds)} nivel{'es' if len(worlds) > 1 else ''}: {' '.join(worlds)}", flush=True)
     memory = has_memory(a, a.resume)
     print("con memoria (últimas acciones y avance)" if memory else "SIN memoria (modelo de antes; para tenerla hay que empezar un modelo nuevo)", flush=True)
+    print(f"receta: avance={a.progress_reward} inicio_medio={a.mid_start} entropia={a.ent_coef} partidas={a.envs} niveles_segun_avance={a.adaptive_levels}", flush=True)   # la lee la solapa Evolución de /watch
     env = SmbSb3VecEnv(a.envs, worlds=worlds, url=a.url, seed=a.seed, goal_shaping=a.goal_shaping, memory=memory,
-                          progress_reward=a.progress_reward, mid_start=a.mid_start)
+                          progress_reward=a.progress_reward, mid_start=a.mid_start, adaptive_levels=a.adaptive_levels == "si")
     model = PPO("MlpPolicy", env, learning_rate=lambda f: a.lr * f, n_steps=128, batch_size=256, n_epochs=4, gamma=0.995,
                 gae_lambda=0.95, clip_range=0.2, ent_coef=a.ent_coef, seed=a.seed, verbose=0,
                 policy_kwargs=dict(net_arch=dict(pi=[256, 128], vf=[256, 128])))
     if a.resume:
         model.set_parameters(a.resume)
+        env.load_level_stats(os.path.splitext(a.resume)[0] + ".niveles.json")   # cómo le iba en cada nivel antes de parar
     done_before = 0
     if a.resume:
         try:
@@ -153,7 +163,7 @@ def train(a):
             pass
         print(f"continuando desde {a.resume} ({done_before} pasos acumulados)", flush=True)
     progress = Progress(save_path=a.out, save_every=a.save_every, offset=done_before, url=a.url,
-                        info={"memory": memory, "progress_reward": a.progress_reward, "mid_start": a.mid_start, "ent_coef": a.ent_coef, "target_steps": a.steps, "envs": a.envs, "worlds": len(worlds), "shaping": a.goal_shaping, "resumed_from": done_before})
+                        info={"memory": memory, "adaptive_levels": a.adaptive_levels, "progress_reward": a.progress_reward, "mid_start": a.mid_start, "ent_coef": a.ent_coef, "target_steps": a.steps, "envs": a.envs, "worlds": len(worlds), "shaping": a.goal_shaping, "resumed_from": done_before})
     # Con TERM o INT (por ejemplo, ./entrenar.sh stop) se corta y se guarda lo aprendido hasta ahí
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, lambda *_: setattr(progress, "stop", True))
@@ -206,6 +216,8 @@ if __name__ == "__main__":
                    help="best: sólo suma lo que pasa de lo más lejos que llegó (retroceder para tomar carrera cuesta sólo el reloj); signed: suma lo que avanza y resta lo que retrocede")
     p.add_argument("--mid-start", type=float, default=0.3, help="fracción de los episodios que empiezan en el medio del nivel, para ver más lugares que piden retroceder")
     p.add_argument("--ent-coef", type=float, default=0.02, help="coeficiente de entropía de PPO: más alto, más exploración (antes 0,01)")
+    p.add_argument("--adaptive-levels", choices=["si", "no"], default="si",
+                   help="sortear los niveles según cómo le va a la IA en cada uno: más los que está aprendiendo, menos los que ya domina")
     p.add_argument("--threads", type=int, default=2)
     p.add_argument("--seed", type=int, default=None, help="semilla (si se retoma un modelo, por defecto una distinta cada vez)")
     p.add_argument("--url", default="http://127.0.0.1:8777")

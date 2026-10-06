@@ -9,6 +9,8 @@ que eligió, hace cuánto no avanza, cuánto retrocedió respecto de lo más lej
 Los episodios se cortan (truncados) a los `max_steps` pasos o si Mario no avanza en `stuck_steps`; al terminar uno, la partida
 arranca de nuevo en un nivel sorteado entre `worlds`.
 """
+import json
+import os
 import random
 
 import numpy as np
@@ -72,9 +74,20 @@ def featurize(o):
     return np.concatenate([grid.transpose(2, 0, 1).ravel(), mario, enemies.ravel()])
 
 
+def level_weight(st):
+    """Cuánto conviene jugar un nivel según cómo le va a la IA (st: episodios, avance medio p y proporción de llegadas c, de 0 a 1).
+    Los que ya domina (c alto) pesan poco; los que está a mitad de camino (p cerca de 0,5) pesan lo máximo, porque ahí hay algo que
+    aprender; los que no logra despegar (p cerca de 0) pesan un poco más que los dominados, para no dejarlos de lado. Mientras hay
+    menos de 3 episodios no se sabe nada y vale 1."""
+    if st is None or st["n"] < 3:
+        return 1.0
+    p, c = st["p"], st["c"]
+    return 0.2 + (1 - c) * (0.4 + 1.4 * 4 * p * (1 - p))
+
+
 class SmbSb3VecEnv(VecEnv):
     def __init__(self, n_envs, worlds=("1-1",), url="http://127.0.0.1:8777", repeat=4, max_steps=2500, stuck_steps=200,
-                 size="small", hard=False, seed=0, reward_scale=0.1, goal_shaping=0.5, memory=True, progress_reward="best", mid_start=0.0):
+                 size="small", hard=False, seed=0, reward_scale=0.1, goal_shaping=0.5, memory=True, progress_reward="best", mid_start=0.0, adaptive_levels=False):
         self.client = SmbVecClient(n_envs, url, worlds=worlds, size=size, hard=hard, seed=seed, repeat=repeat, autoreset=False, obs="compact", shaping=goal_shaping, reward=progress_reward)
         n_actions = len(SmbClient(url).actions)
         super().__init__(n_envs, gym.spaces.Box(-np.inf, np.inf, shape=(OBS_DIM if memory else BASE_DIM,), dtype=np.float32), gym.spaces.Discrete(n_actions))
@@ -82,6 +95,8 @@ class SmbSb3VecEnv(VecEnv):
         self.rng = random.Random(seed)
         self.seed_counter = seed * 100003
         self.size, self.hard, self.memory = size, hard, memory
+        self.adaptive_levels = adaptive_levels   # sortear los niveles según cómo le va a la IA en cada uno (sólo al entrenar)
+        self.level_stats = {}   # nivel -> {n, p, c}: promedio móvil del avance y de las llegadas de sus episodios
         self.mid_start = mid_start   # fracción de los episodios que empiezan en el medio del nivel (sólo al entrenar)
         self.mem = [None] * n_envs
         self._actions = None
@@ -104,10 +119,39 @@ class SmbSb3VecEnv(VecEnv):
         # tampoco coinciden dos niveles iguales ahí
         blocked = in_use | set(self.recent)
         free = [w for w in self.worlds if w not in blocked] or [w for w in self.worlds if w not in in_use]
-        w = self.rng.choice(free or self.worlds)
+        pool = free or self.worlds
+        if self.adaptive_levels:
+            w = self.rng.choices(pool, weights=[level_weight(self.level_stats.get(x)) for x in pool])[0]
+        else:
+            w = self.rng.choice(pool)
         self.recent.append(w)
         del self.recent[:max(0, len(self.recent) - min(len(self.worlds) - 1, 2 * self.num_envs))]
         return w
+
+    def record_level(self, world, progress, clear):
+        st = self.level_stats.setdefault(world, {"n": 0, "p": 0.0, "c": 0.0})
+        st["n"] += 1
+        a = max(0.1, 1 / st["n"])   # los primeros episodios promedian por igual; después pesan más los recientes
+        st["p"] += a * (progress - st["p"])
+        st["c"] += a * (float(clear) - st["c"])
+
+    def save_level_stats(self, path):
+        tmp = path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.level_stats, f)
+        os.replace(tmp, path)
+
+    def load_level_stats(self, path):
+        try:
+            with open(path) as f:
+                self.level_stats = {k: v for k, v in json.load(f).items() if k in self.worlds}
+        except (OSError, ValueError):
+            pass
+
+    def level_table(self):
+        """Los niveles con su peso de sorteo, de mayor a menor (para el registro)."""
+        rows = [(w, level_weight(self.level_stats.get(w)), self.level_stats.get(w)) for w in self.worlds]
+        return sorted(rows, key=lambda r: -r[1])
 
     def _start(self, i):
         self.seed_counter += 1
@@ -154,6 +198,8 @@ class SmbSb3VecEnv(VecEnv):
                 info["TimeLimit.truncated"] = truncated
                 info["episode"] = {"r": self.ret[i], "l": self.steps[i], "world": self.world[i], "clear": info.get("reason") == "clear",
                                    "progress": min(1.0, max(0.0, self.best_x[i] - self.start_x[i]) / max(1, info.get("width", 1) - self.start_x[i]))}
+                if self.start_x[i] == 0:   # sólo los que empezaron desde el principio: así el avance de cada nivel es comparable
+                    self.record_level(self.world[i], info["episode"]["progress"], info["episode"]["clear"])
                 f = self._start(i)
             feats.append(f)
             out_r.append(rewards[i] * self.reward_scale)

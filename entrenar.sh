@@ -24,6 +24,8 @@
 #   --progress-reward best   best: sólo suma lo que pasa de lo más lejos que llegó (retroceder cuesta sólo el reloj);
 #                        signed: suma lo que avanza y resta lo que retrocede                                  [best]
 #   --ent-coef 0.02      coeficiente de entropía de PPO: más alto, más exploración                          [0.02]
+#   --adaptive-levels si  sortear los niveles según cómo le va a la IA en cada uno (más los que está aprendiendo, menos
+#                        los que ya domina; lo anotado se guarda junto al modelo, en modelo.niveles.json)  [si]
 #   --nuevo              empezar de cero aunque haya un modelo guardado (el viejo queda como modelo.copia-FECHA.zip). Los modelos
 #                        nuevos llevan memoria de los últimos pasos; uno de antes (sin ella) sigue sin ella al continuarlo
 #   --resume modelo      seguir desde otro modelo guardado antes (nombre o ruta); sin esto se sigue el del --name
@@ -109,6 +111,7 @@ cmd_start() {
 			--mid-start) TRAIN_EXTRA+=(--mid-start "$2"); shift 2 ;;
 			--progress-reward) TRAIN_EXTRA+=(--progress-reward "$2"); shift 2 ;;
 			--ent-coef) TRAIN_EXTRA+=(--ent-coef "$2"); shift 2 ;;
+			--adaptive-levels) TRAIN_EXTRA+=(--adaptive-levels "$2"); shift 2 ;;
 			--nuevo) NEW=1; shift ;;
 			*) die "opción desconocida: $1 (mirá el principio de este archivo)" ;;
 		esac
@@ -165,7 +168,7 @@ cmd_start() {
 	if curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1; then
 		die "el puerto $PORT ya está en uso (¿otro entrenamiento que sigue en marcha? probá ./entrenar.sh stop o --port)"
 	fi
-	PORT=$PORT launch "$RUN/server.pid" "$RUN/server.log" node tools/ai/server.js
+	PORT=$PORT RUN_DIR="$RUN" launch "$RUN/server.pid" "$RUN/server.log" node tools/ai/server.js
 	for _ in $(seq 1 50); do
 		curl -sf "http://127.0.0.1:$PORT/api/info" >/dev/null 2>&1 && break
 		alive "$RUN/server.pid" || { cat "$RUN/server.log"; die "el servidor no arrancó"; }

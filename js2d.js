@@ -763,7 +763,7 @@ class Js2d {
 		this.canvas.style.top = '50%';
 		this.canvas.style.transform = 'translate(-50%, -50%)';
 
-		if (this.ctx) this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+		if (this.ctx) { this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING; }   // cambiar el tamaño del canvas reinicia el contexto
 	}
 
 	// Tope del delta, en segundos. Cuando la pestaña queda en segundo plano el navegador frena
@@ -805,6 +805,7 @@ class Js2d {
 		// lógica completa. Todo lo que se dibuje después queda en píxeles CSS y se rasteriza
 		// a la densidad real de la pantalla.
 		this.ctx.setTransform(this.dpr || 1, 0, 0, this.dpr || 1, 0, 0);
+		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
 		this.ctx.fillStyle = color;
 		this.ctx.fillRect(0, 0, this.getCanvasWidth(), this.getCanvasHeight());
 	}
@@ -1798,13 +1799,18 @@ class Js2d {
 			sWidth = tileset.tileWidth;
 			sHeight = tileset.tileHeight;
 
-			// Calculamos el recorte basado en las coordenadas del tile + el frame de la animación
-			const framesPerRow = Math.floor(image._w / sWidth);
-			const startTileIndex = spriteInfo.tileY * framesPerRow + spriteInfo.tileX;
-			const currentTileIndex = startTileIndex + frame;
-			
-			sx = (currentTileIndex % framesPerRow) * sWidth;
-			sy = Math.floor(currentTileIndex / framesPerRow) * sHeight;			
+			// El recorte según las coordenadas del tile y el frame de la animación se calcula una vez y se guarda en el sprite
+			// (con la imagen para la que valía: si el tileset cambia, se recalcula)
+			const cuts = spriteInfo._cuts || (spriteInfo._cuts = []);
+			let cut = cuts[frame];
+			if (!cut || cut.image !== image) {
+				const framesPerRow = Math.floor(image._w / sWidth);
+				const currentTileIndex = spriteInfo.tileY * framesPerRow + spriteInfo.tileX + frame;
+				cut = { image, sx: (currentTileIndex % framesPerRow) * sWidth, sy: Math.floor(currentTileIndex / framesPerRow) * sHeight };
+				if (image._w > 0) cuts[frame] = cut;   // mientras la imagen no cargó no se guarda
+			}
+			sx = cut.sx;
+			sy = cut.sy;
 		} else {
 			// Imagen suelta
 			if (!image) image = spriteInfo.image; // Aseguramos que tenemos la imagen
@@ -1819,8 +1825,8 @@ class Js2d {
 			sx = col * sWidth;
 			sy = row * sHeight;
 		}
-		
-		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
+
+		// (el suavizado de imágenes se fija una vez por cuadro en clearBg y al cambiar el tamaño del canvas, no en cada dibujo)
 
 		const dWidth = sWidth * scale;
 		const dHeight = sHeight * scale;

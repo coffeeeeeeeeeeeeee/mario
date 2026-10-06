@@ -113,7 +113,13 @@
 		}
 		return goalCache;
 	}
-	const goalCells = () => goalData().cells;
+	// En los niveles con laberinto se suman las celdas que marca el motor (smb.mazeGoal): el suelo del próximo punto y los caños que adelantan
+	function goalCells() {
+		const d = goalData(), mz = smb.mazeGoal();
+		if (!mz) return d.cells;
+		if (d.mazeKey !== mz.key) { d.mazeKey = mz.key; d.withMaze = new Set([...d.cells, ...mz.cells]); }
+		return d.withMaze;
+	}
 
 	function observeFull(opts) {
 		const k = smb.tileScale, top = worldTop();
@@ -192,15 +198,18 @@
 	let shapingWeight = 0;   // peso de la recompensa por acercarse a la meta (opts.shaping de reset); 0: sin ella
 	// opts.reward de reset: 'signed' (lo de siempre: cada px que avanza suma y cada px que retrocede resta) o 'best' (sólo suma lo que
 	// pasa de lo más lejos que llegó, y de lo más cerca de la meta). Con 'best' retroceder para tomar carrera cuesta sólo el reloj
-	let rewardBest = false, bestX = 0, bestD = Infinity;
+	let rewardBest = false, bestX = 0, bestD = Infinity, mazeKey = null;   // mazeKey: cuál es la meta del laberinto de ahora (si cambia, la distancia deja de ser comparable)
 	let mainWorld = null;   // el último de los 32 niveles en que estuvo (las salas secretas no cuentan)
 	let mainLevels = new Set();
 
 	// Distancia (px lógicos) del centro de Mario a la meta más cercana; Infinity si el nivel no tiene ninguna a la vista
 	function goalDistance(x, y) {
-		const pts = goalData().points;
-		if (!pts.length) return Infinity;
+		let pts = goalData().points;
 		const cx = x + 8, cy = y + smb.playerHeightPx() / smb.tileScale / 2;
+		const mz = smb.mazeGoal();
+		// En el laberinto sólo cuentan las metas que están por delante: los caños que ya pasó no son un destino
+		if (mz) pts = pts.concat(mz.points).filter(([gx]) => gx >= cx - 8);
+		if (!pts.length) return Infinity;
 		let best = Infinity;
 		for (const [gx, gy] of pts) best = Math.min(best, Math.hypot(gx - cx, gy - cy));
 		return best;
@@ -246,7 +255,7 @@
 		if (opts.startFrac > 0) startMidLevel(opts.startFrac);
 		tick(1);
 		last = snapshot();
-		bestX = last.x; bestD = last.d;
+		bestX = last.x; bestD = last.d; mazeKey = smb.mazeGoal()?.key ?? null;
 		return observe(opts);
 	}
 
@@ -285,15 +294,21 @@
 			const st = smb.state;
 			// Avanzar en x es lo que se premia; un salto de más de 48 px en un paso (el laberinto que devuelve a Mario, un caño) no cuenta
 			const dx = now.x - last.x;
+			// Al cambiar la meta del laberinto (pasó un punto, o lo devolvieron) la distancia salta: ese cuadro no suma por acercarse
+			const mk = smb.mazeGoal()?.key ?? null, mazeChanged = mk !== mazeKey;
+			mazeKey = mk;
+			if (mazeChanged) bestD = now.d;
 			if (now.world === last.world && Math.abs(dx) <= 48) {
 				if (rewardBest) { if (now.x > bestX) { reward += now.x - bestX; bestX = now.x; } }
 				else reward += dx;
 				// Recompensa por acercarse a la meta (distancia en x e y): guía también al llegar a un caño de lado o a un hacha
-				if (shapingWeight && Number.isFinite(last.d) && Number.isFinite(now.d)) {
+				if (shapingWeight && !mazeChanged && Number.isFinite(last.d) && Number.isFinite(now.d)) {
 					if (rewardBest) { if (now.d < bestD) { shaped += shapingWeight * (bestD - now.d); bestD = now.d; } }
 					else shaped += shapingWeight * (last.d - now.d);
 				}
-			} else { bestX = now.x; bestD = now.d; }   // otro nivel o un salto grande (el laberinto): se empieza a contar de nuevo desde ahí
+			} else if (now.world !== last.world || dx > 48) { bestX = now.x; bestD = now.d; }   // otro nivel o un salto hacia adelante (un caño): se cuenta de nuevo desde ahí
+			// Un salto hacia atrás en el mismo nivel (el laberinto devuelve a Mario cuatro páginas) no reinicia el récord: volver a recorrer
+			// lo que ya recorrió no suma, y así fallar el cruce cuesta lo que se tarda en recuperarlo
 			// Pasar a otro nivel de los 32 (el caño del final de los niveles de agua, una zona de atajos) cuenta como completar el
 			// actual; entrar a una sala secreta, o volver de ella, no
 			const nextMain = now.world !== last.world && mainLevels.has(now.world) && now.world !== mainWorld;

@@ -12,14 +12,35 @@
 		#bar #stats { display: block; flex: 1 1 0; min-width: 0; margin-left: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #889; cursor: help; }
 		#bar #stats b { color: #8c8; font-weight: normal; }
 		#bar #stats .old { color: #c96; }
+		#bar .tab.on { background: #4a78c8; color: #fff; }
 		#grid { position: relative; }
+		#evo { display: none; height: calc(100% - 36px); overflow-y: auto; box-sizing: border-box; padding: 6px 14px 14px; --surf: #1a1a19; --grid: #2e2e2c; --ink: #e6e5dc; --ink2: #a9a89d; --c-sin: #3987e5; --c-con: #d95926; }
+		#evo h2 { font-size: 13px; font-weight: normal; color: var(--ink); margin: 14px 0 4px; }
+		#evo .sub { color: var(--ink2); font-size: 11px; margin: 0 0 4px; }
+		#evo .legend { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 12px; color: var(--ink); margin: 2px 0 6px; }
+		#evo .legend i { display: inline-block; width: 14px; height: 3px; margin-right: 6px; vertical-align: middle; border-radius: 2px; }
+		#evo .panel { position: relative; background: var(--surf); border-radius: 6px; }
+		#evo svg { display: block; width: 100%; height: 230px; }
+		#evo .tip { position: absolute; pointer-events: none; background: #0c0c0b; border: 1px solid #3a3a37; border-radius: 4px; padding: 5px 8px; font-size: 11px; color: var(--ink); white-space: nowrap; display: none; z-index: 2; }
+		#evo .tip b { font-weight: normal; color: var(--ink2); }
+		#evo .note { color: var(--ink2); font-size: 11px; margin-top: 10px; max-width: 900px; line-height: 1.5; }
 		.cell { position: absolute; overflow: hidden; }
 		.cell iframe { border: 0; width: 640px; height: 480px; transform-origin: top left; image-rendering: pixelated; }
 	</style>
 </head>
 <body>
-	<div id="bar"><span>pantallas:</span><span id="counts"></span><span style="margin-left:8px">velocidad:</span><span id="speeds"></span><span id="stats">esperando los datos del entrenamiento…</span></div>
+	<div id="bar"><span id="tabs"><button class="tab on" data-tab="partidas">Partidas</button><button class="tab" data-tab="evolucion">Evolución</button></span><span id="viewctl"><span>pantallas:</span><span id="counts"></span><span style="margin-left:8px">velocidad:</span><span id="speeds"></span></span><span id="stats">esperando los datos del entrenamiento…</span></div>
 	<div id="grid"></div>
+	<div id="evo">
+		<h2>Cómo fue mejorando la IA</h2>
+		<p class="sub" id="evoSub">Cada punto resume los últimos 100 episodios; la línea gruesa es un promedio de los últimos 12 puntos. Se actualiza sola.</p>
+		<div class="legend" id="evoLegend"></div>
+		<h2>Avance medio por episodio (% del nivel recorrido)</h2>
+		<div class="panel" id="pAvance"></div>
+		<h2>Episodios que llegaron a la meta (%)</h2>
+		<div class="panel" id="pMeta"></div>
+		<p class="note" id="evoNote"></p>
+	</div>
 	<script>
 		// Cada partida va en su propio iframe de 640x480, el tamaño con el que corre el entrenamiento: el juego calcula sus
 		// medidas a partir de la ventana, y con otro tamaño la repetición podría diferir en el último decimal. Se achica con CSS.
@@ -28,6 +49,7 @@
 		let n = +(q.get('n') || 4);
 		if (!COUNTS.includes(n)) n = COUNTS.reduce((best, c) => (Math.abs(c - n) < Math.abs(best - n) ? c : best), 4);
 		let speed = SPEEDS.includes(+q.get('speed')) ? +q.get('speed') : 1;
+		let tab = q.get('tab') === 'evolucion' ? 'evolucion' : 'partidas';   // solapa abierta: las partidas sólo existen en la de Partidas
 		const grid = document.getElementById('grid'), frames = [];
 
 		function addFrame(i) {
@@ -61,7 +83,7 @@
 		// Al cambiar la cantidad se conservan las partidas que ya estaban (no se recargan) y sólo se suman o se quitan las demás
 		function setCount(c) {
 			n = c;
-			while (frames.length < n) addFrame(frames.length);
+			while (frames.length < n && tab === 'partidas') addFrame(frames.length);
 			while (frames.length > n) frames.pop().cell.remove();
 			buttons.counts.forEach((b, k) => b.classList.toggle('on', COUNTS[k] === n));
 			q.set('n', n); history.replaceState(null, '', '?' + q);
@@ -120,6 +142,81 @@
 		}
 		setInterval(refreshStats, 1500);
 		refreshStats();
+
+		// ---- Solapas. Con la de Evolución abierta las partidas se cierran: así el navegador no gasta en ellas
+		function setTab(t) {
+			tab = t;
+			document.querySelectorAll('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
+			document.getElementById('grid').style.display = t === 'partidas' ? '' : 'none';
+			document.getElementById('viewctl').style.display = t === 'partidas' ? '' : 'none';
+			document.getElementById('evo').style.display = t === 'evolucion' ? 'block' : 'none';
+			if (t === 'partidas') q.delete('tab'); else q.set('tab', t);
+			history.replaceState(null, '', '?' + q);
+			// Una partida oculta sigue gastando CPU (cuatro, un núcleo entero): al pasar a Evolución se cierran y al volver se arman de nuevo
+			if (t === 'partidas') { setCount(n); layout(); }
+			else { while (frames.length) frames.pop().cell.remove(); refreshEvo(); }
+		}
+		document.querySelectorAll('#tabs .tab').forEach(b => { b.onclick = () => setTab(b.dataset.tab); });
+
+		// ---- Evolución: lo que sale de los registros del entrenamiento (/api/evolucion), en vivo
+		const NAMES = { sinmemoria: 'sin memoria (modelo anterior)', memoria: 'con memoria' };
+		const COLORS = { sinmemoria: 'var(--c-sin)', memoria: 'var(--c-con)' };
+		const WINDOW = 12;
+		let evo = null;
+		const trailing = (pts, k) => pts.map((p, i) => { let s = 0, n = 0; for (let j = Math.max(0, i - WINDOW + 1); j <= i; j++) { s += pts[j][k]; n++; } return s / n; });
+		const nice = (max) => [4, 8, 12, 20, 40, 60, 80, 100].find(v => v >= max * 1.08) || 100;   // múltiplos de 4: las 4 divisiones del eje quedan en números redondos
+		const niceX = (max) => { const m = max / 1e6; const st = [1, 2, 5, 10, 20, 50].find(v => m / v <= 8) || 50; return { step: st * 1e6, top: Math.ceil(max / (st * 1e6)) * st * 1e6 }; };
+
+		function drawPanel(box, key, label) {
+			const names = Object.keys(evo.runs), W = box.clientWidth || 800, H = 230, narrow = W < 600, m = { l: 44, r: narrow ? 92 : 150, t: 12, b: 28 };
+			const series = names.map(n => { const pts = evo.runs[n].points; return { n, pts, sm: trailing(pts, key) }; });
+			const maxX = Math.max(1, ...series.map(s => s.pts.at(-1)[0])), { step, top } = niceX(maxX);
+			const maxY = nice(Math.max(1, ...series.flatMap(s => s.pts.map(p => p[key])).concat(0)));
+			const x = v => m.l + (W - m.l - m.r) * v / top, y = v => H - m.b - (H - m.t - m.b) * v / maxY;
+			let g = '';
+			for (let i = 0; i <= 4; i++) { const v = maxY * i / 4; g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--ink2)" font-size="10">${fmt(v, 0)}%</text>`; }
+			for (let v = 0; v <= top; v += step) g += `<text x="${x(v)}" y="${H - 8}" text-anchor="middle" fill="var(--ink2)" font-size="10">${v / 1e6} M</text>`;
+			g += `<text x="${W - m.r}" y="${H - 8}" text-anchor="end" fill="var(--ink2)" font-size="10"></text>`;
+			// Reinicios en que cambió la receta de entrenamiento (si el registro la anotó)
+			for (const s of series) { let prev = null; for (const st of evo.runs[s.n].starts) { if (st.recipe && prev !== null && st.recipe !== prev) g += `<line x1="${x(st.steps)}" x2="${x(st.steps)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--ink2)" stroke-dasharray="3 3"/><text x="${x(st.steps) + 3}" y="${m.t + 9}" fill="var(--ink2)" font-size="9">receta nueva</text>`; if (st.recipe) prev = st.recipe; } }
+			for (const s of series) {
+				const col = COLORS[s.n], line = a => a.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join('');
+				g += `<path d="${line(s.pts.map(p => [p[0], p[key]]))}" fill="none" stroke="${col}" stroke-opacity=".28" stroke-width="1"/>`;
+				g += `<path d="${line(s.pts.map((p, i) => [p[0], s.sm[i]]))}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+				const last = s.pts.at(-1), lv = s.sm.at(-1);
+				g += `<circle cx="${x(last[0])}" cy="${y(lv)}" r="4" fill="${col}" stroke="var(--surf)" stroke-width="2"/><text x="${x(last[0]) + 9}" y="${y(lv) + 4}" fill="var(--ink)" font-size="11">${series.length > 1 ? (narrow ? (s.n === 'memoria' ? 'con mem. ' : 'sin mem. ') : NAMES[s.n].split(' (')[0] + ' ') : ''}${fmt(lv, 1)}%</text>`;   // con una sola serie, sólo el valor
+			}
+			g += `<line class="cross" y1="${m.t}" y2="${H - m.b}" stroke="var(--ink2)" style="display:none"/>`;
+			box.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${label}">${g}</svg><div class="tip"></div>`;
+			const svg = box.querySelector('svg'), tip = box.querySelector('.tip'), cross = box.querySelector('.cross');
+			svg.onmousemove = ev => {
+				const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width, v = (px - m.l) / (W - m.l - m.r) * top;
+				if (v < 0 || v > top) { svg.onmouseleave(); return; }
+				const rows = series.map(s => { let bi = -1, bd = Infinity; s.pts.forEach((p, i) => { const d = Math.abs(p[0] - v); if (d < bd) { bd = d; bi = i; } }); return bd < top * 0.04 ? `<span style="color:${COLORS[s.n]}">●</span> ${series.length > 1 ? NAMES[s.n].split(' (')[0] + ': ' : ''}<b>${fmt(s.pts[bi][key], 1)}%</b> (promedio ${fmt(s.sm[bi], 1)}%) · ${fmt(s.pts[bi][0] / 1e6, 2)} M pasos` : ''; }).filter(Boolean);
+				if (!rows.length) { svg.onmouseleave(); return; }
+				cross.setAttribute('x1', px); cross.setAttribute('x2', px); cross.style.display = '';
+				tip.innerHTML = rows.join('<br>'); tip.style.display = 'block';
+				tip.style.left = Math.min(box.clientWidth - tip.offsetWidth - 4, Math.max(4, px * r.width / W + 12)) + 'px'; tip.style.top = '14px';
+			};
+			svg.onmouseleave = () => { tip.style.display = 'none'; cross.style.display = 'none'; };
+		}
+
+		function renderEvo() {
+			if (!evo) return;
+			const names = Object.keys(evo.runs);
+			if (!names.length) { document.getElementById('evoSub').textContent = 'Todavía no hay registros del entrenamiento (aparecen cada 20.000 pasos).'; return; }
+			document.getElementById('evoLegend').innerHTML = names.length > 1 ? names.map(n => `<span><i style="background:${COLORS[n]}"></i>${NAMES[n]}</span>`).join('') : '';   // con una sola serie no hace falta leyenda
+			drawPanel(document.getElementById('pAvance'), 1, 'Avance medio por episodio');
+			drawPanel(document.getElementById('pMeta'), 2, 'Episodios que llegaron a la meta');
+			document.getElementById('evoNote').textContent = 'El avance se mide sobre el largo del nivel; desde que parte de los episodios empieza a mitad de nivel se cuenta desde donde empezaron, así que no es comparable punto a punto con lo anterior. Cada tramo anotado como \"receta nueva\" marca un reinicio con otros parámetros de entrenamiento (los registros viejos no los anotaban).';
+		}
+		async function refreshEvo() {
+			if (tab !== 'evolucion') return;
+			try { evo = await (await fetch('/api/evolucion')).json(); delete evo.runs.sinmemoria; renderEvo(); /* el modelo anterior (sin memoria) ya no se muestra */ } catch (e) { document.getElementById('evoSub').textContent = 'sin conexión con el servidor'; }
+		}
+		setInterval(refreshEvo, 5000);
+		addEventListener('resize', () => { if (tab === 'evolucion') renderEvo(); });
+		setTab(tab);
 	</script>
 </body>
 </html>
