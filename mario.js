@@ -238,7 +238,11 @@ const BOWSER_JUMP_SPEED = 2, BOWSER_GRAVITY = 0x0f / 256;   // px lógicos por c
 const BOWSER_FLAME_SPEED = 1.25;                           // la llama avanza 1 px + 0x40/256 por cuadro
 const BOWSER_FLAME_HEIGHTS = [16, 32, 48, 16];             // alturas sobre el puente a las que apunta la llama
 const FLAME_W = 24, FLAME_H = 8;
-const BRIDGE_COLLAPSE_MS = 4 * 1000 / 60;                  // un tile del puente cada 4 cuadros
+const BRIDGE_COLLAPSE_MS = 4 * 1000 / 60;                  // un paso de la caída del puente cada 4 cuadros: primero el hacha, después la cadena y después cada tile del puente
+// Mensaje del final del castillo, en cuadros desde que Mario llega a Toad: el primer renglón sale enseguida y el resto a los 128 (a los 192 en
+// el mundo 8); a los 256 (a los 384 en el mundo 8) termina el mensaje, y 6 intervalos de 21 cuadros después sigue el juego
+const AXE_MSG_SECOND = 128, AXE_MSG_SECOND_W8 = 192, AXE_MSG_END = 256, AXE_MSG_END_W8 = 384, AXE_WORLD_END_WAIT = 6 * 21;
+const AXE_BOWSER_GONE_Y = 0xe0;                            // Bowser, cayendo, desaparece al llegar a esa altura
 const BASE_GRAVITY_PX = 0.4;   // px lógicos por cuadro al cuadrado, para la caída automática de Mario al final
 const BULLET_BILL_SPEED = 1.5;       // px lógicos por cuadro
 const CANNON_TIMER = 14;             // el temporizador de un cañón tras disparar (baja de a uno cada vez que sale sorteado)
@@ -302,7 +306,8 @@ const FIREBAR_BALL_STEP = 8;       // separación entre bolas, en px lógicos
 const FIREBAR_HIT = 3;             // medio lado de la caja de cada bola, en px lógicos
 const PODOBOO_SPEED = 7, PODOBOO_GRAVITY = 0x1c / 256;     // salto del Podoboo en px lógicos por cuadro
 const PODOBOO_INTERVAL_STEPS = 21;   // cuadros por "intervalo" del temporizador
-const BLOOBER_FLOAT_STEPS = 32;   // cuadros que flota hacia abajo antes de volver a mirar a Mario
+const BLOOBER_FLOAT_INTERVALS = 2;   // unidades de intervalo (21 cuadros cada una) que flota hacia abajo antes de volver a mirar a Mario
+const FLY_CHEEP_FORCE_TABLE = [0xf8, 0xa0, 0x70, 0xbd, 0x00, 0x20, 0x20, 0x20, 0x00, 0x00, 0xb5, 0x1e, 0x29, 0x20, 0xf0, 0x08];   // el original sigue leyendo más allá de su tabla de 5 valores: lo que sigue son bytes de su propio código
 
 const ENEMY_MARKERS = [
 	{ id: 0x100, type: 'Goomba', sprite: 'Enemy_Goomba' },
@@ -327,6 +332,7 @@ class Game {
 	// semilla 0xa5 en el primero. Cada enemigo lee un byte según su lugar (slot)
 	lfsr = new Uint8Array([0xa5, 0, 0, 0, 0, 0, 0]);
 	frameCount = 0;          // contador de cuadros
+	intervalCtl = 0; intervalTicks = 0;   // los temporizadores de intervalo bajan una unidad cada 21 cuadros: cuenta de cuadros y de unidades que pasaron
 	twoPlayers = false;    // partida de dos jugadores alternados
 	demoMode = false;      // Mario juega solo en el título
 	demoEndPending = false;   // el demo terminó (murió Mario) y se lo cierra al empezar el próximo cuadro
@@ -1459,7 +1465,7 @@ class Game {
 		this.physicsAccumulator -= this.physicsSteps * PHYSICS_STEP_MS;
 		if (this.starTimer > 0) this.starTimer = Math.max(0, this.starTimer - dt);
 		this.swimTimer = Math.max(0, this.swimTimer - this.physicsSteps);
-		for (let i = 0; i < this.physicsSteps; i++) { this.rngStep(); this.frameCount++; if (this.demoMode) this.demoStep(); }
+		for (let i = 0; i < this.physicsSteps; i++) { this.rngStep(); this.frameCount++; if (--this.intervalCtl < 0) { this.intervalCtl = 20; this.intervalTicks++; } if (this.demoMode) this.demoStep(); }
 	}
 
 	giveLife() {
@@ -2533,7 +2539,9 @@ class Game {
 		const k = this.tileScale;
 		if (enemy.state === 'falling') {
 			enemy.y += enemy.vy;
-			enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
+			// Con el puente roto cae despacio (fuerza 0x0f/256, tope 2 px por cuadro); si lo mataron a bolazos, como cualquier enemigo
+			if (enemy.axeFall) enemy.vy = Math.min(enemy.vy + BOWSER_GRAVITY * k, 2 * k);
+			else enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
 			return;
 		}
 		enemy.frame++;
@@ -2653,7 +2661,9 @@ class Game {
 		const k = this.tileScale;
 		if (enemy.state === 'falling') {
 			enemy.y += enemy.vy;
-			enemy.vy = Math.min(enemy.vy + ENEMY_GRAVITY * k, ENEMY_MAX_FALL * k);
+			// Derrotados caen despacio (fuerza 0x0f/256, tope 2 px por cuadro), salvo el que salta, que cae con 0x1c/256 y tope 3
+			const g = enemy.flying ? 0x1c / 256 : 0x0f / 256, max = enemy.flying ? 3 : 2;
+			enemy.vy = Math.min(enemy.vy + g * k, max * k);
 			return;
 		}
 		enemy.frame++;
@@ -2662,12 +2672,23 @@ class Game {
 			enemy.x += enemy.vx;
 			enemy.y += enemy.vy;
 			enemy.vy = Math.min(enemy.vy + FLY_CHEEP_GRAVITY * k, FLY_CHEEP_MAX_SPEED * k);
+			// El original suma 0x10 a la fuerza vertical (gravedad extra) cuando la altura está a menos de 8 px de un valor que sale de una
+			// tabla según la parte fraccionaria de la velocidad. Se usa sólo el byte bajo de la altura, como él
+			const vyL = enemy.vy / k, frac = Math.round((vyL - Math.floor(vyL)) * 256) & 255;
+			const ny = Math.floor((enemy.y - this.tileToScreen(0, 0).y) / k) & 255;
+			let d = (ny - FLY_CHEEP_FORCE_TABLE[frac >> 4]) & 255;
+			if (d & 128) d = (256 - d) & 255;
+			if (d < 8) enemy.vy = Math.min(enemy.vy + (0x10 / 256) * k, FLY_CHEEP_MAX_SPEED * k);
 			if (enemy.vy > 0 && enemy.y > this.engine.getCanvasHeight() + this.tileSize) return 'remove';
 			return;
 		}
 		if (enemy.type === 'Cheep') {
+			// Al nacer, hacia dónde empieza el vaivén sale de un bit del generador de azar
+			if (enemy.bobInit === undefined) { enemy.bobInit = true; enemy.bobDown = (this.rbyte(this.slotOf(enemy)) & 0x10) !== 0; }
 			enemy.vx = -1;
 			enemy.x -= (enemy.color === 'Red' ? 0.5 : 0.25) * k;
+			// Los que ocupan los dos primeros lugares de la tabla de enemigos no suben ni bajan
+			if (this.slotOf(enemy) < 2) return;
 			enemy.y += (enemy.bobDown ? 1 : -1) * 0.125 * k;
 			if (Math.abs(enemy.y - enemy.origY) >= 15 * k) enemy.bobDown = enemy.y < enemy.origY;
 			return;
@@ -2677,19 +2698,24 @@ class Game {
 		// Cuando unos bits al azar valen cero (1 de cada 64 cuadros, 1 de cada 4 en el modo difícil) se vuelve a orientar: los de
 		// lugar impar toman el sentido en que se mueve Mario, y los de lugar par van hacia él
 		if ((this.rbyte(1 + this.slotOf(enemy)) & (this.secondaryHard ? 0x03 : 0x3f)) === 0) {
-			enemy.dir = (enemy.id & 1) ? (this.movingDir || this.facingDir || 1) : ((player_.x - this.mapOffset.x) < enemy.x ? -1 : 1);
+			enemy.dir = (this.slotOf(enemy) & 1) ? (this.movingDir || this.facingDir || 1) : ((player_.x - this.mapOffset.x) < enemy.x ? -1 : 1);
 		}
-		const every8 = enemy.frame % 8 === 0;
+		// Las brazadas siguen el contador de cuadros del juego (cada 8 cuadros), igual para todos los Bloobers
+		const every8 = (this.frameCount & 7) === 0;
 		if (enemy.swimPhase === 0) {
 			if (every8 && ++enemy.force === 2) enemy.swimPhase = 1;
 		} else if (enemy.swimPhase === 1) {
-			if (every8 && --enemy.force === 0) { enemy.swimPhase = 2; enemy.floatTimer = BLOOBER_FLOAT_STEPS; }
+			if (every8 && --enemy.force === 0) { enemy.swimPhase = 2; enemy.floatUntil = this.intervalTicks + BLOOBER_FLOAT_INTERVALS; }
 		} else {
-			if (enemy.floatTimer > 0) enemy.floatTimer--;
-			if (enemy.frame % 2 === 0 && (enemy.floatTimer > 0 || enemy.y + 16 * k < player_.y)) enemy.y += k;
-			else if (enemy.floatTimer === 0 && enemy.y + 16 * k >= player_.y) enemy.swimPhase = 0;
+			// Flota hacia abajo medio píxel por cuadro mientras no venza el temporizador; después, hasta quedar 16 px por encima de la altura de
+			// Mario (su Y es la de los pies menos 32 px: para el chico, 16 px más arriba que su sprite); entonces vuelve a nadar
+			const marioY = player_.y + this.playerHeightPx() - 32 * k;
+			if (this.intervalTicks < enemy.floatUntil || enemy.y + 16 * k < marioY) { if ((this.frameCount & 1) === 0) enemy.y += k; }
+			else enemy.swimPhase = 0;
 		}
-		enemy.y = Math.max(enemy.y - enemy.force * k, this.tileToScreen(0, 2).y);
+		// Sube con la fuerza de la brazada, salvo que quede por encima de la barra de estado
+		const up = enemy.y - enemy.force * k;
+		if (up >= this.tileToScreen(0, 2).y) enemy.y = up;
 		enemy.x += enemy.dir * enemy.force * k;
 	}
 
@@ -4213,18 +4239,17 @@ class Game {
 		this.levelTimeAtFlag = 0;        // sin fuegos artificiales
 		this.flagpoleFlag = null;
 		this.xSpeed = 0; this.velocityX = 0; this.velocityY = 0;
-		map[ax.y * mw + ax.x] = 0;
-		map[(ax.y + 1) * mw + ax.x - 1] = 0;
-		// El puente se deshace de a un tile, desde el hacha hacia afuera
-		this.bridgeTiles = [];
+		map[ax.y * mw + ax.x] = 0;   // el hacha desaparece al tocarla
+		// Después, cada 4 cuadros, un paso más: otra vez el hacha (ya no se ve), la cadena y cada tile del puente, desde el hacha hacia
+		// afuera. Cada paso suena igual (disparo y ladrillos)
+		this.bridgeTiles = [-1, (ax.y + 1) * mw + ax.x - 1];
 		for (let x = ax.x - 1; x >= 0; x--) {
 			const i = (ax.y + 2) * mw + x;
-			if (map[i] !== 0x89) { if (this.bridgeTiles.length) break; else continue; }
+			if (map[i] !== 0x89) { if (this.bridgeTiles.length > 2) break; else continue; }
 			this.bridgeTiles.push(i);
 		}
 		this.enemies = this.enemies.filter(e => e.type === 'Bowser' || NPC_TYPES.has(e.type));
 		for (const e of this.enemies) e.active = true;
-		this.engine.playAudio(audio["Level_Clear"], false);
 		// Mario se queda parado sobre el apoyo del hacha
 		playerPos.y = this.tileToScreen(ax.x, ax.y + 1).y - playerHeight;
 	}
@@ -4241,11 +4266,15 @@ class Game {
 	drawAxeMessage() {
 		const world = parseInt(this.currentMap.world, 10);
 		const who = PlayerName[this.player].toUpperCase();
-		const lines = world === 8
+		const w8 = world === 8;
+		const lines = w8
 			? [`THANK YOU ${who}!`, 'YOUR QUEST IS OVER.', 'WE PRESENT YOU A NEW QUEST.']
 			: [`THANK YOU ${who}!`, 'BUT OUR PRINCESS IS IN', 'ANOTHER CASTLE!'];
+		// El primer renglón sale enseguida; el resto, más tarde (a la vez en los mundos 1 a 7; uno por uno en el 8, a los 192 y 256 cuadros)
+		const frames = this.axeTimer * GAME_FPS / 1000;
+		const shownAt = w8 ? [0, AXE_MSG_SECOND_W8, AXE_MSG_SECOND_W8 + 64] : [0, AXE_MSG_SECOND, AXE_MSG_SECOND];
 		const cx = this.engine.getCanvasWidth() / 2;
-		lines.forEach((t, i) => this.engine.drawTextCustom(font, t, TEXT_SIZE, Color.WHITE, { x: cx, y: this.tileSize * (2.2 + i * 0.8) }, "center"));
+		lines.forEach((t, i) => { if (frames >= shownAt[i]) this.engine.drawTextCustom(font, t, TEXT_SIZE, Color.WHITE, { x: cx, y: this.tileSize * (2.2 + i * 0.8) }, "center"); });
 	}
 
 	updateAndDrawLevelComplete(dt) {
@@ -4276,12 +4305,14 @@ class Game {
                         this.axeTimer += dt;
                         while (this.bridgeTiles.length && this.axeTimer >= BRIDGE_COLLAPSE_MS) {
                             this.axeTimer -= BRIDGE_COLLAPSE_MS;
-                            this.currentMap.map[this.bridgeTiles.shift()] = 0;
+                            const idx = this.bridgeTiles.shift();
+                            if (idx >= 0) this.currentMap.map[idx] = 0;
+                            this.engine.playAudioOverlap(audio["Fireworks"]);
                             this.engine.playAudioOverlap(audio["Brick_Break"]);
                         }
                         if (!this.bridgeTiles.length) {
                             const bowser = this.enemies.find(e => e.type === 'Bowser');
-                            if (bowser && bowser.state !== 'falling') { bowser.state = 'falling'; bowser.vy = 0; this.engine.playAudioOverlap(audio["Bowser_Falls"]); }
+                            if (bowser && bowser.state !== 'falling') { bowser.state = 'falling'; bowser.axeFall = true; bowser.vy = 0; this.engine.playAudioOverlap(audio["Bowser_Falls"]); }
                             this.levelCompleteState = 'axe_fall';
                             this.axeTimer = 0;
                         }
@@ -4289,8 +4320,16 @@ class Game {
                     }
                     case 'axe_fall': {
                         for (const e of this.enemies) if (e.type === 'Bowser' && e.state === 'falling') for (let i = 0; i < Math.max(1, Math.round(this.fk)); i++) this.stepBowser(e, player);
-                        this.axeTimer += dt;
-                        if (this.axeTimer > 1500) {
+                        // Bowser cae hasta salir de la pantalla; recién entonces se van los enemigos, empieza la música del final y Mario camina
+                        const limit = this.tileToScreen(0, 0).y + AXE_BOWSER_GONE_Y * this.tileScale;
+                        const falling = this.enemies.filter(e => e.type === 'Bowser' && e.state === 'falling' && e.y < limit);
+                        if (!falling.length) {
+                            this.enemies = this.enemies.filter(e => NPC_TYPES.has(e.type));
+                            this.engine.playAudio(audio["Level_Clear"], false);
+                            // Hacia dónde camina Mario: la pantalla se desplaza hasta el principio de la página que sigue a la que tiene
+                            // a su derecha (como mucho, la última del nivel, donde espera Toad)
+                            const screenRight = (-this.mapOffset.x + this.engine.getCanvasWidth()) / this.tileScale, mapPx = this.currentMap.dimensions.width * 16;
+                            this.victoryDestX = Math.min(Math.floor(screenRight / 256) + 1, Math.floor((mapPx - 1) / 256)) * 256;
                             this.axeTimer = 0;
                             const pfx = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
                             this.engine.setAnimationForSprite(currentSpriteName, `${pfx}_Run`);
@@ -4301,17 +4340,19 @@ class Game {
                         break;
                     }
                     case 'axe_walk': {
-                        // Camina a 1,5 px por cuadro hasta quedar al lado de Toad, con la cámara siguiéndolo y cayendo de la plataforma
+                        // Mario camina a 1,5 px por cuadro y la pantalla se desplaza a la par (1,5 px por cuadro) hasta que su borde izquierdo llega
+                        // al principio de la página de destino; ahí Mario sigue hasta quedar a 96 px del borde y se detiene, a unos pasos de Toad
                         const k = this.tileScale, steps = Math.max(1, Math.round(this.fk));
-                        const npc = this.enemies.find(e => NPC_TYPES.has(e.type));
-                        const stopX = npc ? npc.x + this.mapOffset.x - this.tileSize * 1.2 : playerPos.x + this.tileSize * 4;
-                        const mw = this.currentMap.dimensions.width, tiles = this.currentMap.map;
-                        for (let i = 0; i < steps && playerPos.x < stopX; i++) {
-                            const dx = 1.5 * k;
-                            const minOffset = this.engine.getCanvasWidth() - mw * this.tileSize;
-                            if (playerPos.x > this.engine.getCanvasWidth() * 0.45 && this.mapOffset.x > minOffset) {
-                                this.mapOffset.x = Math.max(minOffset, this.mapOffset.x - dx);
-                            } else playerPos.x += dx;
+                        const destX = this.victoryDestX, mw = this.currentMap.dimensions.width, tiles = this.currentMap.map;
+                        const minOffset = this.engine.getCanvasWidth() - mw * this.tileSize;
+                        let walking = true;
+                        for (let i = 0; i < steps && walking; i++) {
+                            const camX = -this.mapOffset.x / k, worldX = (playerPos.x - this.mapOffset.x) / k;
+                            const scroll = camX < destX - 1e-6 && this.mapOffset.x > minOffset ? Math.min(1.5 * k, (destX - camX) * k, this.mapOffset.x - minOffset) : 0;
+                            walking = scroll > 0 || worldX < destX + 96;
+                            if (!walking) break;
+                            this.mapOffset.x -= scroll;
+                            playerPos.x += 1.5 * k - scroll;   // en el mundo avanza lo mismo; en pantalla, lo que la cámara no se llevó
                             // Gravedad simple hasta el primer tile sólido bajo los pies
                             const feet = playerPos.y + playerHeight;
                             const t = this.screenToTile(playerPos.x + this.tileSize / 2, feet + 1);
@@ -4319,7 +4360,8 @@ class Game {
                             if (solid && this.axeVy >= 0) { this.axeVy = 0; playerPos.y = this.tileToScreen(t.x, t.y).y - playerHeight; }
                             else { this.axeVy = Math.min(this.axeVy + BASE_GRAVITY_PX * k, 4 * k); playerPos.y += this.axeVy; }
                         }
-                        if (playerPos.x >= stopX) {
+                        this.maxMapOffsetX = Math.min(this.maxMapOffsetX, this.mapOffset.x);
+                        if (!walking) {
                             const pfx = PlayerName[this.player] + (this.playerSize === Player_Size.Fire ? "_Fire" : (isBig ? "_Big" : ""));
                             this.engine.setAnimationForSprite(currentSpriteName, `${pfx}_Idle`);
                             this.axeTimer = 0;
@@ -4327,10 +4369,13 @@ class Game {
                         }
                         break;
                     }
-                    case 'axe_message':
+                    case 'axe_message': {
+                        // Sin bono de tiempo ni fuegos artificiales: pasado el mensaje y una pausa corta sigue el juego
                         this.axeTimer += dt;
-                        if (this.axeTimer > 4500) { this.levelCompleteState = 'time_bonus'; this.bonusTimer = 0; }
+                        const w8 = parseInt(this.currentMap.world, 10) === 8;
+                        if (this.axeTimer >= ((w8 ? AXE_MSG_END_W8 : AXE_MSG_END) + AXE_WORLD_END_WAIT) * 1000 / GAME_FPS) this.finishLevel();
                         break;
+                    }
                     case 'none':
                         this.stopAllMusic();
                         this.engine.playAudio(audio["Flagpole"], false);
@@ -4429,16 +4474,7 @@ class Game {
 					this.score += 500;
 					this.bonusTimer = 0;
 				} else if (this.fireworksLeft === 0 && this.bonusTimer > 800) {
-					this.levelCompleteState = 'finished';
-					this.rewardHidden1Up();
-					const nextWorldName = this.nextWorldOverride || this.currentMap.nextWorld;
-					this.nextWorldOverride = null;
-					if (nextWorldName) {
-						this.startNextLevel(nextWorldName);
-					} else {
-						this.currentWorldIndex = 0;
-						this.state = Game_State.Title_Menu;
-					}
+					this.finishLevel();
 				}
 				break;
 		}
@@ -4461,6 +4497,20 @@ class Game {
 		}
 		if (this.levelCompleteState === 'axe_message') this.drawAxeMessage();
 		this.drawFireworks(dt);
+	}
+
+	// Pasa al nivel que sigue (o al título, si no hay otro)
+	finishLevel() {
+		this.levelCompleteState = 'finished';
+		this.rewardHidden1Up();
+		const nextWorldName = this.nextWorldOverride || this.currentMap.nextWorld;
+		this.nextWorldOverride = null;
+		if (nextWorldName) {
+			this.startNextLevel(nextWorldName);
+		} else {
+			this.currentWorldIndex = 0;
+			this.state = Game_State.Title_Menu;
+		}
 	}
 
 	// Explosiones de los fuegos artificiales: tres cuadros, al doble de tamaño

@@ -243,7 +243,7 @@
 		if (smb.state !== Game_State.Playing) throw new Error(`No se pudo empezar el nivel (estado ${smb.state})`);
 		// Los contadores de cuadros y de tiempo siguen de un episodio al siguiente; en cero, el episodio sólo depende de cómo se
 		// reinició (el juego usa la paridad del contador para, por ejemplo, la dirección con que aparecen algunos enemigos)
-		smb.growTimer = 0; smb.invincibleTimer = 0; smb.deathTimer = 0; smb.jumpOriginY = 0; smb.frameCount = 0; smb.clockMs = 0; smb.physicsAccumulator = 0; smb.coinAnimAcc = 0; smb.pakkunAnimAcc = 0; smb.musicResumeAt = 0;
+		smb.growTimer = 0; smb.invincibleTimer = 0; smb.deathTimer = 0; smb.jumpOriginY = 0; smb.frameCount = 0; smb.intervalCtl = 0; smb.intervalTicks = 0; smb.clockMs = 0; smb.physicsAccumulator = 0; smb.coinAnimAcc = 0; smb.pakkunAnimAcc = 0; smb.musicResumeAt = 0;
 		if (opts.size && opts.size !== 'small') {
 			smb.playerSize = SIZES[opts.size] ?? Player_Size.Small;
 			if (smb.playerSize > Player_Size.Small) {

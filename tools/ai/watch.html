@@ -73,6 +73,7 @@
 			grid.style.width = cols * 640 * s + 'px';
 			grid.style.height = rows * 480 * s + 'px';
 			grid.style.left = (innerWidth - cols * 640 * s) / 2 + 'px';
+			grid.style.top = Math.max(0, (innerHeight - bar - rows * 480 * s) / 2) + 'px';   // centradas también hacia abajo, en lo que deja libre la barra
 			frames.forEach(({ cell, f }, i) => {
 				cell.style.width = 640 * s + 'px'; cell.style.height = 480 * s + 'px';
 				cell.style.left = (i % cols) * 640 * s + 'px'; cell.style.top = Math.floor(i / cols) * 480 * s + 'px';
@@ -177,8 +178,6 @@
 			for (let i = 0; i <= 4; i++) { const v = maxY * i / 4; g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(--grid)"/><text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" fill="var(--ink2)" font-size="10">${fmt(v, 0)}%</text>`; }
 			for (let v = 0; v <= top; v += step) g += `<text x="${x(v)}" y="${H - 8}" text-anchor="middle" fill="var(--ink2)" font-size="10">${v / 1e6} M</text>`;
 			g += `<text x="${W - m.r}" y="${H - 8}" text-anchor="end" fill="var(--ink2)" font-size="10"></text>`;
-			// Reinicios en que cambió la receta de entrenamiento (si el registro la anotó)
-			for (const s of series) { let prev = null; for (const st of evo.runs[s.n].starts) { if (st.recipe && prev !== null && st.recipe !== prev) g += `<line x1="${x(st.steps)}" x2="${x(st.steps)}" y1="${m.t}" y2="${H - m.b}" stroke="var(--ink2)" stroke-dasharray="3 3"/><text x="${x(st.steps) + 3}" y="${m.t + 9}" fill="var(--ink2)" font-size="9">receta nueva</text>`; if (st.recipe) prev = st.recipe; } }
 			for (const s of series) {
 				const col = COLORS[s.n], line = a => a.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(1)} ${y(p[1]).toFixed(1)}`).join('');
 				g += `<path d="${line(s.pts.map(p => [p[0], p[key]]))}" fill="none" stroke="${col}" stroke-opacity=".28" stroke-width="1"/>`;
@@ -208,7 +207,7 @@
 			document.getElementById('evoLegend').innerHTML = names.length > 1 ? names.map(n => `<span><i style="background:${COLORS[n]}"></i>${NAMES[n]}</span>`).join('') : '';   // con una sola serie no hace falta leyenda
 			drawPanel(document.getElementById('pAvance'), 1, 'Avance medio por episodio');
 			drawPanel(document.getElementById('pMeta'), 2, 'Episodios que llegaron a la meta');
-			document.getElementById('evoNote').textContent = 'El avance se mide sobre el largo del nivel; desde que parte de los episodios empieza a mitad de nivel se cuenta desde donde empezaron, así que no es comparable punto a punto con lo anterior. Cada tramo anotado como \"receta nueva\" marca un reinicio con otros parámetros de entrenamiento (los registros viejos no los anotaban).';
+			document.getElementById('evoNote').textContent = 'El avance se mide sobre el largo del nivel; desde que parte de los episodios empieza a mitad de nivel se cuenta desde donde empezaron, así que no es comparable punto a punto con lo anterior.';
 		}
 		async function refreshEvo() {
 			if (tab !== 'evolucion') return;
