@@ -1,4 +1,4 @@
-// js2d.js — motor de canvas 2D genérico, versión 1.1
+// js2d.js — motor de canvas 2D genérico, versión 1.10
 
 const Color = {
 	WHITE:   "#ffffff",
@@ -141,6 +141,1548 @@ const Pivot = {
 
 const IMAGE_SMOOTHING = false;
 
+// --- Easing y tweens ---------------------------------------------------------------------
+
+// Curvas de suavizado: cada una recibe t en [0, 1] y devuelve el progreso (0 en t=0, 1 en t=1;
+// "back" y "elastic" se pasan de rango en el medio a propósito). Nombres: 'linear' y, para el
+// resto, 'in' / 'out' / 'inOut' + familia: Quad, Cubic, Quart, Quint, Sine, Expo, Circ, Back,
+// Elastic, Bounce. Ejemplo: Ease.outCubic(0.5), o el nombre como texto en js.tween(..., 'outCubic').
+const Ease = (() => {
+	const c1 = 1.70158;
+	const c2 = c1 * 1.525;
+	const c3 = c1 + 1;
+	const c4 = (2 * Math.PI) / 3;
+	const c5 = (2 * Math.PI) / 4.5;
+
+	const outBounce = t => {
+		const n1 = 7.5625, d1 = 2.75;
+		if (t < 1 / d1) return n1 * t * t;
+		if (t < 2 / d1) return n1 * (t -= 1.5 / d1) * t + 0.75;
+		if (t < 2.5 / d1) return n1 * (t -= 2.25 / d1) * t + 0.9375;
+		return n1 * (t -= 2.625 / d1) * t + 0.984375;
+	};
+
+	// Las curvas "in" de las familias simétricas; "out" e "inOut" se derivan espejándolas.
+	const inFns = {
+		Quad:  t => t * t,
+		Cubic: t => t * t * t,
+		Quart: t => t * t * t * t,
+		Quint: t => t * t * t * t * t,
+		Sine:  t => 1 - Math.cos((t * Math.PI) / 2),
+		Expo:  t => t === 0 ? 0 : Math.pow(2, 10 * t - 10),
+		Circ:  t => 1 - Math.sqrt(1 - t * t),
+	};
+
+	const ease = { linear: t => t };
+	for (const [name, fn] of Object.entries(inFns)) {
+		ease['in' + name] = fn;
+		ease['out' + name] = t => 1 - fn(1 - t);
+		ease['inOut' + name] = t => t < 0.5 ? fn(2 * t) / 2 : 1 - fn(2 - 2 * t) / 2;
+	}
+
+	ease.inBack = t => c3 * t * t * t - c1 * t * t;
+	ease.outBack = t => 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+	ease.inOutBack = t => t < 0.5
+		? (Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2
+		: (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2;
+
+	ease.inElastic = t => t === 0 ? 0 : t === 1 ? 1 : -Math.pow(2, 10 * t - 10) * Math.sin((t * 10 - 10.75) * c4);
+	ease.outElastic = t => t === 0 ? 0 : t === 1 ? 1 : Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c4) + 1;
+	ease.inOutElastic = t => t === 0 ? 0 : t === 1 ? 1 : t < 0.5
+		? -(Math.pow(2, 20 * t - 10) * Math.sin((20 * t - 11.125) * c5)) / 2
+		: (Math.pow(2, -20 * t + 10) * Math.sin((20 * t - 11.125) * c5)) / 2 + 1;
+
+	ease.outBounce = outBounce;
+	ease.inBounce = t => 1 - outBounce(1 - t);
+	ease.inOutBounce = t => t < 0.5 ? (1 - outBounce(1 - 2 * t)) / 2 : (1 + outBounce(2 * t - 1)) / 2;
+
+	// Acepta una función (se usa tal cual), un nombre ('outCubic') o nada (linear). Un nombre
+	// que no existe es un error de tipeo: se avisa en vez de animar en silencio con otra curva.
+	ease.get = (e) => {
+		if (typeof e === 'function') return e;
+		if (e == null) return ease.linear;
+		const fn = ease[e];
+		if (typeof fn !== 'function' || e === 'get') throw new Error(`[Js2d] Ease desconocido: "${e}"`);
+		return fn;
+	};
+
+	return ease;
+})();
+
+// Una animación de propiedades numéricas de un objeto. No se crea a mano: la devuelve
+// Js2d.tween() / Js2d.after(). `finished` es una promesa (true si terminó, false si se
+// cancelo) para encadenar con await.
+class Tween {
+	constructor(target, to, duration, opts) {
+		this.target = target;
+		this.to = to;
+		this.from = null;
+		this.duration = Math.max(0, duration);
+		this.delay = Math.max(0, opts.delay || 0);
+		this.ease = Ease.get(opts.ease);
+		this.repeatsLeft = opts.repeat === true ? Infinity : (opts.repeat || 0);
+		this.yoyo = !!opts.yoyo;
+		this.onStart = opts.onStart || null;
+		this.onUpdate = opts.onUpdate || null;
+		this.onComplete = opts.onComplete || null;
+		this.startFrom = opts.from || null;
+		this.elapsed = 0;
+		this.reversed = false;
+		this.state = 'pending';   // pending -> running -> done | cancelled
+		this._resolve = null;
+		this._promise = null;
+	}
+
+	get active() {
+		return this.state === 'pending' || this.state === 'running';
+	}
+
+	get finished() {
+		if (!this._promise) {
+			this._promise = new Promise(resolve => { this._resolve = resolve; });
+			if (!this.active) this._resolve(this.state === 'done');
+		}
+		return this._promise;
+	}
+
+	// Corta la animación donde está, sin llamar a onComplete.
+	cancel() {
+		if (!this.active) return;
+		this.state = 'cancelled';
+		if (this._resolve) this._resolve(false);
+	}
+
+	// Salta al valor final (o al inicial, si va de vuelta en un yoyo) y llama a onComplete.
+	finish() {
+		if (!this.active) return;
+		this._begin();
+		this._apply(this.yoyo && this.reversed ? 0 : 1);
+		this._complete();
+	}
+
+	_begin() {
+		if (this.state !== 'pending') return;
+		this.state = 'running';
+		if (this.startFrom) Object.assign(this.target, this.startFrom);
+		this.from = {};
+		for (const key of Object.keys(this.to)) this.from[key] = this.target[key];
+		if (this.onStart) this.onStart(this.target);
+	}
+
+	_apply(p) {
+		const e = this.ease(p);
+		for (const key of Object.keys(this.to)) {
+			const a = this.from[key];
+			this.target[key] = a + (this.to[key] - a) * e;
+		}
+		if (this.onUpdate) this.onUpdate(this.target, p);
+	}
+
+	_complete() {
+		this.state = 'done';
+		if (this.onComplete) this.onComplete(this.target);
+		if (this._resolve) this._resolve(true);
+	}
+
+	_step(dt) {
+		if (this.state === 'pending') {
+			if (this.delay > 0) {
+				this.delay -= dt;
+				if (this.delay > 0) return;
+				dt = -this.delay;   // lo que sobró del cuadro después de la espera
+				this.delay = 0;
+			}
+			this._begin();
+		}
+		if (this.state !== 'running') return;
+
+		this.elapsed += dt;
+		if (this.elapsed >= this.duration && this.repeatsLeft > 0) {
+			// Termina una vuelta y queda otra: la sobra de tiempo pasa a la siguiente.
+			this._apply(this.reversed ? 0 : 1);
+			this.repeatsLeft--;
+			this.elapsed = this.duration > 0 ? this.elapsed % this.duration : 0;
+			this.reversed = this.yoyo ? !this.reversed : false;
+			if (!this.active) return;   // un callback pudo cancelarla
+		}
+
+		const t = this.duration > 0 ? Math.min(1, this.elapsed / this.duration) : 1;
+		const p = this.reversed ? 1 - t : t;
+		this._apply(p);
+		if (this.active && t >= 1) this._complete();
+	}
+}
+
+// Lista de tweens activos. Js2d tiene una (`js.tweens`) y la avanza sola en tick().
+class TweenManager {
+	#list = [];
+	#updating = false;
+
+	get count() {
+		return this.#list.filter(t => t.active).length;
+	}
+
+	// opts: ease, delay, repeat (n veces más, o true = infinito), yoyo, from, onStart,
+	// onUpdate(target, p), onComplete(target), overwrite (por defecto true).
+	add(target, to, duration, opts = {}) {
+		if (target == null || typeof target !== 'object') {
+			throw new Error('[Js2d] tween: el objetivo tiene que ser un objeto (ej. { x: 0 })');
+		}
+		const tween = new Tween(target, to, duration, opts);
+		// Dos tweens sobre la misma propiedad del mismo objeto se pelearían cada cuadro:
+		// el nuevo le saca la propiedad al viejo (y si el viejo se queda sin nada, se cancela).
+		if (opts.overwrite !== false) this.kill(target, Object.keys(to));
+		this.#list.push(tween);
+		return tween;
+	}
+
+	// Cancela los tweens de `target` (todos, o sólo lo que toquen de `keys`).
+	kill(target, keys = null) {
+		for (const tween of this.#list) {
+			if (tween.target !== target || !tween.active) continue;
+			if (keys) for (const key of keys) delete tween.to[key];
+			if (!keys || Object.keys(tween.to).length === 0) tween.cancel();
+		}
+		this.#compact();
+	}
+
+	clear() {
+		for (const tween of this.#list) tween.cancel();
+		this.#compact();
+	}
+
+	update(dt) {
+		const list = this.#list;
+		const n = list.length;   // los creados durante este update arrancan en el cuadro siguiente
+		this.#updating = true;
+		try {
+			for (let i = 0; i < n; i++) list[i]._step(dt);
+		} finally {
+			this.#updating = false;
+		}
+		this.#compact();
+	}
+
+	// Saca los terminados, en el lugar. Durante update() no se toca la lista: un callback que
+	// cancele o cree tweens movería los índices del recorrido.
+	#compact() {
+		if (this.#updating) return;
+		const list = this.#list;
+		let j = 0;
+		for (let i = 0; i < list.length; i++) if (list[i].active) list[j++] = list[i];
+		list.length = j;
+	}
+}
+
+// --- Escenas -----------------------------------------------------------------------------
+
+// Pila de escenas (menú, partida, pausa, ...). Js2d tiene una (`js.scenes`); el juego la
+// alimenta desde su loop, en el orden que ya usa:
+//
+//   js.scenes.add('menu', { enter(params) {...}, update(dt) {...}, draw() {...}, exit() {...} });
+//   js.scenes.switch('menu');                          // reemplaza todo lo que haya
+//   js.scenes.switch('juego', { nivel: 3 }, { fade: 0.4 });   // con fundido a negro
+//   js.scenes.push('pausa');  js.scenes.pop();         // una encima de otra
+//   ...
+//   js.scenes.update(js.getFrameTime());   // en el update del juego
+//   js.scenes.draw();                      // en el draw, después de clearBg()
+//
+// Una escena es un objeto (o una instancia de clase) con los métodos que necesite, todos
+// opcionales: enter(params, from), exit(to), pause(), resume(), update(dt), draw().
+// `overlay: true` en la escena hace que también se dibuje la que tiene debajo (un menú de
+// pausa sobre la partida). Sólo recibe update() la de arriba de todo.
+class SceneManager {
+	#js;
+	#defs = new Map();
+	#stack = [];   // [{ name, scene }]
+	// Transición con fundido: 'out' (se oscurece), 'in' (se aclara) o null.
+	#fade = null;
+
+	constructor(js) {
+		this.#js = js;
+	}
+
+	add(name, scene) {
+		if (scene == null || typeof scene !== 'object') {
+			throw new Error(`[Js2d] escena "${name}": tiene que ser un objeto con enter/update/draw`);
+		}
+		this.#defs.set(name, scene);
+	}
+
+	has(name) {
+		return this.#defs.has(name);
+	}
+
+	// Nombre de la escena de arriba (o null) y de toda la pila, de abajo hacia arriba.
+	get current() {
+		return this.#stack.length ? this.#stack[this.#stack.length - 1].name : null;
+	}
+
+	get stack() {
+		return this.#stack.map(e => e.name);
+	}
+
+	get transitioning() {
+		return this.#fade !== null;
+	}
+
+	#find(name) {
+		const scene = this.#defs.get(name);
+		if (!scene) throw new Error(`[Js2d] escena desconocida: "${name}"`);
+		return scene;
+	}
+
+	// Reemplaza toda la pila por `name`. Con { fade: segundos, color } oscurece, cambia y aclara.
+	// Durante un fundido las escenas no reciben update(), para que no entre input a medias.
+	switch(name, params = {}, opts = {}) {
+		this.#find(name);
+		const half = (opts.fade || 0) / 2;
+		// sin escena previa no hay nada que oscurecer: entra directo
+		if (half > 0 && (this.#stack.length || this.#fade)) {
+			const color = opts.color || Color.BLACK;
+			if (this.#fade && this.#fade.phase === 'out') {
+				// ya se estaba oscureciendo hacia otra escena: gana la última pedida
+				Object.assign(this.#fade, { name, params, half, color });
+			} else {
+				const alpha = this.#fade ? this.#fade.alpha : 0;
+				this.#fade = { phase: 'out', t: alpha * half, half, alpha, name, params, color };
+			}
+			return;
+		}
+		this.#fade = null;
+		this.#swap(name, params);
+	}
+
+	#swap(name, params) {
+		const from = this.current;
+		while (this.#stack.length) {
+			const top = this.#stack.pop();
+			if (top.scene.exit) top.scene.exit(name);
+		}
+		const scene = this.#find(name);
+		this.#stack.push({ name, scene });
+		if (scene.enter) scene.enter(params, from);
+	}
+
+	// Apila `name` encima de la actual, que queda en pausa.
+	push(name, params = {}) {
+		const scene = this.#find(name);
+		const from = this.current;
+		const top = this.#stack[this.#stack.length - 1];
+		if (top && top.scene.pause) top.scene.pause();
+		this.#stack.push({ name, scene });
+		if (scene.enter) scene.enter(params, from);
+	}
+
+	// Saca la de arriba y retoma la de abajo. No hace nada si es la única.
+	pop() {
+		if (this.#stack.length < 2) return;
+		const top = this.#stack.pop();
+		const now = this.#stack[this.#stack.length - 1];
+		if (top.scene.exit) top.scene.exit(now.name);
+		if (now.scene.resume) now.scene.resume();
+	}
+
+	update(dt) {
+		if (this.#fade) this.#advanceFade(dt);
+		if (this.#fade) return;
+		const top = this.#stack[this.#stack.length - 1];
+		if (top && top.scene.update) top.scene.update(dt);
+	}
+
+	#advanceFade(dt) {
+		const f = this.#fade;
+		f.t += dt;
+		if (f.phase === 'out') {
+			f.alpha = Math.min(1, f.t / f.half);
+			if (f.alpha >= 1) {
+				this.#swap(f.name, f.params);
+				f.phase = 'in';
+				f.t = 0;
+			}
+		} else {
+			f.alpha = Math.max(0, 1 - f.t / f.half);
+			if (f.alpha <= 0) this.#fade = null;
+		}
+	}
+
+	draw() {
+		let first = this.#stack.length - 1;
+		while (first > 0 && this.#stack[first].scene.overlay) first--;
+		for (let i = Math.max(first, 0); i < this.#stack.length; i++) {
+			const scene = this.#stack[i].scene;
+			if (scene.draw) scene.draw();
+		}
+		if (this.#fade && this.#fade.alpha > 0) {
+			const js = this.#js;
+			js.withoutShake(() => {
+				js.ctx.save();
+				js.ctx.globalAlpha = this.#fade.alpha;
+				js.ctx.fillStyle = this.#fade.color;
+				js.ctx.fillRect(0, 0, js.getCanvasWidth(), js.getCanvasHeight());
+				js.ctx.restore();
+			});
+		}
+	}
+}
+
+// --- Partículas --------------------------------------------------------------------------
+
+// Sistema de partículas con pool (no crea objetos por cuadro). Js2d tiene uno (`js.particles`);
+// se avanza solo en tick() y el juego lo dibuja donde quiera con js.particles.draw().
+//
+//   js.particles.emit(x, y, 30, 'sparks');                              // ráfaga con un preset
+//   js.particles.emit(x, y, 20, { preset: 'confetti', gravity: 400 });  // preset + cambios
+//   const humo = js.particles.stream(x, y, 'smoke', 25);                // 25 por segundo, sigue vivo
+//   humo.x = nuevoX; humo.stop();
+//
+// Opciones (un número, o [mínimo, máximo] para sortear uno por partícula):
+//   speed (px/s, 100)   angle (grados: 0 derecha, 90 abajo, -90 arriba)   spread (apertura
+//   total del cono en grados; por defecto 360 si no hay angle y 0 si lo hay)   life (segundos, [0.4, 0.8])
+//   size (px de radio o lado, 4)   endSize (al final de la vida; igual a size)   color ('#rrggbb',
+//   '#rgb', '#rrggbbaa' o 'rgb()/rgba()', o una lista de la que se sortea una)   endColor
+//   alpha (1)   endAlpha (0)   gravity (px/s² hacia abajo, o { x, y })   drag (frenado, 0)
+//   spin (grados/s)   rotation (grados iniciales)   radius (nace dentro de un disco de ese radio)
+//   shape ('circle' | 'square' | 'line' | 'image')   image (para shape 'image')   additive (true
+//   suma luz: fuego, chispas)   ease (curva de Ease con que avanzan color, tamaño y alpha).
+// Con el pool lleno (`max`, 2000) las partículas nuevas se descartan.
+class ParticleSystem {
+	static presets = {
+		sparks:   { speed: [120, 320], spread: 360, life: [0.25, 0.6], size: [1.5, 3], endSize: 0, color: ['#fff3b0', '#ffd166', '#ff9f1c'], endColor: '#ff5400', alpha: 1, endAlpha: 0, drag: 2.5, additive: true },
+		smoke:    { speed: [10, 40], angle: -90, spread: 40, life: [0.8, 1.6], size: [6, 10], endSize: [18, 28], color: '#8a8f98', alpha: 0.5, endAlpha: 0, gravity: { x: 0, y: -20 }, drag: 0.8 },
+		confetti: { speed: [150, 420], angle: -90, spread: 120, life: [1.2, 2.2], size: [3, 5], color: ['#ef476f', '#ffd166', '#06d6a0', '#118ab2', '#f78c6b'], alpha: 1, endAlpha: 1, gravity: 520, drag: 1.2, spin: [-540, 540], rotation: [0, 360], shape: 'square' },
+		explosion:{ speed: [80, 360], spread: 360, life: [0.3, 0.8], size: [3, 7], endSize: 0, color: ['#fff3b0', '#ffb703', '#fb8500'], endColor: '#d00000', alpha: 1, endAlpha: 0, drag: 3, additive: true },
+	};
+
+	#js;
+	#list = [];       // partículas vivas
+	#free = [];       // partículas reutilizables
+	#streams = [];
+	#colorCache = new Map();
+	max = 2000;
+
+	constructor(js) {
+		this.#js = js;
+	}
+
+	get count() {
+		return this.#list.length;
+	}
+
+	// Cada partícula nace con todo resuelto (rangos sorteados, colores en RGB), así que
+	// update() y draw() sólo hacen cuentas.
+	emit(x, y, count = 1, opts = 'sparks') {
+		const o = this.#resolve(opts);
+		const ease = Ease.get(o.ease);
+		let made = 0;
+		for (let i = 0; i < count && this.#list.length < this.max; i++) {
+			const p = this.#free.pop() || {};
+			const angle = (this.#range(o.angle, 0) + (Math.random() - 0.5) * (o.spread ?? (o.angle == null ? 360 : 0))) * Math.PI / 180;
+			const speed = this.#range(o.speed, 100);
+			const radius = o.radius ? Math.sqrt(Math.random()) * o.radius : 0;
+			const where = Math.random() * Math.PI * 2;
+			p.x = x + Math.cos(where) * radius;
+			p.y = y + Math.sin(where) * radius;
+			p.vx = Math.cos(angle) * speed;
+			p.vy = Math.sin(angle) * speed;
+			p.life = Math.max(0.001, this.#range(o.life, [0.4, 0.8]));
+			p.age = 0;
+			p.size0 = this.#range(o.size, 4);
+			p.size1 = o.endSize == null ? p.size0 : this.#range(o.endSize, 0);
+			const c0 = this.#color(Array.isArray(o.color) && typeof o.color[0] === 'string' ? o.color[Math.floor(Math.random() * o.color.length)] : o.color);
+			p.c0 = c0;
+			p.c1 = o.endColor == null ? c0 : this.#color(o.endColor);
+			p.a0 = o.alpha ?? 1;
+			p.a1 = o.endAlpha ?? 0;
+			const g = typeof o.gravity === 'number' ? { x: 0, y: o.gravity } : (o.gravity || { x: 0, y: 0 });
+			p.gx = g.x || 0;
+			p.gy = g.y || 0;
+			p.drag = o.drag || 0;
+			p.rot = this.#range(o.rotation, 0) * Math.PI / 180;
+			p.spin = this.#range(o.spin, 0) * Math.PI / 180;
+			p.shape = o.shape || 'circle';
+			p.image = o.image || null;
+			p.additive = !!o.additive;
+			p.ease = ease;
+			this.#list.push(p);
+			made++;
+		}
+		return made;
+	}
+
+	// Emisor continuo: `rate` partículas por segundo. Devuelve { x, y, rate, active, stop() };
+	// se puede mover cambiando x/y o regular cambiando rate. `duration` lo apaga solo.
+	stream(x, y, opts = 'sparks', rate = 20, duration = Infinity) {
+		const s = { x, y, rate, opts: this.#resolve(opts), left: duration, acc: 0, active: true };
+		s.stop = () => { s.active = false; };
+		this.#streams.push(s);
+		return s;
+	}
+
+	// Un preset por nombre, o un objeto { preset: 'nombre', ...cambios }, o las opciones sueltas.
+	#resolve(opts) {
+		if (typeof opts === 'string') opts = { preset: opts };
+		opts = opts || {};
+		if (!opts.preset) return opts;
+		const base = ParticleSystem.presets[opts.preset];
+		if (!base) throw new Error(`[Js2d] preset de partículas desconocido: "${opts.preset}"`);
+		return { ...base, ...opts };
+	}
+
+	#range(v, fallback) {
+		if (v == null) v = fallback;
+		if (Array.isArray(v)) return v[0] + Math.random() * (v[1] - v[0]);
+		return v;
+	}
+
+	// '#rgb', '#rrggbb', '#rrggbbaa', 'rgb(...)', 'rgba(...)' -> [r, g, b]. Lo que no se
+	// entiende queda blanco. El alfa del color no se usa: va por `alpha` / `endAlpha`.
+	#color(str) {
+		if (typeof str !== 'string') return [255, 255, 255];
+		let c = this.#colorCache.get(str);
+		if (c) return c;
+		c = [255, 255, 255];
+		let m;
+		if ((m = /^#([0-9a-f]{3})$/i.exec(str))) c = [...m[1]].map(h => parseInt(h + h, 16));
+		else if ((m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})?$/i.exec(str))) c = [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+		else if ((m = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(str))) c = [+m[1], +m[2], +m[3]];
+		this.#colorCache.set(str, c);
+		return c;
+	}
+
+	update(dt) {
+		for (const s of this.#streams) {
+			if (!s.active) continue;
+			s.left -= dt;
+			if (s.left <= 0) { s.active = false; continue; }
+			s.acc += s.rate * dt;
+			const n = Math.floor(s.acc);
+			if (n > 0) { s.acc -= n; this.emit(s.x, s.y, n, s.opts); }
+		}
+		this.#streams = this.#streams.filter(s => s.active);
+
+		const list = this.#list;
+		for (let i = list.length - 1; i >= 0; i--) {
+			const p = list[i];
+			p.age += dt;
+			if (p.age >= p.life) {
+				list[i] = list[list.length - 1];   // se saca sin mover al resto
+				list.pop();
+				this.#free.push(p);
+				continue;
+			}
+			const k = Math.exp(-p.drag * dt);
+			p.vx = (p.vx + p.gx * dt) * k;
+			p.vy = (p.vy + p.gy * dt) * k;
+			p.x += p.vx * dt;
+			p.y += p.vy * dt;
+			p.rot += p.spin * dt;
+		}
+	}
+
+	clear() {
+		for (const p of this.#list) this.#free.push(p);
+		this.#list.length = 0;
+		this.#streams.length = 0;
+	}
+
+	draw() {
+		const ctx = this.#js.ctx;
+		ctx.save();
+		// primero las normales y después las que suman luz, para que el brillo quede encima
+		for (const additive of [false, true]) {
+			ctx.globalCompositeOperation = additive ? 'lighter' : 'source-over';
+			for (const p of this.#list) {
+				if (p.additive !== additive) continue;
+				const t = p.ease(p.age / p.life);
+				const size = p.size0 + (p.size1 - p.size0) * t;
+				const alpha = p.a0 + (p.a1 - p.a0) * t;
+				if (size <= 0 || alpha <= 0) continue;
+				const r = Math.round(p.c0[0] + (p.c1[0] - p.c0[0]) * t);
+				const g = Math.round(p.c0[1] + (p.c1[1] - p.c0[1]) * t);
+				const b = Math.round(p.c0[2] + (p.c1[2] - p.c0[2]) * t);
+				ctx.globalAlpha = Math.min(1, alpha);
+				ctx.fillStyle = ctx.strokeStyle = `rgb(${r},${g},${b})`;
+				if (p.shape === 'circle') {
+					ctx.beginPath();
+					ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+					ctx.fill();
+				} else if (p.shape === 'line') {
+					// una estela en la dirección del movimiento
+					ctx.lineWidth = Math.max(1, size * 0.5);
+					ctx.beginPath();
+					ctx.moveTo(p.x, p.y);
+					ctx.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04);
+					ctx.stroke();
+				} else {
+					ctx.save();
+					ctx.translate(p.x, p.y);
+					ctx.rotate(p.rot);
+					if (p.shape === 'image' && p.image) ctx.drawImage(p.image, -size, -size, size * 2, size * 2);
+					else ctx.fillRect(-size, -size, size * 2, size * 2);
+					ctx.restore();
+				}
+			}
+		}
+		ctx.restore();
+	}
+}
+
+// --- Interfaz (widgets) ------------------------------------------------------------------
+
+// Widgets en modo inmediato: en cada cuadro el juego los declara (y se dibujan en el acto) y
+// cada uno devuelve lo que pasó. No hay objetos que crear ni destruir. Js2d tiene una
+// instancia (`js.ui`).
+//
+//   js.ui.begin();                                  // una vez por cuadro, antes de los widgets
+//   js.ui.panel(caja, { title: 'Opciones' });
+//   if (js.ui.button('jugar', rBoton, 'Jugar', { primary: true })) empezar();
+//   sonido = js.ui.toggle('sonido', rToggle, sonido, 'Sonido');
+//   volumen = js.ui.slider('vol', rSlider, volumen, 0, 1);
+//   const i = js.ui.list('niveles', rLista, ['Fácil', 'Normal', 'Difícil'], { selected: nivel });
+//   if (i >= 0) nivel = i;
+//
+// Rectángulos: { x, y, width, height } (también vale w / h). Cada widget lleva un `id` único
+// por pantalla. El puntero es el del motor (mouse o toque, sin distinguir). Un widget recién
+// aparecido responde a partir del cuadro siguiente: la zona tocable se arma con lo que se
+// declaró en el cuadro anterior, y gana el que se declaró último (el de más arriba).
+//
+// Para que el juego no use como propio un toque que cayó en la interfaz: `js.ui.wantsPointer`
+// (el puntero está sobre la interfaz, o la apretó y sigue apretando).
+//
+// Apariencia: `js.ui.theme` (colores, fuente, radio) y `js.ui.scale` (multiplica tamaños,
+// radios y márgenes; por ejemplo la unidad de interfaz del juego).
+//
+// Teclado y gamepad: con `js.ui.navigation = true` la interfaz se maneja sin puntero. Tab /
+// Shift+Tab (o RB / LB) recorren los widgets en el orden en que se declararon; las flechas (o la
+// cruceta y la palanca izquierda) saltan al widget más cercano en esa dirección; Enter o Espacio
+// (o A) activan; Escape (o B) suelta el foco. En un slider las flechas izquierda y derecha
+// cambian el valor; en una lista, arriba y abajo mueven la fila. El anillo de foco aparece con
+// la primera tecla y se va con el primer clic. Los controles son las acciones `ui:next`,
+// `ui:prev`, `ui:left`, `ui:right`, `ui:up`, `ui:down`, `ui:accept` y `ui:cancel`: si el juego
+// ya las asignó con js.input.bind, se respetan. Ojo: mientras `js.ui.wantsKeyboard` es true
+// esas teclas son de la interfaz, y el juego no debería usarlas para otra cosa.
+class UI {
+	static DRAG_THRESHOLD = 8;   // px que separan un toque de un arrastre
+
+	#js;
+	#prev = [];         // zonas del cuadro anterior: { id, x, y, w, h, interactive }
+	#cur = [];
+	#scroll = new Map();   // id de lista -> desplazamiento en px
+	#lastPointer = null;
+	#dragDist = 0;
+	#nav = { dx: 0, dy: 0 };     // pasos de flecha de este cuadro para el widget con foco
+	#navBound = false;
+	#rep = new Map();            // repetición de las flechas mantenidas
+	#acceptRow = null;           // lista a la que se le dio Enter en este cuadro
+	#rowFocus = new Map();       // lista -> fila con el foco del teclado
+
+	scale = 1;
+	cursor = true;      // cambiar el cursor a "pointer" sobre lo tocable
+	theme = {
+		font: 'system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+		fontSize: 16,
+		text: '#f4f6f8', textDisabled: 'rgba(244,246,248,0.4)',
+		panel: 'rgba(14,24,38,0.92)', panelBorder: 'rgba(255,255,255,0.14)',
+		button: 'rgba(255,255,255,0.14)', buttonHover: 'rgba(255,255,255,0.24)', buttonActive: 'rgba(255,255,255,0.34)',
+		accent: '#ffb703', accentHover: '#ffc833', accentActive: '#e6a100', accentText: '#1b1400',
+		track: 'rgba(255,255,255,0.18)', knob: '#f4f6f8',
+		rowHover: 'rgba(255,255,255,0.10)', rowSelected: 'rgba(255,183,3,0.28)',
+		focus: '#7cc4ff', focusRow: 'rgba(124,196,255,0.2)',
+		shadow: 'rgba(0,0,0,0.4)',
+		radius: 10, padding: 12,
+	};
+
+	hot = null;         // id del widget bajo el puntero
+	active = null;      // id del widget que el puntero tiene apretado
+	clicked = null;     // id del widget que se tocó (apretar y soltar encima) en este cuadro
+	clickAt = null;     // dónde se soltó ese toque
+	clickDragged = false;   // true si el toque fue en realidad un arrastre
+	pointerOver = false;
+
+	navigation = false;     // true: la interfaz se maneja con teclado y gamepad (ver arriba)
+	focused = null;         // id del widget con el foco
+	focusVisible = false;   // true si se muestra el anillo (se usó el teclado o el gamepad)
+
+	constructor(js) {
+		this.#js = js;
+	}
+
+	get wantsPointer() {
+		return this.pointerOver || this.active !== null;
+	}
+
+	// true si hay un widget con el foco a la vista: Tab, flechas, Enter, Espacio y Escape son de
+	// la interfaz y el juego tiene que dejarlos pasar.
+	get wantsKeyboard() {
+		return this.navigation && this.focusVisible && this.focused !== null;
+	}
+
+	// Da el foco a un widget (y muestra el anillo), por ejemplo al abrir un menú.
+	focus(id) {
+		this.focused = id;
+		this.focusVisible = true;
+	}
+
+	blur() {
+		this.focused = null;
+		this.focusVisible = false;
+	}
+
+	// Arma el estado del cuadro a partir del puntero. Llamar una vez por cuadro, antes de
+	// declarar los widgets.
+	begin() {
+		const js = this.#js;
+		const ev = js.consumePointerEvents();
+		const mouse = js.getMousePosition();
+		this.#prev = this.#cur;
+		this.#cur = [];
+		this.clicked = null;
+
+		const top = (x, y) => this.#topAt(x, y);
+
+		if (ev.pressed) {
+			const r = top(ev.pressX, ev.pressY);
+			this.active = r && r.interactive ? r.id : null;
+			this.#dragDist = 0;
+			this.#lastPointer = { x: ev.pressX, y: ev.pressY };   // el arrastre se mide desde donde se apretó
+			this.focused = this.active;       // un clic da el foco, pero sin anillo
+			this.focusVisible = false;
+		}
+		// el desplazamiento del puntero mientras está apretado (para arrastrar listas y sliders)
+		if (this.#lastPointer && (js.mouseButtons[0] || ev.pressed)) {
+			this.#dragDist += Math.hypot(mouse.x - this.#lastPointer.x, mouse.y - this.#lastPointer.y);
+		}
+		this.#lastPointer = mouse;
+
+		if (ev.released) {
+			const r = top(ev.releaseX, ev.releaseY);
+			if (!ev.canceled && this.active !== null && r && r.id === this.active) {
+				this.clicked = this.active;
+				this.clickAt = { x: ev.releaseX, y: ev.releaseY };
+				this.clickDragged = this.#dragDist > UI.DRAG_THRESHOLD;
+			}
+			this.active = null;
+		} else if (this.active !== null && !js.mouseButtons[0] && !ev.pressed) {
+			this.active = null;   // se soltó fuera del canvas: el motor no se enteró
+		}
+
+		const under = top(mouse.x, mouse.y);
+		this.pointerOver = !!under;
+		// Con un dedo no hay "pasar el puntero por encima": sin esto, el último botón tocado
+		// quedaría resaltado hasta el próximo toque.
+		const hover = js.pointerType !== 'touch' || js.mouseButtons[0] || ev.pressed;
+		this.hot = hover && under && under.interactive ? under.id : null;
+		if (this.cursor && js.canvas && js.canvas.style) js.canvas.style.cursor = this.hot !== null ? 'pointer' : '';
+
+		this.#nav.dx = this.#nav.dy = 0;
+		this.#acceptRow = null;
+		if (this.navigation) this.#navigate();
+		else this.focusVisible = false;
+	}
+
+	// Controles de navegación por defecto, sin pisar los que el juego ya haya asignado.
+	#bindNav() {
+		const inp = this.#js.input;
+		const have = new Set(inp.actions);
+		const defs = {
+			'ui:next': ['Tab', 'pad:RB'], 'ui:prev': ['pad:LB'],
+			'ui:left': ['ArrowLeft', 'pad:Left', 'pad:LStickLeft'], 'ui:right': ['ArrowRight', 'pad:Right', 'pad:LStickRight'],
+			'ui:up': ['ArrowUp', 'pad:Up', 'pad:LStickUp'], 'ui:down': ['ArrowDown', 'pad:Down', 'pad:LStickDown'],
+			'ui:accept': ['Enter', 'NumpadEnter', 'Space', 'pad:A'], 'ui:cancel': ['Escape', 'pad:B'],
+		};
+		for (const [action, sources] of Object.entries(defs)) if (!have.has(action)) inp.bind(action, sources);
+		this.#navBound = true;
+	}
+
+	// Interpreta las teclas del cuadro: mueve el foco, activa el widget que lo tiene, o deja
+	// los pasos de flecha para el widget que los usa (slider, lista).
+	#navigate() {
+		const js = this.#js, inp = js.input;
+		if (!this.#navBound) this.#bindNav();
+		const dt = js.getFrameTime();
+		const bound = a => inp.bindings(a).length > 0;
+		// una flecha mantenida repite: a los 0,4 s y después cada 0,06 s
+		const steps = (a) => {
+			if (!bound(a) || !inp.isDown(a)) { this.#rep.delete(a); return 0; }
+			if (inp.pressed(a) || !this.#rep.has(a)) { this.#rep.set(a, 0.4); return 1; }
+			let t = this.#rep.get(a) - dt, n = 0;
+			while (t <= 0 && n < 3) { n++; t += 0.06; }
+			this.#rep.set(a, t);
+			return n;
+		};
+		const edge = a => bound(a) && inp.pressed(a);
+		const left = steps('ui:left'), right = steps('ui:right'), up = steps('ui:up'), down = steps('ui:down');
+		let next = edge('ui:next'), prev = edge('ui:prev');
+		if (next && (js.keysPressed.ShiftLeft || js.keysPressed.ShiftRight)) { next = false; prev = true; }   // Shift+Tab
+		const accept = edge('ui:accept'), cancel = edge('ui:cancel');
+		if (!(left || right || up || down || next || prev || accept || cancel)) return;
+
+		const zones = this.#prev.filter(z => z.interactive);
+		if (this.focused !== null && !zones.some(z => z.id === this.focused)) this.focused = null;   // el widget ya no está
+
+		if (cancel) {
+			if (this.focusVisible) this.blur();
+			return;
+		}
+		if (!this.focusVisible) {
+			// con el foco oculto, Enter y Espacio son del juego; cualquier tecla de navegación lo muestra
+			if (accept || !zones.length) return;
+			this.focusVisible = true;
+			if (this.focused === null) this.focused = (prev ? zones[zones.length - 1] : zones[0]).id;
+			return;
+		}
+		if (this.focused === null) {
+			if (zones.length) this.focused = (prev ? zones[zones.length - 1] : zones[0]).id;
+			return;
+		}
+
+		const idx = zones.findIndex(z => z.id === this.focused), z = zones[idx];
+		if (accept) {
+			if (z.kind === 'button' || z.kind === 'toggle') {
+				this.clicked = z.id;
+				this.clickAt = { x: z.x + z.w / 2, y: z.y + z.h / 2 };
+				this.clickDragged = false;
+			} else if (z.kind === 'list') {
+				this.#acceptRow = z.id;
+			}
+		}
+		if (next) { this.focused = zones[(idx + 1) % zones.length].id; return; }
+		if (prev) { this.focused = zones[(idx - 1 + zones.length) % zones.length].id; return; }
+
+		const dx = right - left, dy = down - up;
+		if (dx !== 0) {
+			if (z.kind === 'slider') this.#nav.dx = dx;
+			else for (let k = 0; k < Math.abs(dx) && this.#spatial(dx > 0 ? 'right' : 'left'); k++);
+		}
+		if (dy !== 0) {
+			if (z.kind === 'list') this.#nav.dy = dy;
+			else for (let k = 0; k < Math.abs(dy) && this.#spatial(dy > 0 ? 'down' : 'up'); k++);
+		}
+	}
+
+	// Pasa el foco al widget más cercano en la dirección dada (según lo dibujado en el cuadro
+	// anterior). Devuelve false si no hay ninguno de ese lado.
+	#spatial(dir) {
+		const zones = this.#prev.filter(z => z.interactive);
+		const cur = zones.find(z => z.id === this.focused);
+		if (!cur) return false;
+		const cx = cur.x + cur.w / 2, cy = cur.y + cur.h / 2;
+		let best = null, bestScore = Infinity;
+		for (const z of zones) {
+			if (z.id === cur.id) continue;
+			const dx = z.x + z.w / 2 - cx, dy = z.y + z.h / 2 - cy;
+			const along = dir === 'right' ? dx : dir === 'left' ? -dx : dir === 'down' ? dy : -dy;
+			if (along <= 0.5) continue;                       // tiene que estar del lado pedido
+			const across = dir === 'left' || dir === 'right' ? Math.abs(dy) : Math.abs(dx);
+			const score = along + across * 2;                 // mejor el que está más derecho
+			if (score < bestScore) { best = z; bestScore = score; }
+		}
+		if (!best) return false;
+		this.focused = best.id;
+		return true;
+	}
+
+	// Anillo de foco alrededor de un widget.
+	#ring(r, radius) {
+		const s = this.scale, o = 2 * s;
+		this.#js.drawRectangleRoundedLines({ x: r.x - o, y: r.y - o, width: r.w + 2 * o, height: r.h + 2 * o }, radius + o, 2 * s, this.theme.focus);
+	}
+
+	#hasFocus(id) {
+		return this.focusVisible && this.focused === id;
+	}
+
+	// Qué hay bajo el punto (x, y) según el último cuadro dibujado: { id, x, y, w, h,
+	// interactive } o null. `id` es null en los paneles y bloqueos. Sirve para que el juego
+	// decida si un toque era de la interfaz o de lo que hay detrás.
+	hitTest(x, y) {
+		const z = this.#topAt(x, y, this.#shown());
+		return z ? { ...z } : null;
+	}
+
+	// Todas las zonas del último cuadro dibujado (copia). Pensado para pruebas y depuración.
+	get zones() {
+		return this.#shown().map(z => ({ ...z }));
+	}
+
+	// Entre dos cuadros (cuando llegan los toques) lo último dibujado está en #cur; entre
+	// begin() y el dibujado todavía no hay nada ahí y lo último es lo del cuadro anterior.
+	#shown() {
+		return this.#cur.length ? this.#cur : this.#prev;
+	}
+
+	// Zona que tapa el puntero sin dibujar nada (un panel invisible, o el margen alrededor de
+	// una tarjeta).
+	block(rect) {
+		this.#register(null, this.#rect(rect), false);
+	}
+
+	#topAt(x, y, zones = this.#prev) {
+		for (let i = zones.length - 1; i >= 0; i--) {
+			const r = zones[i];
+			if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r;
+		}
+		return null;
+	}
+
+	#rect(r) {
+		return { x: r.x, y: r.y, w: r.width ?? r.w, h: r.height ?? r.h };
+	}
+
+	#register(id, r, interactive, kind = null) {
+		this.#cur.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, interactive, kind });
+	}
+
+	#font(size, weight = 600) {
+		return `${weight} ${size}px ${this.theme.font}`;
+	}
+
+	#text(str, x, y, size, color, align = 'left', weight = 600) {
+		const ctx = this.#js.ctx;
+		ctx.save();
+		ctx.font = this.#font(size, weight);
+		ctx.textAlign = align;
+		ctx.textBaseline = 'middle';
+		ctx.fillStyle = color;
+		ctx.fillText(str, x, y);
+		ctx.restore();
+	}
+
+	// Achica la letra hasta que el texto entre en `maxWidth` (sin bajar de `floor` x el tamaño).
+	#fitSize(str, size, maxWidth, weight, floor = 0.6) {
+		const ctx = this.#js.ctx;
+		ctx.save();
+		let s = size;
+		ctx.font = this.#font(s, weight);
+		while (s > size * floor && ctx.measureText(str).width > maxWidth) {
+			s -= 1;
+			ctx.font = this.#font(s, weight);
+		}
+		ctx.restore();
+		return s;
+	}
+
+	// Rectángulo redondeado con sombra opcional (la sombra del canvas ignora la escala del
+	// contexto: va en píxeles reales).
+	#box(r, radius, color, shadow) {
+		const js = this.#js, ctx = js.ctx;
+		if (shadow) {
+			const dpr = js.dpr || 1;
+			const sh = shadow === true ? { blur: 18, y: 5 } : shadow;
+			ctx.save();
+			ctx.shadowColor = this.theme.shadow;
+			ctx.shadowBlur = sh.blur * dpr;
+			ctx.shadowOffsetY = sh.y * dpr;
+			js.drawRectangleRounded({ x: r.x, y: r.y, width: r.w, height: r.h }, radius, color);
+			ctx.restore();
+		} else {
+			js.drawRectangleRounded({ x: r.x, y: r.y, width: r.w, height: r.h }, radius, color);
+		}
+	}
+
+	// Recuadro de fondo. Por defecto bloquea el puntero: lo que está debajo no recibe toques.
+	// opts: title, blocks (true), radius, color, border (color del borde), shadow (true o { blur, y }).
+	panel(rect, opts = {}) {
+		const r = this.#rect(rect);
+		const s = this.scale, th = this.theme;
+		if (opts.blocks !== false) this.#register(null, r, false);
+		const radius = (opts.radius ?? th.radius) * s;
+		this.#box(r, radius, opts.color || th.panel, opts.shadow);
+		this.#js.drawRectangleRoundedLines({ x: r.x + 0.5, y: r.y + 0.5, width: r.w - 1, height: r.h - 1 }, radius, 1, opts.border || th.panelBorder);
+		if (opts.title) this.#text(opts.title, r.x + th.padding * s, r.y + th.padding * s + 9 * s, (th.fontSize + 2) * s, th.text, 'left', 700);
+	}
+
+	label(text, x, y, opts = {}) {
+		const th = this.theme;
+		this.#text(String(text), x, y, (opts.size ?? th.fontSize) * this.scale, opts.color || th.text, opts.align || 'left', opts.weight ?? 600);
+	}
+
+	// true en el cuadro en que se tocó (o mirar js.ui.clicked === id desde el update).
+	// opts: primary, disabled, size, weight (700), radius, textColor,
+	//   color: un color de relleno ('#rrggbb') -que se oscurece al apretar y se aclara al pasar
+	//          el puntero- o { base, hover, active },
+	//   border (color del borde), shadow (true o { blur, y }), gloss (brillo fino arriba),
+	//   fit (achica la letra para que el texto entre en vez de recortarlo).
+	button(id, rect, label, opts = {}) {
+		const r = this.#rect(rect);
+		const s = this.scale, th = this.theme;
+		const size = (opts.size ?? th.fontSize) * s;
+		const weight = opts.weight ?? 700;
+		const radius = (opts.radius ?? th.radius) * s;
+		const js = this.#js;
+		if (opts.disabled) {
+			this.#register(null, r, false);
+			this.#box(r, radius, th.button, opts.shadow);
+			this.#text(label, r.x + r.w / 2, r.y + r.h / 2, size, th.textDisabled, 'center', weight);
+			return false;
+		}
+		this.#register(id, r, true, 'button');
+
+		const focus = this.#hasFocus(id);
+		const pressed = id === this.active && id === this.hot;
+		const hovered = !pressed && (id === this.hot || id === this.active || focus);
+		let fill, overlay = null;
+		if (opts.color && typeof opts.color === 'object') {
+			fill = pressed ? opts.color.active : hovered ? opts.color.hover : opts.color.base;
+		} else if (opts.color) {
+			fill = opts.color;
+			overlay = pressed ? 'rgba(0,0,0,0.22)' : hovered ? 'rgba(255,255,255,0.08)' : null;
+		} else {
+			const c = opts.primary
+				? { base: th.accent, hover: th.accentHover, active: th.accentActive }
+				: { base: th.button, hover: th.buttonHover, active: th.buttonActive };
+			fill = pressed ? c.active : hovered ? c.hover : c.base;
+		}
+		this.#box(r, radius, fill, opts.shadow);
+		if (opts.gloss) js.drawRectangleRounded({ x: r.x + 2, y: r.y + 1, width: r.w - 4, height: r.h * 0.45 }, Math.max(0, radius - 2), 'rgba(255,255,255,0.08)');
+		if (overlay) js.drawRectangleRounded({ x: r.x, y: r.y, width: r.w, height: r.h }, radius, overlay);
+		if (opts.border) js.drawRectangleRoundedLines({ x: r.x + 0.5, y: r.y + 0.5, width: r.w - 1, height: r.h - 1 }, radius, 1, opts.border);
+		if (focus) this.#ring(r, radius);
+
+		const textColor = opts.textColor || (opts.primary ? th.accentText : th.text);
+		const tsize = opts.fit ? this.#fitSize(label, size, r.w - 16 * s, weight) : size;
+		js.beginClippingRect({ x: r.x, y: r.y, width: r.w, height: r.h });
+		this.#text(label, r.x + r.w / 2, r.y + r.h / 2, tsize, textColor, 'center', weight);
+		js.endClipping();
+		return this.clicked === id;
+	}
+
+	// Interruptor con texto a la izquierda. Devuelve el valor nuevo (el mismo si no se tocó).
+	toggle(id, rect, value, label, opts = {}) {
+		const r = this.#rect(rect);
+		const s = this.scale, th = this.theme;
+		const size = (opts.size ?? th.fontSize) * s;
+		const disabled = !!opts.disabled;
+		this.#register(disabled ? null : id, r, !disabled, 'toggle');
+
+		const ph = Math.min(r.h * 0.7, 28 * s), pw = ph * 1.8;
+		const px = r.x + r.w - pw, py = r.y + (r.h - ph) / 2;
+		const hover = !disabled && (this.hot === id || this.active === id || this.#hasFocus(id));
+		this.#js.drawRectangleRounded({ x: px, y: py, width: pw, height: ph }, ph / 2, value ? (hover ? th.accentHover : th.accent) : (hover ? th.buttonHover : th.track));
+		const kr = ph / 2 - 3 * s;
+		const kx = value ? px + pw - ph / 2 : px + ph / 2;
+		this.#js.drawCircle({ x: kx, y: py + ph / 2 }, kr, value ? th.accentText : th.knob);
+		if (label) this.#text(label, r.x, r.y + r.h / 2, size, disabled ? th.textDisabled : th.text);
+		if (!disabled && this.#hasFocus(id)) this.#ring(r, 6 * s);
+		return !disabled && this.clicked === id ? !value : value;
+	}
+
+	// Barra deslizante horizontal. Devuelve el valor (entre min y max; con opts.step, múltiplo).
+	slider(id, rect, value, min = 0, max = 1, opts = {}) {
+		const r = this.#rect(rect);
+		const s = this.scale, th = this.theme;
+		this.#register(id, r, true, 'slider');
+		const kr = Math.min(r.h / 2, 11 * s);
+		const x0 = r.x + kr, x1 = r.x + r.w - kr, cy = r.y + r.h / 2;
+
+		// un toque que empezó y terminó entre dos cuadros ya no está `active`, pero deja su posición
+		const px = this.active === id ? this.#js.getMousePosition().x : this.clicked === id ? this.clickAt.x : null;
+		if (px !== null) {
+			const t = Math.max(0, Math.min(1, (px - x0) / Math.max(1, x1 - x0)));
+			value = min + (max - min) * t;
+			if (opts.step) value = Math.max(min, Math.min(max, min + Math.round((value - min) / opts.step) * opts.step));
+		}
+		// teclado: izquierda y derecha mueven de a un paso (o 1/20 del rango)
+		if (this.#nav.dx !== 0 && this.#hasFocus(id)) {
+			value = Math.max(min, Math.min(max, value + this.#nav.dx * (opts.step || (max - min) / 20)));
+		}
+		const t = max === min ? 0 : Math.max(0, Math.min(1, (value - min) / (max - min)));
+		const th_ = 6 * s;
+		this.#js.drawRectangleRounded({ x: x0, y: cy - th_ / 2, width: x1 - x0, height: th_ }, th_ / 2, th.track);
+		this.#js.drawRectangleRounded({ x: x0, y: cy - th_ / 2, width: (x1 - x0) * t, height: th_ }, th_ / 2, th.accent);
+		const hover = this.hot === id || this.active === id || this.#hasFocus(id);
+		this.#js.drawCircle({ x: x0 + (x1 - x0) * t, y: cy }, kr * (hover ? 1 : 0.85), th.knob);
+		if (this.#hasFocus(id)) this.#ring(r, Math.min(r.h / 2, 8 * s));
+		return value;
+	}
+
+	// Lista con desplazamiento (rueda y arrastre). `items`: textos o { label, disabled }.
+	// Devuelve el índice tocado, o -1. opts: rowHeight (36), selected (índice resaltado), size (tamaño de la letra).
+	list(id, rect, items, opts = {}) {
+		const r = this.#rect(rect);
+		const s = this.scale, th = this.theme;
+		const rowH = (opts.rowHeight ?? 36) * s;
+		const total = items.length * rowH;
+		const maxScroll = Math.max(0, total - r.h);
+		this.#register(id, r, true, 'list');
+
+		let scroll = this.#scroll.get(id) || 0;
+		if (this.hot === id || this.active === id) {
+			const wheel = this.#js.peekMouseWheelDelta();
+			if (wheel && this.hot === id) { scroll += wheel * rowH; this.#js.consumeMouseWheelDelta(); }
+		}
+		if (this.active === id && this.#dragDist > UI.DRAG_THRESHOLD) {
+			const p = this.#js.getMousePosition();
+			scroll -= p.y - (this.#dragLastY ?? p.y);
+		}
+		this.#dragLastY = this.active === id ? this.#js.getMousePosition().y : null;
+
+		// teclado: la fila con foco se mueve con arriba y abajo, salteando las deshabilitadas; al
+		// llegar al borde el foco sigue hacia el widget de ese lado
+		const focus = this.#hasFocus(id);
+		const enabled = i => items[i] !== undefined && !(typeof items[i] === 'object' && items[i].disabled);
+		let row = this.#rowFocus.get(id);
+		if (row === undefined || row >= items.length || !enabled(row)) row = enabled(opts.selected) ? opts.selected : items.findIndex((_, i) => enabled(i));
+		if (focus && this.#nav.dy !== 0) {
+			const dir = Math.sign(this.#nav.dy);
+			for (let k = 0; k < Math.abs(this.#nav.dy); k++) {
+				let j = row + dir;
+				while (j >= 0 && j < items.length && !enabled(j)) j += dir;
+				if (j < 0 || j >= items.length) { this.#spatial(dir < 0 ? 'up' : 'down'); break; }
+				row = j;
+			}
+			// que la fila se vea
+			if (row * rowH < scroll) scroll = row * rowH;
+			else if ((row + 1) * rowH > scroll + r.h) scroll = (row + 1) * rowH - r.h;
+		}
+		this.#rowFocus.set(id, row);
+		scroll = Math.max(0, Math.min(maxScroll, scroll));
+		this.#scroll.set(id, scroll);
+
+		this.#js.beginClippingRect({ x: r.x, y: r.y, width: r.w, height: r.h });
+		const first = Math.max(0, Math.floor(scroll / rowH));
+		const last = Math.min(items.length - 1, Math.ceil((scroll + r.h) / rowH));
+		const mouse = this.#js.getMousePosition();
+		for (let i = first; i <= last; i++) {
+			const item = items[i];
+			const label = typeof item === 'string' ? item : item.label;
+			const disabled = typeof item === 'object' && item.disabled;
+			const y = r.y + i * rowH - scroll;
+			const over = this.hot === id && mouse.y >= y && mouse.y < y + rowH && this.#dragDist <= UI.DRAG_THRESHOLD;
+			if (i === opts.selected) this.#js.drawRectangle({ x: r.x, y, width: r.w, height: rowH }, th.rowSelected);
+			if (focus && i === row) this.#js.drawRectangle({ x: r.x, y, width: r.w, height: rowH }, th.focusRow);
+			else if (i !== opts.selected && over && !disabled) this.#js.drawRectangle({ x: r.x, y, width: r.w, height: rowH }, th.rowHover);
+			this.#text(label, r.x + th.padding * s, y + rowH / 2, (opts.size ?? th.fontSize) * s, disabled ? th.textDisabled : th.text);
+		}
+		if (maxScroll > 0) {
+			const bh = Math.max(20 * s, r.h * r.h / total), by = r.y + (r.h - bh) * (scroll / maxScroll);
+			this.#js.drawRectangleRounded({ x: r.x + r.w - 5 * s, y: by, width: 3 * s, height: bh }, 2 * s, 'rgba(255,255,255,0.35)');
+		}
+		this.#js.endClipping();
+		if (focus) this.#ring(r, 4 * s);
+
+		if (this.#acceptRow === id && enabled(row)) return row;
+		if (this.clicked === id && !this.clickDragged) {
+			const i = Math.floor((this.clickAt.y - r.y + scroll) / rowH);
+			const item = items[i];
+			if (item && !(typeof item === 'object' && item.disabled)) { this.#rowFocus.set(id, i); return i; }
+		}
+		return -1;
+	}
+	#dragLastY = null;
+
+	getScroll(id) {
+		return this.#scroll.get(id) || 0;
+	}
+
+	setScroll(id, px) {
+		this.#scroll.set(id, Math.max(0, px));
+	}
+
+	// Parte `rect` en `n` filas (o columnas) iguales con `gap` entre ellas. Devuelve rectángulos.
+	rows(rect, n, gap = 0) {
+		const r = this.#rect(rect);
+		const h = (r.h - gap * (n - 1)) / n;
+		return Array.from({ length: n }, (_, i) => ({ x: r.x, y: r.y + i * (h + gap), width: r.w, height: h }));
+	}
+
+	columns(rect, n, gap = 0) {
+		const r = this.#rect(rect);
+		const w = (r.w - gap * (n - 1)) / n;
+		return Array.from({ length: n }, (_, i) => ({ x: r.x + i * (w + gap), y: r.y, width: w, height: r.h }));
+	}
+}
+
+// --- Acciones de entrada -----------------------------------------------------------------
+
+// Entrada por acciones: el juego pregunta por "saltar" o "mover a la izquierda", no por una
+// tecla. Cada acción tiene una o más fuentes (teclado, mouse, gamepad) y se puede reasignar.
+// Js2d tiene una instancia (`js.input`); se actualiza sola en tick(), antes de todo lo demás.
+//
+//   js.input.bind('saltar', 'Space', 'pad:A');
+//   js.input.bind('izquierda', 'KeyA', 'ArrowLeft', 'pad:Left', 'pad:LStickLeft');
+//   js.input.bind('derecha',   'KeyD', 'ArrowRight', 'pad:Right', 'pad:LStickRight');
+//   ...
+//   if (js.input.pressed('saltar')) saltar();            // sólo el cuadro en que se apretó
+//   if (js.input.isDown('disparar')) disparar();         // mientras está apretada
+//   x += js.input.axis('izquierda', 'derecha') * vel * dt;
+//   const { x, y } = js.input.vector('izquierda', 'derecha', 'arriba', 'abajo');   // largo <= 1
+//
+// Fuentes (texto): una tecla por su KeyboardEvent.code ('Space', 'KeyW', 'ArrowUp', 'Enter',
+// 'ShiftLeft'...); 'mouse:left' | 'mouse:middle' | 'mouse:right' (el toque en pantalla cuenta
+// como 'mouse:left'); y del gamepad 'pad:' + A, B, X, Y, LB, RB, LT, RT, Back, Start, L3, R3,
+// Up, Down, Left, Right, Guide, o una dirección de palanca: LStickUp / LStickDown / LStickLeft /
+// LStickRight y lo mismo con RStick. Con varios gamepads conectados se suman en uno solo.
+class ActionMap {
+	static PAD_BUTTONS = { A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, Back: 8, Start: 9, L3: 10, R3: 11, Up: 12, Down: 13, Left: 14, Right: 15, Guide: 16 };
+	static MOUSE_BUTTONS = { left: 0, middle: 1, right: 2 };
+
+	#js;
+	#actions = new Map();    // nombre -> { sources: [{ raw, read }], value, down, prev, virtual }
+	#padButtons = new Array(17).fill(0);
+	#sticks = { L: { x: 0, y: 0 }, R: { x: 0, y: 0 } };
+	#pads = [];
+	#active = new Set();     // fuentes sueltas activas en este cuadro (para reasignar teclas)
+	#prevActive = new Set();
+	#capture = null;
+	#padListeners = [];
+
+	// Zona muerta de las palancas (0 a 1, radial) y valor desde el que una fuente analógica
+	// cuenta como apretada.
+	deadzone = 0.2;
+	threshold = 0.5;
+	// Último tipo de dispositivo que se usó: 'keyboard' | 'mouse' | 'gamepad'. Sirve para
+	// mostrar las indicaciones del control que el jugador tiene en la mano.
+	device = 'keyboard';
+
+	constructor(js) {
+		this.#js = js;
+	}
+
+	// --- Asignaciones ---
+
+	// Define (o reemplaza) las fuentes de una acción. Acepta varias fuentes o una lista.
+	bind(action, ...sources) {
+		const raws = sources.flat();
+		const parsed = raws.map(raw => this.#parse(raw));
+		const prev = this.#actions.get(action);
+		this.#actions.set(action, { sources: parsed, value: 0, down: false, prev: false, virtual: prev ? prev.virtual : 0, latchedPress: false, latchedRelease: false });
+		return this;
+	}
+
+	// bindAll({ saltar: ['Space', 'pad:A'], correr: 'ShiftLeft' })
+	bindAll(map) {
+		for (const [action, sources] of Object.entries(map)) this.bind(action, sources);
+		return this;
+	}
+
+	unbind(action) {
+		this.#actions.delete(action);
+	}
+
+	bindings(action) {
+		const a = this.#actions.get(action);
+		return a ? a.sources.map(s => s.raw) : [];
+	}
+
+	get actions() {
+		return [...this.#actions.keys()];
+	}
+
+	// Para guardar la configuración del jugador (js.saveJSON) y recuperarla con importBindings.
+	exportBindings() {
+		const out = {};
+		for (const [name, a] of this.#actions) out[name] = a.sources.map(s => s.raw);
+		return out;
+	}
+
+	importBindings(data) {
+		if (data && typeof data === 'object') this.bindAll(data);
+		return this;
+	}
+
+	#parse(raw) {
+		if (typeof raw !== 'string' || !raw) throw new Error(`[Js2d] fuente de entrada inválida: ${raw}`);
+		if (raw.startsWith('mouse:')) {
+			const i = ActionMap.MOUSE_BUTTONS[raw.slice(6)];
+			if (i === undefined) throw new Error(`[Js2d] botón de mouse desconocido: "${raw}"`);
+			return { raw, read: () => this.#js.mouseButtons[i] ? 1 : 0 };
+		}
+		if (raw.startsWith('pad:')) {
+			const name = raw.slice(4);
+			const b = ActionMap.PAD_BUTTONS[name];
+			if (b !== undefined) return { raw, read: () => this.#padButtons[b] };
+			const m = /^(L|R)Stick(Up|Down|Left|Right)$/.exec(name);
+			if (!m) throw new Error(`[Js2d] control de gamepad desconocido: "${raw}"`);
+			const side = m[1], dir = m[2];
+			return { raw, read: () => {
+				const s = this.#sticks[side];
+				return Math.max(0, dir === 'Left' ? -s.x : dir === 'Right' ? s.x : dir === 'Up' ? -s.y : s.y);
+			} };
+		}
+		return { raw, read: () => (this.#js.keysPressed[raw] || this.#js.keyLatch.has(raw)) ? 1 : 0 };
+	}
+
+	// --- Lectura ---
+
+	#get(action) {
+		const a = this.#actions.get(action);
+		if (!a) throw new Error(`[Js2d] acción sin asignar: "${action}"`);
+		return a;
+	}
+
+	// 0 a 1 (las teclas y botones valen 1; gatillos y palancas, su valor analógico).
+	value(action) { return this.#get(action).value; }
+	isDown(action) { return this.#get(action).down; }
+	// true sólo en el cuadro en que pasó de suelta a apretada (y al revés para released).
+	pressed(action) { const a = this.#get(action); return a.down && !a.prev; }
+	released(action) { const a = this.#get(action); return !a.down && a.prev; }
+
+	// Para la simulación a paso fijo (ver FixedTimestep): true UNA vez por cada apretada (o
+	// soltada), en el primer paso que lo pregunte, aunque la apretada haya llegado en un cuadro
+	// sin pasos. Lo que ningún paso consume se descarta cuando termina un run() con pasos.
+	consumePressed(action) {
+		const a = this.#get(action);
+		const v = a.latchedPress;
+		a.latchedPress = false;
+		return v;
+	}
+
+	consumeReleased(action) {
+		const a = this.#get(action);
+		const v = a.latchedRelease;
+		a.latchedRelease = false;
+		return v;
+	}
+
+	clearLatches() {
+		for (const a of this.#actions.values()) a.latchedPress = a.latchedRelease = false;
+	}
+
+	// -1 a 1: lo que valga `positive` menos lo que valga `negative`.
+	axis(negative, positive) {
+		return this.value(positive) - this.value(negative);
+	}
+
+	// Dirección en 2D a partir de cuatro acciones. El largo nunca pasa de 1, así que en diagonal
+	// con el teclado no se corre más rápido.
+	vector(left, right, up, down) {
+		let x = this.axis(left, right), y = this.axis(up, down);
+		const len = Math.hypot(x, y);
+		if (len > 1) { x /= len; y /= len; }
+		return { x, y };
+	}
+
+	// Controles en pantalla (botones táctiles): fija el valor de una acción sin dispositivo real.
+	// Se mantiene hasta que se vuelva a fijar (0 la suelta).
+	setVirtual(action, value) {
+		this.#get(action).virtual = Math.max(0, Math.min(1, value));
+	}
+
+	// --- Gamepad ---
+
+	get gamepads() {
+		return this.#pads.map(p => ({ index: p.index, id: p.id }));
+	}
+
+	// fn({ connected, index, id }) cuando se conecta o desconecta un gamepad. Devuelve cómo
+	// dejar de escuchar.
+	onGamepad(fn) {
+		this.#padListeners.push(fn);
+		return () => { this.#padListeners = this.#padListeners.filter(f => f !== fn); };
+	}
+
+	handleGamepadEvent(connected, pad) {
+		for (const fn of [...this.#padListeners]) fn({ connected, index: pad.index, id: pad.id });
+	}
+
+	// Vibración en todos los gamepads que la tengan (los demás la ignoran). `weak` y `strong`
+	// van de 0 a 1.
+	rumble({ duration = 200, weak = 0.5, strong = 0.5 } = {}) {
+		for (const p of this.#pads) {
+			const act = p.vibrationActuator;
+			if (act && act.playEffect) {
+				try { act.playEffect('dual-rumble', { duration, weakMagnitude: weak, strongMagnitude: strong }); } catch (_) { /* sin soporte */ }
+			}
+		}
+	}
+
+	// --- Reasignar teclas ---
+
+	// Espera al próximo control que el jugador apriete y devuelve su nombre ('KeyJ', 'pad:X'...)
+	// para pasárselo a bind(). Escape cancela (devuelve null; cambialo con `cancel`). Lo que ya
+	// estaba apretado al empezar (el clic que abrió el diálogo) no cuenta. El mouse queda
+	// afuera salvo que se pida con `mouse: true`.
+	captureNext({ cancel = 'Escape', mouse = false } = {}) {
+		if (this.#capture) this.#capture.resolve(null);
+		return new Promise(resolve => { this.#capture = { resolve, cancel, mouse }; });
+	}
+
+	// --- Cuadro ---
+
+	// La llama tick() una vez por cuadro.
+	update() {
+		const js = this.#js;
+		this.#pollPads();
+
+		const now = new Set();
+		for (const k of Object.keys(js.keysPressed)) if (js.keysPressed[k]) now.add(k);
+		for (const k of js.keyLatch) now.add(k);
+		if (js.mouseButtons[0]) now.add('mouse:left');
+		if (js.mouseButtons[1]) now.add('mouse:middle');
+		if (js.mouseButtons[2]) now.add('mouse:right');
+		for (const [name, i] of Object.entries(ActionMap.PAD_BUTTONS)) if (this.#padButtons[i] >= this.threshold) now.add('pad:' + name);
+		for (const side of ['L', 'R']) {
+			const s = this.#sticks[side];
+			if (s.x <= -0.7) now.add(`pad:${side}StickLeft`);
+			if (s.x >= 0.7) now.add(`pad:${side}StickRight`);
+			if (s.y <= -0.7) now.add(`pad:${side}StickUp`);
+			if (s.y >= 0.7) now.add(`pad:${side}StickDown`);
+		}
+
+		for (const a of this.#actions.values()) {
+			let v = a.virtual;
+			for (const s of a.sources) v = Math.max(v, s.read());
+			a.prev = a.down;
+			a.value = v;
+			a.down = v >= this.threshold;
+			if (a.down && !a.prev) a.latchedPress = true;
+			if (!a.down && a.prev) a.latchedRelease = true;
+		}
+
+		let newDevice = null;
+		let fresh = null;
+		for (const raw of now) {
+			if (this.#prevActive.has(raw)) continue;
+			newDevice = raw.startsWith('pad:') ? 'gamepad' : raw.startsWith('mouse:') ? 'mouse' : 'keyboard';
+			if (this.#capture && fresh === null && (this.#capture.mouse || !raw.startsWith('mouse:'))) fresh = raw;
+		}
+		if (newDevice) this.device = newDevice;
+
+		if (this.#capture && fresh !== null) {
+			const { resolve, cancel } = this.#capture;
+			this.#capture = null;
+			resolve(fresh === cancel ? null : fresh);
+		}
+
+		this.#prevActive = now;
+		this.#active = now;
+		js.keyLatch.clear();
+	}
+
+	#pollPads() {
+		const list = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
+		this.#pads = Array.from(list || []).filter(p => p && p.connected !== false);
+		this.#padButtons.fill(0);
+		const sticks = { L: { x: 0, y: 0, m: 0 }, R: { x: 0, y: 0, m: 0 } };
+		for (const p of this.#pads) {
+			for (let i = 0; i < 17; i++) {
+				const b = p.buttons[i];
+				if (!b) continue;
+				const v = b.value > 0 ? b.value : (b.pressed ? 1 : 0);
+				if (v > this.#padButtons[i]) this.#padButtons[i] = v;
+			}
+			for (const [side, ax, ay] of [['L', 0, 1], ['R', 2, 3]]) {
+				const x = p.axes[ax] || 0, y = p.axes[ay] || 0;
+				const m = Math.hypot(x, y);
+				if (m > sticks[side].m) sticks[side] = { x, y, m };
+			}
+		}
+		// zona muerta radial: bajo `deadzone` es 0, y por encima se reescala para que empiece en 0
+		for (const side of ['L', 'R']) {
+			const s = sticks[side];
+			if (s.m < this.deadzone) { this.#sticks[side] = { x: 0, y: 0 }; continue; }
+			const scale = Math.min(1, (s.m - this.deadzone) / (1 - this.deadzone)) / s.m;
+			this.#sticks[side] = { x: s.x * scale, y: s.y * scale };
+		}
+	}
+
+	reset() {
+		this.#actions.clear();
+		this.#padListeners = [];
+		if (this.#capture) this.#capture.resolve(null);
+		this.#capture = null;
+		this.#prevActive = new Set();
+	}
+}
+
+// --- Paso fijo de simulación -------------------------------------------------------------
+
+// Simulación a paso fijo con dibujo a velocidad variable: la lógica (física, IA, reglas) avanza
+// siempre en pasos de 1/hz segundos, aunque la pantalla vaya a 30, 60 o 144 cuadros por segundo,
+// y por eso se comporta igual en cualquier máquina. Js2d tiene uno (`js.fixed`); acumula el
+// tiempo solo en tick() y el juego consume los pasos cuando quiere:
+//
+//   js.tick(ts);
+//   js.fixed.run((dt, i) => {                     // 0, 1 o más veces por cuadro
+//       if (js.input.consumePressed('saltar')) jugador.saltar();
+//       mundo.paso(dt);
+//   });
+//   dibujar(js.fixed.alpha);                      // 0 a 1: cuánto pasó desde el último paso
+//
+// Para que el movimiento no se vea a saltos en pantallas más rápidas que `hz`, se dibuja
+// interpolando entre el estado anterior y el actual con `alpha`:
+//   x = Js2d.lerp(jugador.xAnterior, jugador.x, js.fixed.alpha)
+//
+// Ojo con las teclas: dentro de un paso no uses input.pressed() (un cuadro con varios pasos
+// la vería en todos, y un cuadro sin pasos la perdería). Usá input.consumePressed() /
+// consumeReleased(): cada apretada la recibe un solo paso, aunque llegue en un cuadro sin pasos.
+class FixedTimestep {
+	#js;
+	#acc = 0;
+
+	// Pasos por segundo.
+	hz = 60;
+	// Tope de pasos por cuadro: si la máquina no da abasto, el tiempo de más se descarta (en
+	// vez de intentar alcanzarlo y volverse cada vez más lenta).
+	maxSteps = 5;
+	// Margen en segundos que absorbe el jitter del navegador: a 60 Hz los cuadros miden 16,2 y
+	// 17,1 ms y sin esto, de tanto en tanto, un cuadro se queda sin paso y el siguiente hace dos.
+	tolerance = 0.002;
+	paused = false;
+	// Cámara lenta (0,5) o rápida (2) de toda la simulación.
+	timeScale = 1;
+
+	// De sólo lectura: pasos del último run(), si se llegó al tope, fracción del paso pendiente
+	// de simular, y totales desde reset() (útiles para repeticiones y para que dos corridas
+	// con las mismas entradas den lo mismo).
+	steps = 0;
+	lagged = false;
+	alpha = 0;
+	ticks = 0;
+	time = 0;
+
+	constructor(js) {
+		this.#js = js;
+	}
+
+	get step() {
+		return 1 / this.hz;
+	}
+
+	// La llama tick() una vez por cuadro.
+	add(frameTime) {
+		if (this.paused) return;
+		const step = this.step;
+		this.#acc = Math.min(this.#acc + frameTime * this.timeScale, step * (this.maxSteps + 1));
+	}
+
+	// Corre `fn(dt, i, n)` una vez por cada paso pendiente (i: número de paso en este cuadro,
+	// n: cuántos hay). Devuelve cuántos corrió. Si fn devuelve false, corta ahí.
+	run(fn) {
+		const step = this.step;
+		let n = Math.max(0, Math.floor((this.#acc + this.tolerance) / step));
+		this.lagged = n > this.maxSteps;
+		if (this.lagged) {
+			n = this.maxSteps;
+			this.#acc = n * step;   // lo que sobra se descarta
+		}
+		let done = 0;
+		for (let i = 0; i < n; i++) {
+			done++;
+			const r = fn(step, i, n);
+			this.ticks++;
+			this.time += step;
+			if (r === false) break;
+		}
+		this.#acc -= done * step;
+		this.steps = done;
+		this.alpha = Math.max(0, Math.min(1, this.#acc / step));
+		if (done > 0) this.#js.input.clearLatches();
+		return done;
+	}
+
+	reset() {
+		this.#acc = 0;
+		this.steps = 0;
+		this.alpha = 0;
+		this.lagged = false;
+		this.ticks = 0;
+		this.time = 0;
+	}
+}
+
 class SpriteFont {
 	constructor(image, charWidth, charHeight, charMap) {
 		this.image = image;
@@ -157,6 +1699,9 @@ class Js2d {
 	ctx = null;
 	audioCtx = null;
 	keysPressed = {};
+	// Teclas que se apretaron desde el último tick(), aunque ya las hayan soltado: un golpe de
+	// teclado más corto que un cuadro no se pierde (lo lee js.input).
+	keyLatch = new Set();
 	masterVolume = 1.0;
 
 	// --- Entrada de texto por teclado ---
@@ -273,6 +1818,37 @@ class Js2d {
     touchEventHandlers = { start: [], move: [], end: [], cancel: [] };
     mouseWheelDelta = 0;
 
+	// Flancos del puntero (mouse o toque) desde la última vez que se consumieron: un toque que
+	// empieza y termina entre dos cuadros no se pierde, como pasaría mirando sólo mouseButtons.
+	// 'mouse' o 'touch': con qué se tocó por última vez (la interfaz no resalta por "hover" con el dedo).
+	pointerType = 'mouse';
+	pointerEvents = { pressed: false, released: false, canceled: false, pressX: 0, pressY: 0, releaseX: 0, releaseY: 0 };
+
+	// Tweens activos (ver tween()). Se avanzan solos en tick().
+	tweens = new TweenManager();
+
+	// Escenas (ver SceneManager).
+	scenes = new SceneManager(this);
+
+	// Partículas (ver ParticleSystem). Se avanzan solas en tick(); el juego llama a
+	// js.particles.draw() donde quiera que se vean.
+	particles = new ParticleSystem(this);
+
+	// Interfaz (ver UI): botones, interruptores, sliders y listas en modo inmediato.
+	ui = new UI(this);
+
+	// Entrada por acciones (ver ActionMap). Se actualiza sola en tick().
+	input = new ActionMap(this);
+
+	// Paso fijo de simulación (ver FixedTimestep). Acumula en tick(); el juego llama a js.fixed.run().
+	fixed = new FixedTimestep(this);
+
+	// Screen shake (ver shake()). `shakeEnabled = false` lo apaga del todo, para una opción
+	// de accesibilidad en los ajustes del juego. `shakeOffset` es lo que se está aplicando.
+	shakeEnabled = true;
+	shakeOffset = { x: 0, y: 0, rotation: 0 };
+	#shakes = [];
+
 	// Cámara: `cameraX`/`cameraY` es el punto del mundo que queda en el centro de la
 	// pantalla, `cameraZoom` la escala (1 = sin zoom). Ver beginCamera()/endCamera() más
 	// abajo — sin cámara activa (el caso por defecto) todo se sigue dibujando 1:1 como
@@ -358,6 +1934,7 @@ class Js2d {
 
 		// Mover mouse
 		this.#on(this.canvas, 'mousemove', e => {
+			this.pointerType = 'mouse';
 			updateMouseFromClient(e.clientX, e.clientY);
 		});
 
@@ -366,7 +1943,9 @@ class Js2d {
 		this.#on(window, 'touchstart', () => this.initAudio(), { once: true });
 	    this.#on(this.canvas, 'mousedown', e => {
 	        if (e.button >= 0 && e.button < 3) { // 0: izq, 1: medio, 2: der
+	            this.pointerType = 'mouse';
 	            this.mouseButtons[e.button] = true;
+	            if (e.button === 0) this.#pointerPress();
 	        }
 	    });
 
@@ -374,6 +1953,7 @@ class Js2d {
 	    this.#on(this.canvas, 'mouseup', e => {
 	        if (e.button >= 0 && e.button < 3) {
 	            this.mouseButtons[e.button] = false;
+	            if (e.button === 0) this.#pointerRelease();
 	        }
 	    });
 
@@ -396,7 +1976,9 @@ class Js2d {
 			const touch = e.touches[0] || e.changedTouches[0];
 			if (!touch) return;
 			updateMouseFromTouch(touch);
+			this.pointerType = 'touch';
 			this.mouseButtons[0] = true;
+			this.#pointerPress();
 			emitTouch('start', e);
 		}, { passive: false });
 
@@ -411,7 +1993,9 @@ class Js2d {
 			if (e.cancelable) e.preventDefault();
 			const touch = e.changedTouches[0];
 			updateMouseFromTouch(touch);
+			this.pointerType = 'touch';
 			this.mouseButtons[0] = false;
+			this.#pointerRelease(type === 'cancel');
 			emitTouch(type, e);
 		};
 
@@ -431,12 +2015,17 @@ class Js2d {
 			}
 
 			this.keysPressed[e.code] = true;
+			this.keyLatch.add(e.code);
 
 			if (e.code === 'Tab') {
 				e.preventDefault();
 			}
 		});
     	this.#on(window, 'keyup', e => { delete this.keysPressed[e.code]; });
+		// Al perder el foco el navegador no avisa de las teclas que se sueltan: quedarían apretadas.
+		this.#on(window, 'blur', () => { this.keysPressed = {}; this.keyLatch.clear(); });
+		this.#on(window, 'gamepadconnected', e => this.input.handleGamepadEvent(true, e.gamepad));
+		this.#on(window, 'gamepaddisconnected', e => this.input.handleGamepadEvent(false, e.gamepad));
 
 		// Manejar cambios de tamaño en desktop y móviles
 		this.#on(window, 'resize', () => this.resizeCanvas());
@@ -467,6 +2056,10 @@ class Js2d {
 	// para escenarios de hot-reload en desarrollo — hoy nada dentro de este archivo lo llama,
 	// es responsabilidad de quien instancia Js2d invocarlo si lo necesita.
 	destroy() {
+		this.tweens.clear();
+		this.stopShake();
+		this.particles.clear();
+		this.input.reset();
 		for (const { target, type, handler, options } of this.#listenerRefs) {
 			target.removeEventListener(type, handler, options);
 		}
@@ -487,6 +2080,30 @@ class Js2d {
 
 	getMousePosition() {
 	    return { ...this.mousePos }; // Copia
+	}
+
+	// Devuelve y reinicia los flancos del puntero ({ pressed, released, canceled, pressX/Y,
+	// releaseX/Y }). Los usa js.ui.begin(); si un juego usa la interfaz, no tiene que llamarla.
+	consumePointerEvents() {
+		const e = this.pointerEvents;
+		const copy = { ...e };
+		e.pressed = e.released = e.canceled = false;
+		return copy;
+	}
+
+	#pointerPress() {
+		const e = this.pointerEvents;
+		e.pressed = true;
+		e.pressX = this.mousePos.x;
+		e.pressY = this.mousePos.y;
+	}
+
+	#pointerRelease(canceled = false) {
+		const e = this.pointerEvents;
+		e.released = true;
+		e.canceled = canceled;
+		e.releaseX = this.mousePos.x;
+		e.releaseY = this.mousePos.y;
 	}
 
 	getMouseWheelDelta() {
@@ -773,6 +2390,9 @@ class Js2d {
 	static MAX_FRAME_TIME = 0.1;
 
 	tick(timestamp) {
+		// Primero la entrada: así todo lo que se actualice después en el cuadro ve lo mismo.
+		this.input.update();
+
 		if (!this.#lastFrameTime) {
 			this.#lastFrameTime = timestamp;
 		}
@@ -791,6 +2411,42 @@ class Js2d {
 			? Math.min((timestamp - this.#lastTickTime) / 1000, Js2d.MAX_FRAME_TIME)
 			: 1 / 60;
 		this.#lastTickTime = timestamp;
+
+		this.fixed.add(this.#frameTime);
+		this.tweens.update(this.#frameTime);
+		this.#updateShake(this.#frameTime);
+		this.particles.update(this.#frameTime);
+	}
+
+	// Anima propiedades numéricas de un objeto hasta los valores de `props`, en `duration`
+	// segundos. Se avanza sola en tick(), no hace falta llamarla en el update del juego.
+	//
+	//   js.tween(btn, { x: 200, alpha: 1 }, 0.4, { ease: 'outBack' });
+	//   js.tween(icon, { y: 10 }, 0.5, { ease: 'inOutSine', repeat: true, yoyo: true });
+	//   await js.tween(panel, { y: 0 }, 0.3, { delay: 0.1 }).finished;
+	//
+	// Opciones: ease (nombre de Ease o función), delay, repeat (n veces más, o true = sin fin),
+	// yoyo, from (valores iniciales, se fijan al arrancar), onStart, onUpdate(target, p),
+	// onComplete(target), overwrite (false para permitir que dos tweens toquen la misma
+	// propiedad; por defecto el nuevo reemplaza al viejo). Devuelve el Tween: cancel(),
+	// finish(), active, finished (promesa).
+	tween(target, props, duration = 1, opts = {}) {
+		return this.tweens.add(target, { ...props }, duration, opts);
+	}
+
+	// Ejecuta `fn` dentro de `seconds` segundos de juego (se frena si el juego deja de dibujar,
+	// a diferencia de setTimeout). Devuelve un Tween: cancel() lo anula.
+	after(seconds, fn) {
+		return this.tweens.add({}, {}, 0, { delay: seconds, onComplete: fn });
+	}
+
+	// Cancela los tweens de `target` (todos, o sólo los que animen alguna de `props`).
+	killTweens(target, props = null) {
+		this.tweens.kill(target, props);
+	}
+
+	clearTweens() {
+		this.tweens.clear();
 	}
 
 	// Cuánto duró el último cuadro, en segundos. Es lo que hay que pasarle a los update() para
@@ -808,6 +2464,76 @@ class Js2d {
 		this.ctx.imageSmoothingEnabled = IMAGE_SMOOTHING;
 		this.ctx.fillStyle = color;
 		this.ctx.fillRect(0, 0, this.getCanvasWidth(), this.getCanvasHeight());
+
+		// Screen shake: se aplica después de pintar el fondo, así que sacude todo lo que se
+		// dibuje en el cuadro (incluida la cámara) pero no corre el fondo liso. Lo que no deba
+		// temblar (el HUD) va dentro de withoutShake().
+		const s = this.shakeOffset;
+		if (s.x !== 0 || s.y !== 0 || s.rotation !== 0) {
+			if (s.rotation !== 0) {
+				const cx = this.getCanvasWidth() / 2, cy = this.getCanvasHeight() / 2;
+				this.ctx.translate(cx, cy);
+				this.ctx.rotate(s.rotation);
+				this.ctx.translate(-cx, -cy);
+			}
+			this.ctx.translate(s.x, s.y);
+		}
+	}
+
+	// Sacude la pantalla: `magnitude` en píxeles, `duration` en segundos. El temblor se va
+	// apagando hasta cero. Los shakes simultáneos se suman. Se aplica en clearBg().
+	//   js.shake(10, 0.3);                                  // golpe
+	//   js.shake(4, 1.5, { frequency: 40, rotation: 1 });   // temblor largo, con giro de hasta 1 grado
+	// Opciones: frequency (Hz, 25), decay (curva de Ease con que se apaga: 'linear' por
+	// defecto, 'outQuad' cae rápido al principio), rotation (grados máximos, 0), axis ('both' |
+	// 'x' | 'y'). Devuelve { stop() }.
+	shake(magnitude = 8, duration = 0.3, opts = {}) {
+		if (!(duration > 0) || !(magnitude > 0)) return { stop() {} };
+		const shake = {
+			magnitude, duration,
+			frequency: opts.frequency ?? 25,
+			decay: Ease.get(opts.decay),
+			rotation: opts.rotation || 0,
+			axis: opts.axis || 'both',
+			elapsed: 0,
+			seed: Math.random() * 1000,
+		};
+		this.#shakes.push(shake);
+		return { stop: () => { shake.elapsed = shake.duration; } };
+	}
+
+	stopShake() {
+		this.#shakes.length = 0;
+		this.shakeOffset.x = this.shakeOffset.y = this.shakeOffset.rotation = 0;
+	}
+
+	#updateShake(dt) {
+		const off = this.shakeOffset;
+		let x = 0, y = 0, rot = 0;
+		if (this.shakeEnabled) {
+			for (const s of this.#shakes) {
+				s.elapsed += dt;
+				if (s.elapsed >= s.duration) continue;
+				const amount = s.magnitude * (1 - s.decay(s.elapsed / s.duration));
+				// ruido suave: el temblor oscila a `frequency` Hz en vez de saltar al azar
+				const t = s.elapsed * s.frequency;
+				if (s.axis !== 'y') x += this.noise2D(s.seed + t, 0) * amount;
+				if (s.axis !== 'x') y += this.noise2D(0, s.seed + 50 + t) * amount;
+				if (s.rotation) rot += this.noise2D(s.seed + 100 + t, 100) * (amount / s.magnitude) * s.rotation;
+			}
+		}
+		this.#shakes = this.#shakes.filter(s => s.elapsed < s.duration);
+		off.x = x;
+		off.y = y;
+		off.rotation = rot * Math.PI / 180;
+	}
+
+	// Ejecuta `fn` sin el temblor del cuadro (para el HUD, menús, textos fijos). También deja
+	// de lado una cámara activa: vuelve a coordenadas de pantalla.
+	withoutShake(fn) {
+		this.ctx.save();
+		this.ctx.setTransform(this.dpr || 1, 0, 0, this.dpr || 1, 0, 0);
+		try { fn(); } finally { this.ctx.restore(); }
 	}
 
 	drawFPS() {
