@@ -248,12 +248,11 @@ const BULLET_BILL_SPEED = 1.5;       // px lógicos por cuadro
 const CANNON_TIMER = 14;             // el temporizador de un cañón tras disparar (baja de a uno cada vez que sale sorteado)
 const CANNON_NEAR = 40;              // px lógicos: más cerca que esto el Bullet Bill muere al salir
 const CANNON_MAX_BILLS = 3;
-const PLATFORM_LIFT_SPEED = 0.94;      // px lógicos por cuadro de las plataformas que suben o bajan
-const PLATFORM_ACCEL = 5 / 256, PLATFORM_MAX_SPEED = 3;           // la que sube y baja y el balancín: aceleran de a 5/256 hasta 3 px por cuadro
 const PLATFORM_VERT_HALF = 64;                                    // la que sube y baja oscila 64 px a cada lado de su centro
 const PLATFORM_HORI_MAX = 14;                                     // la que va y viene: velocidad máxima en 1/16 px
-const PLATFORM_DROP_GRAVITY = 0x7f / 256, PLATFORM_DROP_MAX = 2;  // la que cae al pisarla
-const PLATFORM_FALL_GRAVITY = 0.2;                               // balancín que se suelta
+const PLATFORM_DROP_MAX = 2;                                      // la que cae al pisarla: velocidad máxima (la gravedad es 0x7f/256)
+const PLATFORM_FALL_MAX = 3;                                     // balancín que se suelta: velocidad máxima (la gravedad es 0x20/256)
+const PLATFORM_BALANCE_TOP_STOP = 15;                            // si una llega arriba sin que Mario esté en la otra, vuelve a esta altura y se frenan las dos
 const PLATFORM_BALANCE_LIMIT = 13;                               // el balancín se suelta si una sube hasta acá
 const HAMMER_THROW_STEPS = 0x30;       // cuadros entre martillos; en el modo difícil, 0x1c
 const HAMMER_THROW_STEPS_HARD = 0x1c;
@@ -277,7 +276,7 @@ const FIREWORK_X = [0x00, 0x30, 0x60, 0x60, 0x00, 0x20];
 const FIREWORK_Y = [0x60, 0x40, 0x70, 0x40, 0x60, 0x30];
 const FIREWORK_FRAME_MS = 100;
 const VINE_GROW_SPEED = 0.5, VINE_MAX = 96;   // la enredadera crece 1 px cada dos cuadros hasta 96 px
-const CLIMB_SPEED = 0.8;                     // px lógicos por cuadro al trepar
+const CLIMB_UP_FORCE = 0x20, CLIMB_DOWN_FORCE = 0xff;   // trepando: sube 1 px por cuadro menos 1 cada 8; baja 1 px más 1 en casi todos los cuadros
 const LOOP_BACK_PAGES = 4;                         // el laberinto devuelve a Mario cuatro páginas atrás
 const LOOP_TOLERANCE = 3;                          // px lógicos de margen en la altura de los pies
 const HURRY_TIME = 100;               // con este tiempo o menos suena la música apurada
@@ -301,9 +300,14 @@ const DEMO_TIMES = [0x9b, 0x10, 0x18, 0x05, 0x2c, 0x20, 0x24, 0x15, 0x5a, 0x10, 
 const NPC_TYPES = new Set(['Toad', 'Princess']);
 const UNKILLABLE = new Set(['Firebar', 'Podoboo', 'Bowser', 'BowserFlame', 'Hammer']);
 const ENEMY_POINTS = { Goomba: 100, Lakitu: 800, HammerBro: 1000 };   // ni pisarlos ni la bola de fuego ni el caparazón los afectan
-const FIREBAR_SLOW = 0x28 / 256, FIREBAR_FAST = 0x38 / 256;   // giro en 1/32 de vuelta por cuadro
-const FIREBAR_BALL_STEP = 8;       // separación entre bolas, en px lógicos
-const FIREBAR_HIT = 3;             // medio lado de la caja de cada bola, en px lógicos
+const FIREBAR_SLOW = 0x28, FIREBAR_FAST = 0x38;   // giro: lo que suma por cuadro al byte bajo del estado (el alto, de 0 a 31, es 1/32 de vuelta)
+// Posición de cada bola de la barra (8 px de radio entre una y otra) según el estado de giro: tabla del original, por radio y ángulo (0 a 8)
+const FIREBAR_TABLE = [
+	[0, 1, 3, 4, 5, 6, 7, 7, 8], [0, 3, 6, 9, 11, 13, 14, 15, 16], [0, 4, 9, 13, 16, 19, 22, 23, 24], [0, 6, 12, 18, 22, 26, 29, 31, 32],
+	[0, 7, 15, 22, 28, 33, 37, 39, 40], [0, 9, 18, 27, 33, 39, 44, 47, 48], [0, 11, 21, 31, 39, 46, 51, 55, 56], [0, 12, 24, 36, 45, 53, 59, 62, 64],
+	[0, 14, 27, 40, 50, 59, 66, 70, 72], [0, 15, 31, 45, 56, 66, 74, 78, 80], [0, 17, 34, 49, 62, 73, 81, 86, 88],
+];
+const FIREBAR_MIRROR = [1, 3, 2, 0];   // por cuarto de vuelta: bit 0 = horizontal hacia la derecha, bit 1 = vertical hacia abajo
 const PODOBOO_SPEED = 7, PODOBOO_GRAVITY = 0x1c / 256;     // salto del Podoboo en px lógicos por cuadro
 const PODOBOO_INTERVAL_STEPS = 21;   // cuadros por "intervalo" del temporizador
 const BLOOBER_FLOAT_INTERVALS = 2;   // unidades de intervalo (21 cuadros cada una) que flota hacia abajo antes de volver a mirar a Mario
@@ -872,10 +876,18 @@ class Game {
 		const base = (this.currentMap.platforms || []).map((d0) => {
 			let d = d0;
 			if (this.secondaryHard && d.w === 48) d = { ...d, w: 32 };   // en el modo difícil las plataformas grandes miden 32 px
-			const p = { ...d, ox: d.x, oy: d.y, vx: 0, vy: 0, rider: false, t: d.kind === 'vert' ? -Math.PI / 2 : 0, active: false, falling: false };
+			const p = { ...d, ox: d.x, oy: d.y, vx: 0, vy: 0, spd: 0, force: 0, dummy: 0, rider: false, t: d.kind === 'vert' ? -Math.PI / 2 : 0, active: false, falling: false };
 			// La que sube y baja: si empieza en la mitad de arriba de la pantalla (y < 0x80) su centro
 			// está 64 px más abajo y arranca desde arriba; si no, su centro está 64 px más arriba y arranca desde abajo
-			if (d.kind === 'vert') p.cy = d.y + 32 < 0x80 ? d.y + PLATFORM_VERT_HALF : d.y - PLATFORM_VERT_HALF;
+			// (la Y del original es la nuestra más 32)
+			if (d.kind === 'vert') {
+				const ny = d.y + 32;
+				p.cy = ny < 0x80 ? d.y + PLATFORM_VERT_HALF : d.y - PLATFORM_VERT_HALF;
+				p.topY = (ny < 0x80 ? ny : 256 - ny) - 32;
+			}
+			// Los elevadores arrancan con su velocidad entera y su fuerza fraccionaria: suben 1 px por cuadro menos 1 cada 16, o bajan 15/16 de px
+			if (d.kind === 'lift') { p.spd = d.dir < 0 ? -1 : 0; p.force = d.dir < 0 ? 0x10 : 0xf0; p.x += 12; }   // y se corren 12 px a la derecha de la columna del nivel
+			if (d.kind === 'balance') { p.y -= 2; if (this.secondaryHard) p.x += 8; }   // el balancín nace 2 px más arriba, y 8 px a la derecha en el modo difícil
 			p.pc = 0; p.sc = 0; p.f = 0;
 			return p;
 		});
@@ -945,7 +957,7 @@ class Game {
 					shellChain: 0,
 					active: false,
 					// Peces: altura inicial, sentido del vaivén y ciclo de brazadas del Bloober
-					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spin: 0, timer: 21, anim: 0,
+					fast: !!e.fast, ccw: !!e.ccw, long: !!e.long, spinLow: 0, spinHigh: 0, timer: 21, anim: 0,
 					edgeTurn: e.type === 'HammerBro', walkTimer: 128, jumpTimer: 0xc0 | this.rbyte(1 + this.enemies.length % 5), throwTimer: HAMMER_THROW_STEPS,
 					origY: screenPos.y,
 					bobDown: e.x % 2 === 0,
@@ -1983,7 +1995,7 @@ class Game {
 			if (!up && !down) return;
 			const box = this.playerHitbox(player);
 			for (const v of this.vines) {
-				if (v.h < 16) continue;
+				if (v.h < 32) continue;   // el tile por el que se trepa recién existe cuando la enredadera mide 32 px
 				const rect = { x: v.baseX + 4 * k, y: v.baseY - v.h * k, w: 8 * k, h: v.h * k };
 				if (this.rectsOverlap(box, rect)) { this.climbVine = v; this.climbSide = 0; pos.x = v.baseX; this.velocityY = 0; this.isOnGround = false; break; }
 			}
@@ -1994,7 +2006,13 @@ class Game {
 		this.climbMoving = up !== down;
 		this.isOnGround = false; this.velocityY = 0;
 		for (let st = 0; st < this.physicsSteps; st++) {
-			if (up) pos.y -= CLIMB_SPEED * k; else if (down) pos.y += CLIMB_SPEED * k;
+			// Sube 1 px por cuadro menos 1 cada 8 (fuerza 0x20); baja 1 px más el que sale de la fuerza 0xff, o sea casi siempre 2
+			if (up || down) {
+				this.climbDummy = (this.climbDummy || 0) + (up ? CLIMB_UP_FORCE : CLIMB_DOWN_FORCE);
+				const carry = this.climbDummy > 255 ? 1 : 0;
+				this.climbDummy &= 255;
+				pos.y += (up ? -1 + carry : 1 + carry) * k;
+			}
 			if (keys['ArrowLeft'] || keys['KeyA']) { this.facingDir = -1; this.climbSide++; }
 			else if (keys['ArrowRight'] || keys['KeyD']) { this.facingDir = 1; this.climbSide++; }
 			else this.climbSide = 0;
@@ -2394,31 +2412,59 @@ class Game {
 		this.platforms = (this.platforms || []).filter(p => !(p.falling && p.y > 260));
 	}
 
+	// La gravedad del original (ImposeGravity) para una plataforma o cualquier objeto con altura entera y, además, velocidad entera con
+	// signo (o.spd), fuerza (o.force, de 0 a 255, la parte fraccionaria) y el acarreo de la posición (o.dummy). En cada cuadro se mueve por
+	// la velocidad más el acarreo, y después la gravedad (down) suma a la fuerza; si se pide subir, además se resta up. La velocidad
+	// tope tiene la forma del original: pasa de max a max y medio px y recién ahí se la corta
+	imposeGravity(o, down, up, max, goUp) {
+		let a = o.dummy + o.force;
+		o.dummy = a & 255;
+		o.y += o.spd + (a > 255 ? 1 : 0);
+		a = o.force + down;
+		o.force = a & 255;
+		if (a > 255) o.spd++;
+		if (o.spd >= max && o.force >= 0x80) { o.spd = max; o.force = 0; }
+		if (goUp) {
+			a = o.force - up;
+			o.force = a & 255;
+			if (a < 0) o.spd--;
+			if (o.spd < -max && o.force < 0x80) { o.spd = -max; o.force = 255; }
+		}
+	}
+
 	stepPlatform(p, player) {
 		const k = this.tileScale;
 		const prevX = p.x;
 		switch (p.kind) {
 			case 'vert':
-				p.vy = Math.max(-PLATFORM_MAX_SPEED, Math.min(PLATFORM_MAX_SPEED, p.vy + (p.y < p.cy ? PLATFORM_ACCEL : -PLATFORM_ACCEL)));
-				p.y += p.vy;
+				// En reposo (sin velocidad ni fuerza) debajo de su tope sube de a un px cada 8 cuadros; si no, acelera hacia su centro de a
+				// 5/256 (bajando) o 5/256 (subiendo: la gravedad menos 10), con tope de 3 px por cuadro
+				if ((p.spd | p.force) === 0) {
+					p.dummy = 0;
+					if (p.y < p.topY) { if ((this.frameCount & 7) === 0) p.y++; break; }
+				}
+				this.imposeGravity(p, 5, 10, 3, p.y >= p.cy);
 				break;
 			case 'hori': {
 				// Dos contadores: cada 4 cuadros la velocidad sube de a 1/16 px hasta 14/16 y vuelve a bajar; el bit 1 del primario
 				// decide el sentido, así que recorre izquierda, vuelta, derecha y vuelta
-				p.f++;
-				if (p.f % 4 === 0) {
+				if ((this.frameCount & 3) === 0) {   // cada cuarto cuadro del contador del juego, igual para todas
 					if (!(p.pc & 1)) { if (p.sc === PLATFORM_HORI_MAX) p.pc++; else p.sc++; }
 					else if (p.sc === 0) p.pc++; else p.sc--;
 				}
 				p.x += (p.pc & 2 ? 1 : -1) * p.sc / 16;
 				break;
 			}
-			case 'lift':
-				p.y += p.dir * PLATFORM_LIFT_SPEED;
+			case 'lift': {
+				// Velocidad entera y fuerza fija: la fuerza suma al acarreo y cada vez que desborda la plataforma se mueve un px de más
+				const a = p.dummy + p.force;
+				p.dummy = a & 255;
+				p.y += p.spd + (a > 255 ? 1 : 0);
 				if (p.y >= 224) p.y -= 256; else if (p.y < -32) p.y += 256;
 				break;
+			}
 			case 'drop':
-				if (p.rider) { p.vy = Math.min(p.vy + PLATFORM_DROP_GRAVITY, PLATFORM_DROP_MAX); p.y += p.vy; }
+				if (p.rider) this.imposeGravity(p, 0x7f, 0, PLATFORM_DROP_MAX, false);
 				break;
 			case 'right':
 				if (p.rider) p.vx = 1;
@@ -2426,15 +2472,31 @@ class Game {
 				break;
 			case 'balance': {
 				const o = p.partner;
-				if (p.falling) { p.vy += PLATFORM_FALL_GRAVITY; p.y += p.vy; break; }
+				if (p.falling) { this.imposeGravity(p, 0x20, 0, PLATFORM_FALL_MAX, false); break; }
 				if (o && p.first && !o.falling) {
-					// La de Mario baja y la otra sube, acelerando de a 5/256 hasta 3 px por cuadro; sin Mario frenan.
-					// Si una llega arriba se sueltan las dos
-					if (p.rider && !o.rider) p.vy = Math.min(PLATFORM_MAX_SPEED, p.vy + PLATFORM_ACCEL);
-					else if (o.rider && !p.rider) p.vy = Math.max(-PLATFORM_MAX_SPEED, p.vy - PLATFORM_ACCEL);
-					else p.vy = Math.abs(p.vy) <= PLATFORM_ACCEL ? 0 : p.vy - Math.sign(p.vy) * PLATFORM_ACCEL;
-					p.y += p.vy; o.y -= p.vy;
-					if (Math.min(p.y, o.y) <= PLATFORM_BALANCE_LIMIT) { p.falling = o.falling = true; p.vy = o.vy = 0; }
+					// 1) Si una llegó arriba (a 13 px o menos): si Mario está en la otra se sueltan las dos (y suma 1000 puntos); si no, la
+					//    de arriba vuelve un poco más abajo y se frenan las dos, y no se hace nada más en este cuadro
+					const high = p.y <= PLATFORM_BALANCE_LIMIT ? p : (o.y <= PLATFORM_BALANCE_LIMIT ? o : null);
+					if (high) {
+						const low = high === p ? o : p;
+						if (low.rider) {
+							p.falling = o.falling = true; p.spd = p.force = p.dummy = o.spd = o.force = o.dummy = 0;
+							this.score += 1000;
+							this.spawnScorePopup('1000', player.position.x + this.tileSize / 2, player.position.y);
+						} else { high.y = PLATFORM_BALANCE_TOP_STOP; p.spd = p.force = o.spd = o.force = 0; }
+						break;
+					}
+					// 2) Sin Mario en ninguna se frena de a poco; con Mario en ésta baja, y con Mario en la otra sube (la otra hace lo contrario)
+					const before = p.y;
+					let goUp;
+					if (!p.rider && !o.rider) {
+						const f = p.force + 5, s = p.spd + (f > 255 ? 1 : 0);
+						if (s < 0) goUp = false;
+						else if (s > 0 || (f & 255) >= 0x0b) goUp = true;
+						else { p.spd = p.force = 0; break; }
+					} else goUp = !p.rider;
+					this.imposeGravity(p, 5, 10, 3, goUp);
+					o.y += before - p.y;
 				}
 				break;
 			}
@@ -2621,21 +2683,45 @@ class Game {
 	// va de 0 a 32 (una vuelta) y a 0 apunta hacia arriba. Gira a la derecha, o a la izquierda con ccw.
 	stepFirebar(enemy) {
 		const speed = enemy.fast ? FIREBAR_FAST : FIREBAR_SLOW;
-		enemy.spin = (enemy.spin + (enemy.ccw ? -speed : speed) + 32) % 32;
+		// El estado de giro son dos bytes: el bajo suma (o resta) la velocidad y lo que sobra pasa al alto, que es la posición de 0 a 31
+		let low = (enemy.spinLow || 0) + (enemy.ccw ? -speed : speed), high = enemy.spinHigh || 0;
+		if (low > 255) high++; else if (low < 0) high--;
+		enemy.spinLow = low & 255;
+		high &= 31;
+		// La barra larga salta una posición al pasar por la horizontal (8 y 24)
+		if (enemy.long && (high === 8 || high === 24)) high++;
+		enemy.spinHigh = high;
 		enemy.anim = (enemy.anim || 0) + 1;
 	}
 
-	// Posiciones en pantalla de las bolas de una barra de fuego (el centro de la primera es el del bloque)
+	// Posiciones en pantalla de las bolas de una barra de fuego, con la tabla del original: cada bola es un píxel o dos distinta de
+	// la anterior según la posición de giro. Devuelve el centro de cada una y la esquina de arriba a la izquierda de su tile de 8 px
 	firebarBalls(enemy) {
 		const k = this.tileScale, ts = this.tileSize;
 		const cx = enemy.x + this.mapOffset.x + ts / 2, cy = enemy.y + ts / 2;
-		const a = enemy.spin / 32 * Math.PI * 2, n = enemy.long ? 12 : 6;
-		const balls = [];
-		for (let i = 0; i < n; i++) {
-			const r = i * FIREBAR_BALL_STEP * k;
-			balls.push({ x: cx + Math.sin(a) * r, y: cy - Math.cos(a) * r });
+		const h = (enemy.spinHigh || 0) & 31, n = enemy.long ? 12 : 6;
+		const osc = v => { v &= 15; return v >= 9 ? 16 - v : v; };
+		const mirror = FIREBAR_MIRROR[h >> 3];
+		const balls = [{ x: cx, y: cy, left: cx - 4 * k, top: cy - 4 * k }];
+		for (let i = 1; i < n; i++) {
+			const row = FIREBAR_TABLE[i - 1];
+			const dx = row[osc(h)] * ((mirror & 1) ? 1 : -1), dy = row[osc(h + 8)] * ((mirror & 2) ? 1 : -1);
+			balls.push({ x: cx + dx * k, y: cy + dy * k, left: cx + dx * k - 4 * k, top: cy + dy * k - 4 * k });
 		}
 		return balls;
+	}
+
+	// Choque de Mario con una barra de fuego, como en el original: la bola le pega si el centro de su tile queda a menos de 8 px
+	// de la posición de Mario (la de la izquierda más 4) y, en vertical, de alguno de sus puntos de revisión: el chico o el agachado
+	// uno solo, a 24 px de la Y del original (los pies menos 32); el grande tres, a 0, 12 y 24 px
+	firebarHit(enemy, player) {
+		const k = this.tileScale, pos = player.position, h = this.playerHeightPx();
+		const marioY = pos.y + h - 32 * k, big = h > this.tileSize;
+		const samples = big ? [marioY, marioY + 12 * k, marioY + 24 * k] : [marioY + 24 * k];
+		for (const b of this.firebarBalls(enemy)) {
+			if (Math.abs(pos.x + 4 * k - b.left) < 8 * k && samples.some(y => Math.abs(y - b.top) < 8 * k)) return true;
+		}
+		return false;
 	}
 
 	// El Podoboo arranca 18 px por debajo del borde de abajo de la pantalla, sube 7 px por cuadro
@@ -2845,10 +2931,7 @@ class Game {
 			return;
 		}
 		if (enemy.type === 'Firebar') {
-			const box = this.playerHitbox(player), h = FIREBAR_HIT * this.tileScale;
-			for (const b of this.firebarBalls(enemy)) {
-				if (this.rectsOverlap(box, { x: b.x - h, y: b.y - h, w: 2 * h, h: 2 * h })) { this.damagePlayer(); return; }
-			}
+			if (this.firebarHit(enemy, player)) this.damagePlayer();
 			return;
 		}
 		const enemyScreenX = enemy.x + this.mapOffset.x;
@@ -4041,6 +4124,8 @@ class Game {
 				dx += (this.xSpeed / 4096) * this.tileScale;
 			}
 			if (this.isSkidding && !wasSkidding) this.engine.playAudioOverlap(audio["Player_Skid"]);
+			// Con el resorte comprimiéndose Mario no se mueve de lugar (la velocidad sigue sumando, y la conserva al rebotar)
+			if (this.springs && this.springs.some(sp => sp.anim > 0)) dx = 0;
 			player.flipped = this.facingDir < 0;
 			const isMoving = this.xSpeed !== 0 && this.wallHug === 0;
 
