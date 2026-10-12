@@ -1,4 +1,4 @@
-// js2d.js — motor de canvas 2D genérico, versión 1.10
+// js2d.js — motor de canvas 2D genérico, versión 1.11
 
 const Color = {
 	WHITE:   "#ffffff",
@@ -1680,6 +1680,394 @@ class FixedTimestep {
 		this.lagged = false;
 		this.ticks = 0;
 		this.time = 0;
+	}
+}
+
+// Colisiones geométricas puras (no tocan el canvas ni el estado del motor).
+// Formas: rect {x, y, width, height} (x, y es la esquina de arriba a la izquierda), círculo
+// {x, y, radius}, segmento {x1, y1, x2, y2}, y polígono = array de {x, y} (convexo para
+// polygons/polygonCircle; el mismo formato que devuelve getPolygonPoints). Igual que
+// checkCollisionRectRect, tocarse nada más no es chocar: hace falta un solape.
+//
+// Las funciones de solape devuelven null si no chocan, o { nx, ny, depth }: la dirección (unitaria)
+// y la distancia en que hay que mover el PRIMER argumento para que deje de tocar al segundo
+// (para mover el segundo, se invierte el signo). Las de segmento y rayo devuelven
+// { t, x, y, nx, ny }: dónde pega (t va de 0 a 1 a lo largo del segmento), el punto y la normal de la
+// superficie; si el segmento ya empieza adentro, t es 0, inside es true y la normal es (0, 0).
+const Collision = (() => {
+	const EPS = 1e-9;
+	const kindOf = s => Array.isArray(s) ? 'polygon' : ('radius' in s ? 'circle' : 'rect');
+	const hit = (s, t, nx, ny) => ({ t, x: s.x1 + (s.x2 - s.x1) * t, y: s.y1 + (s.y2 - s.y1) * t, nx, ny });
+	const centroid = pts => {
+		let x = 0, y = 0;
+		for (const p of pts) { x += p.x; y += p.y; }
+		return { x: x / pts.length, y: y / pts.length };
+	};
+
+	// Segmento contra rect (método de las losas). Un segmento que empieza adentro da t = 0.
+	// Con `strict` el borde no cuenta (el rect es abierto): sirve para mover un rect que está
+	// apoyado en otro sin que se enganche.
+	function segmentRect(s, r, strict = false) {
+		const dx = s.x2 - s.x1, dy = s.y2 - s.y1;
+		let tmin = 0, tmax = 1, nx = 0, ny = 0;
+		const axes = [[s.x1, dx, r.x, r.x + r.width, 1, 0], [s.y1, dy, r.y, r.y + r.height, 0, 1]];
+		for (const [o, d, lo, hi, ax, ay] of axes) {
+			if (Math.abs(d) < EPS) {
+				const e = strict ? EPS : 0;
+				if (o < lo + e || o > hi - e) return null;
+				continue;
+			}
+			let t1 = (lo - o) / d, t2 = (hi - o) / d, sign = -1;   // se entra por el lado de arriba/izquierda: la normal apunta para atrás
+			if (t1 > t2) { const k = t1; t1 = t2; t2 = k; sign = 1; }
+			if (t1 >= tmin) { tmin = t1; nx = ax * sign; ny = ay * sign; }
+			if (t2 < tmax) tmax = t2;
+		}
+		if (strict ? tmax <= tmin + EPS : tmax < tmin) return null;
+		if (nx === 0 && ny === 0) { const h = hit(s, 0, 0, 0); h.inside = true; return h; }
+		return hit(s, tmin, nx, ny);
+	}
+
+	function segmentCircle(s, c) {
+		const dx = s.x2 - s.x1, dy = s.y2 - s.y1, fx = s.x1 - c.x, fy = s.y1 - c.y;
+		const a = dx * dx + dy * dy, k = fx * fx + fy * fy - c.radius * c.radius;
+		if (k < 0) { const h = hit(s, 0, 0, 0); h.inside = true; return h; }
+		if (a === 0) return null;
+		const b = 2 * (fx * dx + fy * dy), disc = b * b - 4 * a * k;
+		if (disc < 0) return null;
+		const t = (-b - Math.sqrt(disc)) / (2 * a);
+		if (t < 0 || t > 1) return null;
+		const h = hit(s, t, 0, 0);
+		h.nx = (h.x - c.x) / c.radius; h.ny = (h.y - c.y) / c.radius;
+		return h;
+	}
+
+	// Segmento contra segmento: t es la posición en `a`, u la de `b`. null si son paralelos.
+	function segmentSegment(a, b) {
+		const rx = a.x2 - a.x1, ry = a.y2 - a.y1, sx = b.x2 - b.x1, sy = b.y2 - b.y1;
+		const den = rx * sy - ry * sx;
+		if (Math.abs(den) < EPS) return null;
+		const qx = b.x1 - a.x1, qy = b.y1 - a.y1;
+		const t = (qx * sy - qy * sx) / den, u = (qx * ry - qy * rx) / den;
+		if (t < 0 || t > 1 || u < 0 || u > 1) return null;
+		const len = Math.hypot(sx, sy);
+		let nx = -sy / len, ny = sx / len;
+		if (nx * rx + ny * ry > 0) { nx = -nx; ny = -ny; }   // la normal mira hacia donde viene `a`
+		const h = hit(a, t, nx, ny);
+		h.u = u;
+		return h;
+	}
+
+	// Segmento contra polígono (el borde más cercano al comienzo). Si empieza adentro, t = 0.
+	function segmentPolygon(s, pts) {
+		if (pointInPolygon(s.x1, s.y1, pts)) { const h = hit(s, 0, 0, 0); h.inside = true; return h; }
+		let best = null;
+		for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+			const h = segmentSegment(s, { x1: pts[j].x, y1: pts[j].y, x2: pts[i].x, y2: pts[i].y });
+			if (h && (!best || h.t < best.t)) best = h;
+		}
+		if (best) delete best.u;
+		return best;
+	}
+
+	function pointInPolygon(x, y, pts) {
+		let inside = false;
+		for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+			if (((pts[i].y > y) !== (pts[j].y > y)) && (x < (pts[j].x - pts[i].x) * (y - pts[i].y) / (pts[j].y - pts[i].y) + pts[i].x)) inside = !inside;
+		}
+		return inside;
+	}
+
+	// Segmento contra cualquier forma.
+	function segment(s, shape) {
+		const k = kindOf(shape);
+		return k === 'rect' ? segmentRect(s, shape) : k === 'circle' ? segmentCircle(s, shape) : segmentPolygon(s, shape);
+	}
+
+	// Rayo desde `origin` en la dirección `direction` (no hace falta que sea unitaria) contra una
+	// lista de formas; devuelve el primer impacto { shape, distance, x, y, nx, ny, inside } o null.
+	// `filter(forma)` puede descartar formas. maxDistance acota el rayo (sin tope por defecto).
+	function raycast(origin, direction, shapes, maxDistance = Infinity, filter = null) {
+		const len = Math.hypot(direction.x, direction.y);
+		if (len === 0) return null;
+		const reach = Number.isFinite(maxDistance) ? maxDistance : 1e9;
+		const s = { x1: origin.x, y1: origin.y, x2: origin.x + direction.x / len * reach, y2: origin.y + direction.y / len * reach };
+		let best = null;
+		for (const shape of shapes) {
+			if (filter && !filter(shape)) continue;
+			const h = segment(s, shape);
+			if (h && (!best || h.t < best.t)) { best = h; best.shape = shape; }
+		}
+		if (!best) return null;
+		best.distance = best.t * reach;
+		return best;
+	}
+
+	// --- Solapes: cuánto y para dónde mover `a` para que deje de tocar a `b` ---
+
+	function rects(a, b) {
+		const ox = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+		const oy = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+		if (ox <= 0 || oy <= 0) return null;
+		if (ox < oy) return { nx: a.x + a.width / 2 < b.x + b.width / 2 ? -1 : 1, ny: 0, depth: ox };
+		return { nx: 0, ny: a.y + a.height / 2 < b.y + b.height / 2 ? -1 : 1, depth: oy };
+	}
+
+	function circles(a, b) {
+		const dx = a.x - b.x, dy = a.y - b.y, d = Math.hypot(dx, dy), depth = a.radius + b.radius - d;
+		if (depth <= 0) return null;
+		return d === 0 ? { nx: 0, ny: -1, depth } : { nx: dx / d, ny: dy / d, depth };
+	}
+
+	function circleRect(c, r) {
+		const px = Math.max(r.x, Math.min(c.x, r.x + r.width)), py = Math.max(r.y, Math.min(c.y, r.y + r.height));
+		const dx = c.x - px, dy = c.y - py, d = Math.hypot(dx, dy);
+		if (d > 0) return d < c.radius ? { nx: dx / d, ny: dy / d, depth: c.radius - d } : null;
+		// el centro está adentro del rect: se saca por el lado más cercano
+		const l = c.x - r.x, rr = r.x + r.width - c.x, t = c.y - r.y, b = r.y + r.height - c.y, m = Math.min(l, rr, t, b);
+		if (m === l) return { nx: -1, ny: 0, depth: l + c.radius };
+		if (m === rr) return { nx: 1, ny: 0, depth: rr + c.radius };
+		if (m === t) return { nx: 0, ny: -1, depth: t + c.radius };
+		return { nx: 0, ny: 1, depth: b + c.radius };
+	}
+
+	// Teorema de los ejes separadores. `axes` son direcciones unitarias; project(axis) -> [min, max] de cada forma.
+	function sat(axes, projA, projB, ca, cb) {
+		let best = null;
+		for (const ax of axes) {
+			const [a0, a1] = projA(ax), [b0, b1] = projB(ax);
+			const o = Math.min(a1, b1) - Math.max(a0, b0);
+			if (o <= 0) return null;
+			if (!best || o < best.depth) best = { nx: ax.x, ny: ax.y, depth: o };
+		}
+		if (best && best.nx * (ca.x - cb.x) + best.ny * (ca.y - cb.y) < 0) { best.nx = -best.nx; best.ny = -best.ny; }
+		return best;
+	}
+	const edgeAxes = pts => pts.map((p, i) => {
+		const q = pts[(i + 1) % pts.length], ex = q.x - p.x, ey = q.y - p.y, l = Math.hypot(ex, ey) || 1;
+		return { x: -ey / l, y: ex / l };
+	});
+	const projectPoly = pts => ax => {
+		let lo = Infinity, hi = -Infinity;
+		for (const p of pts) { const v = p.x * ax.x + p.y * ax.y; if (v < lo) lo = v; if (v > hi) hi = v; }
+		return [lo, hi];
+	};
+
+	// Dos polígonos convexos.
+	function polygons(a, b) {
+		return sat([...edgeAxes(a), ...edgeAxes(b)], projectPoly(a), projectPoly(b), centroid(a), centroid(b));
+	}
+
+	// Polígono convexo contra círculo (se mueve el polígono; para mover el círculo, se invierte).
+	function polygonCircle(pts, c) {
+		let near = pts[0], nd = Infinity;
+		for (const p of pts) { const d = Math.hypot(p.x - c.x, p.y - c.y); if (d < nd) { nd = d; near = p; } }
+		const axes = edgeAxes(pts);
+		if (nd > 0) axes.push({ x: (near.x - c.x) / nd, y: (near.y - c.y) / nd });
+		return sat(axes, projectPoly(pts), ax => { const v = c.x * ax.x + c.y * ax.y; return [v - c.radius, v + c.radius]; }, centroid(pts), c);
+	}
+
+	// Solape entre dos formas cualesquiera (rect, círculo o polígono), mueve `a`.
+	function overlap(a, b) {
+		const ka = kindOf(a), kb = kindOf(b);
+		if (ka === 'rect' && kb === 'rect') return rects(a, b);
+		if (ka === 'circle' && kb === 'circle') return circles(a, b);
+		if (ka === 'circle' && kb === 'rect') return circleRect(a, b);
+		if (ka === 'rect' && kb === 'circle') { const r = circleRect(b, a); return r && { nx: -r.nx, ny: -r.ny, depth: r.depth }; }
+		const pa = ka === 'polygon' ? a : rectPoints(a), pb = kb === 'polygon' ? b : rectPoints(b);
+		if (ka === 'polygon' && kb === 'circle') return polygonCircle(a, b);
+		if (ka === 'circle' && kb === 'polygon') { const r = polygonCircle(b, a); return r && { nx: -r.nx, ny: -r.ny, depth: r.depth }; }
+		if (ka === 'circle' || kb === 'circle') return null;
+		return polygons(pa, pb);
+	}
+	const rectPoints = r => [{ x: r.x, y: r.y }, { x: r.x + r.width, y: r.y }, { x: r.x + r.width, y: r.y + r.height }, { x: r.x, y: r.y + r.height }];
+
+	// --- Movimiento ---
+
+	// Mueve el rect `moving` por (dx, dy) hasta que toque a `rect`. Devuelve { t, nx, ny } (t de 0 a 1:
+	// la parte del recorrido que se puede hacer; la normal apunta para donde hay que rebotar o deslizar)
+	// o null si el recorrido está libre. Apoyarse sobre un rect sin entrar no cuenta como choque.
+	function sweepRect(moving, dx, dy, rect) {
+		const grown = { x: rect.x - moving.width, y: rect.y - moving.height, width: rect.width + moving.width, height: rect.height + moving.height };
+		const h = segmentRect({ x1: moving.x, y1: moving.y, x2: moving.x + dx, y2: moving.y + dy }, grown, true);
+		if (!h || h.inside) return null;
+		return { t: h.t, nx: h.nx, ny: h.ny };
+	}
+
+	// El primer rect de `solids` que se lleva por delante `moving` al moverlo (dx, dy).
+	function sweepRects(moving, dx, dy, solids) {
+		let best = null;
+		for (const s of solids) {
+			const h = sweepRect(moving, dx, dy, s);
+			if (h && (!best || h.t < best.t)) { best = h; best.solid = s; }
+		}
+		return best;
+	}
+
+	// Movimiento de plataformero: mueve primero en X y después en Y, frenándose contra los rects
+	// de `solids` (nada atraviesa nada, por rápido que vaya). Devuelve { x, y, left, right, top,
+	// bottom, solids }: la posición final, de qué lados chocó y contra qué. Para deslizar contra una
+	// pared se llama con el movimiento completo; el eje que choca se frena y el otro sigue.
+	function moveAndCollide(rect, dx, dy, solids) {
+		const out = { x: rect.x, y: rect.y, left: false, right: false, top: false, bottom: false, solids: [] };
+		const cur = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+		for (const axis of ['x', 'y']) {
+			const d = axis === 'x' ? dx : dy;
+			if (d === 0) continue;
+			const h = sweepRects(cur, axis === 'x' ? d : 0, axis === 'y' ? d : 0, solids);
+			if (h) {
+				const sol = h.solid;   // se pega al borde exacto, sin el error de la multiplicación
+				cur[axis] = axis === 'x' ? (d > 0 ? sol.x - cur.width : sol.x + sol.width) : (d > 0 ? sol.y - cur.height : sol.y + sol.height);
+				if (axis === 'x') out[d > 0 ? 'right' : 'left'] = true; else out[d > 0 ? 'bottom' : 'top'] = true;
+				out.solids.push(h.solid);
+			} else cur[axis] += d;
+		}
+		out.x = cur.x; out.y = cur.y;
+		return out;
+	}
+
+	return { segmentRect, segmentCircle, segmentSegment, segmentPolygon, segment, raycast, rects, circles, circleRect, polygons, polygonCircle, overlap, sweepRect, sweepRects, moveAndCollide, pointInPolygon, kindOf };
+})();
+
+// Rejilla espacial: para no comparar cada objeto contra todos los demás. Cada objeto se anota en
+// las celdas que toca su caja; una consulta mira sólo las celdas del área pedida. `cellSize` conviene
+// que sea parecido al objeto típico (un poco más grande). Los objetos pueden ser cualquier cosa: la
+// caja se pasa aparte, o se toma del propio objeto si tiene x, y, width y height.
+//   const grid = new SpatialGrid(64);
+//   for (const e of enemigos) grid.insert(e);
+//   grid.query({ x, y, width, height })       // -> objetos cuya caja toca esa área
+//   grid.pairs()                              // -> [[a, b], ...] cajas que se tocan, cada par una vez
+//   grid.update(e)                            // si se movió (también acepta una caja nueva)
+class SpatialGrid {
+	#cells = new Map();   // "cx,cy" -> Set de objetos
+	#boxes = new Map();   // objeto -> { x, y, width, height, id, x0, y0, x1, y1 }
+	#nextId = 0;
+
+	constructor(cellSize = 64) {
+		this.cellSize = cellSize;
+	}
+
+	get size() { return this.#boxes.size; }
+
+	#range(b) {
+		const c = this.cellSize;
+		return { x0: Math.floor(b.x / c), y0: Math.floor(b.y / c), x1: Math.floor((b.x + b.width) / c), y1: Math.floor((b.y + b.height) / c) };
+	}
+
+	#link(item, rec) {
+		for (let cx = rec.x0; cx <= rec.x1; cx++) for (let cy = rec.y0; cy <= rec.y1; cy++) {
+			const key = cx + ',' + cy;
+			let set = this.#cells.get(key);
+			if (!set) this.#cells.set(key, set = new Set());
+			set.add(item);
+		}
+	}
+
+	#unlink(item, rec) {
+		for (let cx = rec.x0; cx <= rec.x1; cx++) for (let cy = rec.y0; cy <= rec.y1; cy++) {
+			const key = cx + ',' + cy, set = this.#cells.get(key);
+			if (set) { set.delete(item); if (set.size === 0) this.#cells.delete(key); }
+		}
+	}
+
+	insert(item, box = item) {
+		this.remove(item);
+		const rec = { x: box.x, y: box.y, width: box.width, height: box.height, id: this.#nextId++ };
+		Object.assign(rec, this.#range(rec));
+		this.#boxes.set(item, rec);
+		this.#link(item, rec);
+		return item;
+	}
+
+	// Vuelve a anotar un objeto que se movió (si no estaba, lo inserta).
+	update(item, box = item) {
+		const old = this.#boxes.get(item);
+		if (!old) return this.insert(item, box);
+		const rec = { x: box.x, y: box.y, width: box.width, height: box.height, id: old.id };
+		Object.assign(rec, this.#range(rec));
+		if (rec.x0 !== old.x0 || rec.y0 !== old.y0 || rec.x1 !== old.x1 || rec.y1 !== old.y1) {
+			this.#unlink(item, old);
+			this.#link(item, rec);
+		}
+		this.#boxes.set(item, rec);
+		return item;
+	}
+
+	remove(item) {
+		const rec = this.#boxes.get(item);
+		if (!rec) return false;
+		this.#unlink(item, rec);
+		this.#boxes.delete(item);
+		return true;
+	}
+
+	has(item) { return this.#boxes.has(item); }
+
+	clear() {
+		this.#cells.clear();
+		this.#boxes.clear();
+	}
+
+	// Objetos cuya caja se solapa con `area` (tocarse nada más no cuenta).
+	query(area, out = []) {
+		const seen = new Set(), r = this.#range(area);
+		for (let cx = r.x0; cx <= r.x1; cx++) for (let cy = r.y0; cy <= r.y1; cy++) {
+			const set = this.#cells.get(cx + ',' + cy);
+			if (!set) continue;
+			for (const item of set) {
+				if (seen.has(item)) continue;
+				seen.add(item);
+				const b = this.#boxes.get(item);
+				if (b.x < area.x + area.width && b.x + b.width > area.x && b.y < area.y + area.height && b.y + b.height > area.y) out.push(item);
+			}
+		}
+		return out;
+	}
+
+	// Objetos cuya caja contiene el punto.
+	queryPoint(x, y, out = []) {
+		const set = this.#cells.get(Math.floor(x / this.cellSize) + ',' + Math.floor(y / this.cellSize));
+		if (set) for (const item of set) {
+			const b = this.#boxes.get(item);
+			if (x >= b.x && x <= b.x + b.width && y >= b.y && y <= b.y + b.height) out.push(item);
+		}
+		return out;
+	}
+
+	// Objetos cuya caja cruza el segmento, del más cercano al comienzo al más lejano.
+	querySegment(s, out = []) {
+		const area = { x: Math.min(s.x1, s.x2), y: Math.min(s.y1, s.y2), width: Math.abs(s.x2 - s.x1), height: Math.abs(s.y2 - s.y1) };
+		const found = [];
+		const r = this.#range(area), seen = new Set();
+		for (let cx = r.x0; cx <= r.x1; cx++) for (let cy = r.y0; cy <= r.y1; cy++) {
+			const set = this.#cells.get(cx + ',' + cy);
+			if (!set) continue;
+			for (const item of set) {
+				if (seen.has(item)) continue;
+				seen.add(item);
+				const h = Collision.segmentRect(s, this.#boxes.get(item));
+				if (h) found.push([h.t, item]);
+			}
+		}
+		found.sort((a, b) => a[0] - b[0]);
+		for (const [, item] of found) out.push(item);
+		return out;
+	}
+
+	// Todos los pares de objetos cuyas cajas se solapan, cada uno una sola vez.
+	pairs(out = []) {
+		const done = new Set();
+		for (const set of this.#cells.values()) {
+			if (set.size < 2) continue;
+			const items = [...set];
+			for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) {
+				const a = this.#boxes.get(items[i]), b = this.#boxes.get(items[j]);
+				const key = a.id < b.id ? a.id + ':' + b.id : b.id + ':' + a.id;
+				if (done.has(key)) continue;
+				done.add(key);
+				if (a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y) out.push([items[i], items[j]]);
+			}
+		}
+		return out;
 	}
 }
 
