@@ -776,6 +776,14 @@ class UI {
 	#rep = new Map();            // repetición de las flechas mantenidas
 	#acceptRow = null;           // lista a la que se le dio Enter en este cuadro
 	#rowFocus = new Map();       // lista -> fila con el foco del teclado
+	#open = null;                // id del dropdown abierto
+	#openSeen = false;           // el dropdown abierto se declaró en este cuadro
+	#openFresh = false;          // se acaba de abrir: la lista arranca centrada en lo elegido
+	#dismiss = false;            // se apretó fuera del dropdown abierto
+	#over = false;               // lo que se registra va por encima de todo lo demás (popups)
+	#deferOverlays = false;      // el juego llama a end(): los popups se dibujan al final del cuadro
+	#deferred = [];
+	#pick = null;                // { id, index }: elección hecha en end(), la devuelve el dropdown en el cuadro siguiente
 
 	scale = 1;
 	cursor = true;      // cambiar el cursor a "pointer" sobre lo tocable
@@ -790,6 +798,7 @@ class UI {
 		rowHover: 'rgba(255,255,255,0.10)', rowSelected: 'rgba(255,183,3,0.28)',
 		focus: '#7cc4ff', focusRow: 'rgba(124,196,255,0.2)',
 		shadow: 'rgba(0,0,0,0.4)',
+		popup: '#16212f',      // fondo de la lista de un dropdown (sólido: se dibuja encima de otros widgets)
 		radius: 10, padding: 12,
 	};
 
@@ -838,6 +847,10 @@ class UI {
 		this.#prev = this.#cur;
 		this.#cur = [];
 		this.clicked = null;
+		this.#deferred = [];
+		if (this.#open && !this.#openSeen) this.#open = null;   // el dropdown ya no se declara
+		this.#openSeen = false;
+		this.#dismiss = false;
 
 		const top = (x, y) => this.#topAt(x, y);
 
@@ -845,6 +858,7 @@ class UI {
 			const r = top(ev.pressX, ev.pressY);
 			this.active = r && r.interactive ? r.id : null;
 			this.#dragDist = 0;
+			if (this.#open && !(r && r.id === this.#open + ':list')) this.#dismiss = true;   // apretó fuera del dropdown abierto
 			this.#lastPointer = { x: ev.pressX, y: ev.pressY };   // el arrastre se mide desde donde se apretó
 			this.focused = this.active;       // un clic da el foco, pero sin anillo
 			this.focusVisible = false;
@@ -939,7 +953,7 @@ class UI {
 
 		const idx = zones.findIndex(z => z.id === this.focused), z = zones[idx];
 		if (accept) {
-			if (z.kind === 'button' || z.kind === 'toggle') {
+			if (z.kind === 'button' || z.kind === 'toggle' || z.kind === 'dropdown') {
 				this.clicked = z.id;
 				this.clickAt = { x: z.x + z.w / 2, y: z.y + z.h / 2 };
 				this.clickDragged = false;
@@ -956,7 +970,7 @@ class UI {
 			else for (let k = 0; k < Math.abs(dx) && this.#spatial(dx > 0 ? 'right' : 'left'); k++);
 		}
 		if (dy !== 0) {
-			if (z.kind === 'list') this.#nav.dy = dy;
+			if (z.kind === 'list' || z.kind === 'dropdown') this.#nav.dy = dy;
 			else for (let k = 0; k < Math.abs(dy) && this.#spatial(dy > 0 ? 'down' : 'up'); k++);
 		}
 	}
@@ -1018,10 +1032,13 @@ class UI {
 		this.#register(null, this.#rect(rect), false);
 	}
 
+	// Las zonas "por encima" (popups) ganan a todas las demás, sin importar el orden en que se declararon.
 	#topAt(x, y, zones = this.#prev) {
-		for (let i = zones.length - 1; i >= 0; i--) {
-			const r = zones[i];
-			if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r;
+		for (const over of [true, false]) {
+			for (let i = zones.length - 1; i >= 0; i--) {
+				const r = zones[i];
+				if (r.over === over && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r;
+			}
 		}
 		return null;
 	}
@@ -1031,7 +1048,7 @@ class UI {
 	}
 
 	#register(id, r, interactive, kind = null) {
-		this.#cur.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, interactive, kind });
+		this.#cur.push({ id, x: r.x, y: r.y, w: r.w, h: r.h, interactive, kind, over: this.#over });
 	}
 
 	#font(size, weight = 600) {
@@ -1278,6 +1295,146 @@ class UI {
 
 	setScroll(id, px) {
 		this.#scroll.set(id, Math.max(0, px));
+	}
+
+	// Menú desplegable: un campo con lo elegido; al tocarlo se abre una lista debajo (o arriba, si
+	// abajo no entra) y al elegir una fila se cierra. Devuelve el índice elegido (el mismo si no
+	// cambió; -1 = nada elegido, y entonces se muestra `placeholder`). `items`: textos o
+	// { label, disabled }. opts: size, radius, disabled, placeholder, rowHeight (32), maxRows (8, a
+	// partir de ahí la lista se desplaza), popupWidth (por defecto el del campo), color (fondo de la lista).
+	// Se cierra al elegir, con Escape o al apretar afuera (ese toque no llega a lo que haya debajo).
+	// Teclado (con `navigation`): Enter o Espacio abren; con la lista abierta, arriba y abajo mueven la
+	// fila y Enter elige; con el campo cerrado, arriba y abajo cambian la elección sin abrir.
+	// La lista se dibuja en el momento: lo que se declare después encima de ella la tapa. Si el juego
+	// llama a `end()` al final de cada cuadro, las listas abiertas se dibujan ahí, siempre encima.
+	dropdown(id, rect, items, selected = -1, opts = {}) {
+		const r = this.#rect(rect);
+		const s = this.scale, th = this.theme, js = this.#js;
+		const size = (opts.size ?? th.fontSize) * s;
+		const radius = (opts.radius ?? th.radius) * s;
+		const enabled = i => items[i] !== undefined && !(typeof items[i] === 'object' && items[i].disabled);
+		const label = i => items[i] === undefined ? null : typeof items[i] === 'string' ? items[i] : items[i].label;
+		const listId = id + ':list';
+
+		if (opts.disabled) {
+			if (this.#open === id) this.#open = null;
+			this.#register(null, r, false);
+			this.#box(r, radius, th.button);
+			this.#dropdownText(r, label(selected) ?? opts.placeholder ?? '', size, th.textDisabled);
+			this.#caret(r, th.textDisabled, false);
+			return selected;
+		}
+
+		this.#register(id, r, true, 'dropdown');
+		let isOpen = this.#open === id;
+		let value = selected;
+
+		// con el campo cerrado y con el foco, arriba y abajo cambian la elección
+		if (!isOpen && this.#hasFocus(id) && this.#nav.dy !== 0) {
+			const dir = Math.sign(this.#nav.dy);
+			let j = (selected < 0 ? (dir > 0 ? -1 : items.length) : selected) + dir;
+			while (j >= 0 && j < items.length && !enabled(j)) j += dir;
+			if (j >= 0 && j < items.length) value = j;
+		}
+
+		const focus = this.#hasFocus(id);
+		const pressed = id === this.active && id === this.hot;
+		const hovered = !pressed && (id === this.hot || id === this.active || focus);
+		this.#box(r, radius, isOpen || pressed ? th.buttonActive : hovered ? th.buttonHover : th.button);
+		js.drawRectangleRoundedLines({ x: r.x + 0.5, y: r.y + 0.5, width: r.w - 1, height: r.h - 1 }, radius, 1, th.panelBorder);
+		const text = label(value);
+		this.#dropdownText(r, text ?? opts.placeholder ?? '', size, text === null ? th.textDisabled : th.text);
+		this.#caret(r, th.text, isOpen);
+		if (focus) this.#ring(r, radius);
+
+		if (!isOpen && this.clicked === id) {
+			this.#open = id;
+			isOpen = true;
+			this.#openFresh = true;
+			const first = items.findIndex((_, i) => enabled(i));
+			this.#rowFocus.set(listId, enabled(selected) ? selected : first);
+			this.focused = listId;     // el teclado queda en la lista: arriba y abajo mueven la fila, Enter elige
+		}
+
+		if (isOpen) {
+			this.#openSeen = true;
+			const popup = () => this.#applyPopup(id, this.#drawPopup(id, r, items, selected, opts));
+			if (this.#deferOverlays) this.#deferred.push(popup); else popup();
+		}
+
+		if (this.#pick && this.#pick.id === id) {
+			value = this.#pick.index;
+			this.#pick = null;
+		}
+		return value;
+	}
+
+	// Llamar una vez al final de cada cuadro (después de declarar todos los widgets): las listas de
+	// los dropdown abiertos se dibujan ahí, encima de todo. La elección hecha en la lista llega al
+	// dropdown en el cuadro siguiente. Sin llamarla, la lista se dibuja en el momento.
+	end() {
+		this.#deferOverlays = true;
+		const list = this.#deferred;
+		this.#deferred = [];
+		for (const f of list) f();
+	}
+
+	// Texto del campo, recortado para no pisar la flecha.
+	#dropdownText(r, str, size, color) {
+		const s = this.scale, pad = this.theme.padding * s;
+		this.#js.beginClippingRect({ x: r.x, y: r.y, width: Math.max(0, r.w - 26 * s), height: r.h });
+		this.#text(str, r.x + pad, r.y + r.h / 2, size, color, 'left', 600);
+		this.#js.endClipping();
+	}
+
+	#caret(r, color, up) {
+		const ctx = this.#js.ctx, s = this.scale;
+		const cx = r.x + r.w - 14 * s, cy = r.y + r.h / 2, w = 5 * s, h = 3 * s * (up ? -1 : 1);
+		ctx.save();
+		ctx.fillStyle = color;
+		ctx.beginPath();
+		ctx.moveTo(cx - w, cy - h); ctx.lineTo(cx + w, cy - h); ctx.lineTo(cx, cy + h);
+		ctx.closePath();
+		ctx.fill();
+		ctx.restore();
+	}
+
+	// Dibuja la lista abierta y devuelve { index, close }: la fila tocada (o -1) y si hay que cerrar.
+	#drawPopup(id, r, items, selected, opts) {
+		const js = this.#js, th = this.theme, s = this.scale;
+		const rowH = (opts.rowHeight ?? 32) * s;
+		const W = js.getCanvasWidth(), H = js.getCanvasHeight();
+		const gap = 2 * s, margin = 4 * s;
+		const want = Math.min(items.length, opts.maxRows ?? 8) * rowH;
+		const below = H - (r.y + r.h) - gap - margin, above = r.y - gap - margin;
+		const up = want > below && above > below;
+		const h = Math.max(0, Math.min(want, up ? above : below));
+		const w = opts.popupWidth ? opts.popupWidth * s : r.w;
+		const x = Math.max(margin, Math.min(r.x, W - w - margin));
+		const y = up ? r.y - gap - h : r.y + r.h + gap;
+		const listId = id + ':list';
+
+		if (this.#openFresh) {
+			this.#openFresh = false;
+			this.#scroll.set(listId, Math.max(0, selected * rowH - (h - rowH) / 2));
+		}
+
+		this.#over = true;
+		this.#register(null, { x: 0, y: 0, w: W, h: H }, false);   // lo de abajo no recibe toques mientras está abierto
+		const box = { x, y, w, h };
+		this.#box(box, th.radius * s, opts.color || th.popup, true);
+		const index = this.list(listId, { x, y, width: w, height: h }, items, { rowHeight: opts.rowHeight ?? 32, size: opts.size, selected });
+		js.drawRectangleRoundedLines({ x: x + 0.5, y: y + 0.5, width: w - 1, height: h - 1 }, th.radius * s, 1, th.panelBorder);
+		this.#over = false;
+		return { index, close: index >= 0 || this.#dismiss || js.consumeKeyPressed('Escape') };
+	}
+
+	#applyPopup(id, res) {
+		if (res.index >= 0) this.#pick = { id, index: res.index };
+		if (res.close) {
+			this.#open = null;
+			this.focused = id;     // el foco vuelve al campo
+		}
 	}
 
 	// Parte `rect` en `n` filas (o columnas) iguales con `gap` entre ellas. Devuelve rectángulos.
